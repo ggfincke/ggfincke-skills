@@ -209,3 +209,4 @@ Do not claim the entire codebase is secure. Only claim what the scoped review an
 - This produces a findings report and patch plan first; wait for approval before editing. Approve with phrases like "implement Finding 2", "do Patch A and B", "show diffs first", "downgrade Finding 3 to hardening", or "revise the plan".
 - `references/usage.md` has first-turn scope variants (endpoint/authz, injection, upload/download, webhook, dependency) and ready-made follow-up prompts (approve one finding, push back on an overbroad fix, demand stronger evidence, add negative tests, tenant/authz, secrets/logging).
 - For behavior-preserving cleanup that is not security-driven, use the simplification-review skill; for a broad dedupe/refactor pass, use consolidation-audit.
+- To carry out an approved multi-patch plan, use the phased-implementation skill: one patch group at a time, run its tests, and gate between groups.

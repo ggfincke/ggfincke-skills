@@ -104,3 +104,7 @@ When applying changes:
 - Apply only approved items.
 - Preserve exact behavior.
 - After editing, summarize what changed and what should be tested manually.
+
+## Notes
+
+- For a larger approved set, work through it with the phased-implementation skill: one group at a time, re-checking between, rather than applying everything in one pass.
