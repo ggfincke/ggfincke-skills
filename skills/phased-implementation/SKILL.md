@@ -1,6 +1,6 @@
 ---
 name: phased-implementation
-description: Execute an already-approved, phased implementation plan one phase at a time: implement only the current phase with the diff scoped to it, gate between phases by running the relevant checks and stopping for go-ahead, update the plan or review artifact as the living source of truth as phases close, and stop to re-plan instead of improvising when a phase contradicts the plan. Use after a plan, patch plan, or set of action groups has been approved and it is time to carry it out step by step; not for creating plans (use plan mode) or for a single one-off edit.
+description: "Execute an already-approved, phased implementation plan one phase at a time: implement only the current phase with the diff scoped to it, gate between phases by running the relevant checks and stopping for go-ahead, update the plan or review artifact as the living source of truth as phases close, and stop to re-plan instead of improvising when a phase contradicts the plan. Use after a plan, patch plan, or set of action groups has been approved and it is time to carry it out step by step; not for creating plans (use plan mode) or for a single one-off edit."
 ---
 
 # Phased Implementation

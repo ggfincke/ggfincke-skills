@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PORTABLE_FIELDS = {"name", "description"}
+INVALID_PLAIN_SCALAR_RE = re.compile(r":(?:[ \t]|$)")
 
 
 @dataclass
@@ -45,12 +46,31 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
             raise ValueError(f"unsupported frontmatter line {line_number}: {line}")
         key, value = stripped.split(":", 1)
         key = key.strip()
-        value = value.strip().strip("\"'")
+        value = parse_frontmatter_value(value.strip(), line_number)
         if not key:
             raise ValueError(f"empty frontmatter key on line {line_number}")
         values[key] = value
 
     return values, raw_lines
+
+
+def parse_frontmatter_value(value: str, line_number: int) -> str:
+    if not value:
+        return ""
+
+    quote = value[0]
+    if quote in {"'", '"'}:
+        if len(value) == 1 or value[-1] != quote:
+            raise ValueError(f"unterminated quoted frontmatter value on line {line_number}")
+        return value[1:-1]
+
+    if INVALID_PLAIN_SCALAR_RE.search(value):
+        raise ValueError(
+            f"invalid YAML frontmatter value on line {line_number}: "
+            "plain values cannot contain ': '; quote the value"
+        )
+
+    return value
 
 
 def find_skills(selected: list[str]) -> tuple[list[Path], list[SkillIssue]]:

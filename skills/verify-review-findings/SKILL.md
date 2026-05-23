@@ -1,6 +1,6 @@
 ---
 name: verify-review-findings
-description: Triage externally-supplied review findings - from a human reviewer, another model, a linter or scanner, CI, or PR comments - by verifying each claim against the live code before acting: trace or reproduce it, classify it as confirmed, stale, incorrect, speculative, or unverifiable with cited evidence and a confidence rating, and stay read-only until told to address the real ones. Use when given a code review, audit, scan report, or findings list to check, when asked whether reported issues are real, still valid, already fixed, or false positives, or to vet, adjudicate, or triage claims someone else made about the code before changing anything.
+description: "Triage externally-supplied review findings - from a human reviewer, another model, a linter or scanner, CI, or PR comments - by verifying each claim against the live code before acting: trace or reproduce it, classify it as confirmed, stale, incorrect, speculative, or unverifiable with cited evidence and a confidence rating, and stay read-only until told to address the real ones. Use when given a code review, audit, scan report, or findings list to check, when asked whether reported issues are real, still valid, already fixed, or false positives, or to vet, adjudicate, or triage claims someone else made about the code before changing anything."
 ---
 
 # Verify Review Findings
