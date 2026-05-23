@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # scripts/validate-skills.py
-# validate portable skill folders in this repo
+# validate skill folders (portable in skills/, project-only in projects/<repo>/)
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
+PROJECTS_DIR = ROOT / "projects"
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PORTABLE_FIELDS = {"name", "description"}
 INVALID_PLAIN_SCALAR_RE = re.compile(r":(?:[ \t]|$)")
@@ -73,27 +74,44 @@ def parse_frontmatter_value(value: str, line_number: int) -> str:
     return value
 
 
+def skill_dirs_in(base: Path) -> list[Path]:
+    return [
+        path
+        for path in sorted(base.iterdir())
+        if path.is_dir()
+        and not path.name.startswith(".")
+        and not path.name.startswith("_")
+        and (path / "SKILL.md").is_file()
+    ]
+
+
+def discover_skills() -> list[Path]:
+    # portable skills in skills/, plus project-only skills in projects/<repo>/
+    dirs: list[Path] = []
+    if SKILLS_DIR.exists():
+        dirs.extend(skill_dirs_in(SKILLS_DIR))
+    if PROJECTS_DIR.exists():
+        for repo in sorted(PROJECTS_DIR.iterdir()):
+            if repo.is_dir() and not repo.name.startswith(".") and not repo.name.startswith("_"):
+                dirs.extend(skill_dirs_in(repo))
+    return dirs
+
+
 def find_skills(selected: list[str]) -> tuple[list[Path], list[SkillIssue]]:
     issues: list[SkillIssue] = []
     if not SKILLS_DIR.exists():
         return [], [SkillIssue(SKILLS_DIR, "skills directory does not exist")]
 
-    all_skills = {
-        path.name: path
-        for path in sorted(SKILLS_DIR.iterdir())
-        if path.is_dir()
-        and not path.name.startswith(".")
-        and not path.name.startswith("_")
-        and (path / "SKILL.md").is_file()
-    }
+    all_dirs = discover_skills()
 
     if selected:
-        missing = sorted(set(selected) - set(all_skills))
-        for name in missing:
+        wanted = set(selected)
+        present = {path.name for path in all_dirs}
+        for name in sorted(wanted - present):
             issues.append(SkillIssue(SKILLS_DIR / name, "selected skill does not exist"))
-        return [all_skills[name] for name in selected if name in all_skills], issues
+        return [path for path in all_dirs if path.name in wanted], issues
 
-    return list(all_skills.values()), issues
+    return all_dirs, issues
 
 
 def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
@@ -137,7 +155,7 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate portable skill folders in this repo."
+        description="Validate skill folders (portable and project-only) in this repo."
     )
     parser.add_argument("--skill", action="append", default=[], help="Validate one skill name")
     parser.add_argument(
@@ -152,7 +170,7 @@ def main() -> int:
         issues.extend(validate_skill(skill, args.strict_frontmatter))
 
     if not skills and not args.skill:
-        print("No installable skills found in skills/.")
+        print("No skills found in skills/ or projects/.")
         return 0
 
     warnings = [issue for issue in issues if issue.is_warning]

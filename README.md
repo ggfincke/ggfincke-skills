@@ -7,6 +7,7 @@ Personal AI coding skills, prompts, and workflows for working with local codebas
 This repo is the source of truth. Skills live here in a portable format, then get installed into the directories each agent discovers.
 
 - `skills/`: installable Agent Skills, one folder per skill.
+- `projects/<repo>/`: project-only skills installed into a single repo, never synced globally.
 - `prompts/`: reusable prompts that are not ready to become skills yet.
 - `workflows/`: longer playbooks, checklists, and process notes.
 - `templates/skill/`: starter structure for a new portable skill.
@@ -54,6 +55,12 @@ Install a specific skill into one Claude Code project:
 
 ```bash
 python3 scripts/sync-skills.py --target project-claude --project /path/to/repo --skill skill-name
+```
+
+Install a repo's project-only skills (from `projects/<repo>/`) into just that repo:
+
+```bash
+python3 scripts/sync-skills.py --project-repo <repo> --project /path/to/repo --mode link
 ```
 
 Use `--mode copy` when you want a stable snapshot instead of a live link, and `--force` when intentionally replacing an existing installed skill.

@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
+PROJECTS_DIR = ROOT / "projects"
 
 
 def default_targets(project: Path | None) -> dict[str, Path]:
@@ -60,13 +61,13 @@ def expand_targets(names: list[str], project: Path | None) -> list[tuple[str, Pa
     return deduped
 
 
-def find_skills(selected: list[str]) -> list[Path]:
-    if not SKILLS_DIR.exists():
-        raise SystemExit(f"missing skills directory: {SKILLS_DIR}")
+def find_skills(base_dir: Path, selected: list[str]) -> list[Path]:
+    if not base_dir.exists():
+        raise SystemExit(f"missing skills directory: {base_dir}")
 
     skills = {
         path.name: path
-        for path in sorted(SKILLS_DIR.iterdir())
+        for path in sorted(base_dir.iterdir())
         if path.is_dir()
         and not path.name.startswith(".")
         and not path.name.startswith("_")
@@ -136,18 +137,43 @@ def main() -> int:
         default="copy",
         help="Copy stable snapshots or symlink for active development.",
     )
-    parser.add_argument("--project", type=Path, help="Project root for --target project-claude")
+    parser.add_argument("--project", type=Path, help="Project root for project-* targets")
+    parser.add_argument(
+        "--project-repo",
+        help="Install project-only skills from projects/<name>/ into one repo (requires --project)",
+    )
     parser.add_argument("--force", action="store_true", help="Replace existing installed skills")
     parser.add_argument("--dry-run", action="store_true", help="Print planned changes only")
     args = parser.parse_args()
 
-    target_names = args.target or ["all"]
     project = args.project.expanduser().resolve() if args.project else None
+
+    if args.project_repo:
+        # project-only lane: source projects/<name>/, install into one repo, never global
+        if project is None:
+            raise SystemExit("--project-repo requires --project <path>")
+        requested = args.target or ["project-agents"]
+        leaked = [name for name in requested if not name.startswith("project-")]
+        if leaked:
+            raise SystemExit(
+                "--project-repo installs project-only skills; refusing non-project target(s): "
+                + ", ".join(leaked)
+                + ". Use project-agents or project-claude."
+            )
+        base_dir = PROJECTS_DIR / args.project_repo
+        if not base_dir.is_dir():
+            raise SystemExit(f"unknown project repo {args.project_repo!r}: {base_dir} does not exist")
+        target_names = requested
+    else:
+        # global lane: source skills/, never reads projects/
+        base_dir = SKILLS_DIR
+        target_names = args.target or ["all"]
+
     targets = expand_targets(target_names, project)
-    skills = find_skills(args.skill)
+    skills = find_skills(base_dir, args.skill)
 
     if not skills:
-        print("No installable skills found in skills/.")
+        print(f"No installable skills found in {base_dir}.")
         return 0
 
     for target_name, target_root in targets:
