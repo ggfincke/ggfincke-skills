@@ -12,7 +12,8 @@ This repo is the source of truth. Skills live here in a portable format, then ge
 - `workflows/`: longer playbooks, checklists, and process notes.
 - `templates/skill/`: starter structure for a new portable skill.
 - `scripts/validate-skills.py`: validates local skill folders.
-- `scripts/sync-skills.py`: copies or symlinks skills into Codex, Claude Code, or a target project.
+- `scripts/sync-skills.py`: copies or symlinks skills into Codex, Claude Code, or a target project, and emits always-on rules into each agent's global instruction file.
+- `scripts/always_on.py`: shared helper that extracts skills' always-on blocks and manages the generated region.
 - `scripts/hooks/`: git hooks; `pre-commit` runs validation before each commit.
 - `Makefile`: convenience wrappers around the scripts (`make help` lists targets).
 - `docs/interop.md`: notes on how Codex and Claude Code source skills.
@@ -64,6 +65,18 @@ python3 scripts/sync-skills.py --project-repo <repo> --project /path/to/repo --m
 ```
 
 Use `--mode copy` when you want a stable snapshot instead of a live link, and `--force` when intentionally replacing an existing installed skill.
+
+## Always-On Conventions
+
+Skills only load when an agent decides they're relevant, so a convention you want applied on nearly every session (like comment style) gets skipped. To make a rule always-on, wrap it in `SKILL.md` with markers:
+
+```markdown
+<!-- always-on:start title="Comment style" -->
+- the rules, stated once
+<!-- always-on:end -->
+```
+
+A global sync then writes those rules into each agent's global instruction file (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.agents/AGENTS.md`) inside a generated, idempotent region. The skill stays the source of truth; the region is regenerated each sync. Pass `--skip-always-on` to leave the instruction files untouched.
 
 ## Creating A Skill
 

@@ -15,3 +15,11 @@
 - `validate-skills.py` checks both trees, so project skills follow the same name/description rules and the same pre-commit + CI gate.
 - Name project skills locally without a repo prefix; the `projects/<repo>/` path already namespaces them.
 
+## Always-on conventions
+
+- Skills are pull-based: only `name` + `description` stay in context, and the body loads only when an agent judges it relevant. That is wrong for a standing convention you want applied on nearly every session (e.g. comment style).
+- A skill promotes rules to always-on context by wrapping them in `<!-- always-on:start title="..." -->` / `<!-- always-on:end -->` markers in `SKILL.md`. The markers are invisible in rendered markdown; the wrapped lines stay the single source of truth.
+- `sync-skills.py` collects every skill's always-on block & writes a generated region into each global agent's instruction file (`~/.codex/AGENTS.md`, `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`). The region is delimited by `BEGIN/END ggfincke-skills:always-on`, updated in place; content outside it is preserved.
+- It runs only on the global lane, collects from all of `skills/` (so syncing one skill never drops others), & skips with `--skip-always-on`. Shared logic lives in `scripts/always_on.py`; `validate-skills.py` fails on unbalanced or untitled markers.
+- Do not edit the generated region by hand. Edit the source skill's always-on block & re-run sync.
+

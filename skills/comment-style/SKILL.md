@@ -9,6 +9,7 @@ Comments are source-code annotations, not a design journal. Durable rationale be
 
 ## Core rules
 
+<!-- always-on:start title="Comment style" -->
 - Single-line comments only (`//`, `#`). Never side/inline comments - always on the line above the code.
 - File header = path line + one short lowercase description. 2-3 lines max; a 3rd line only if line 2 would wrap. No module essays.
 - Direct, imperative, terse.
@@ -18,6 +19,7 @@ Comments are source-code annotations, not a design journal. Durable rationale be
 - Better Comments tags, used sparingly: `*` foundational classes / entry points, `!` warnings / deprecated / circular-import avoidance, `?` design questions, `todo` real follow-ups.
 - No doc-comment blocks (JSDoc/TSDoc `/** */`, Swift `///`, narrative Python docstrings) and no `/* */` block comments.
 - Don't restate what types or signatures already say.
+<!-- always-on:end -->
 
 ## Placement
 

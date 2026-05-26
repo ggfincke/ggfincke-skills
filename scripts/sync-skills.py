@@ -5,27 +5,21 @@
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 from pathlib import Path
+
+import always_on
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
 PROJECTS_DIR = ROOT / "projects"
+GLOBAL_AGENTS = ("codex", "agents", "claude")
 
 
 def default_targets(project: Path | None) -> dict[str, Path]:
-    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
-    agents_home = Path(os.environ.get("AGENTS_HOME", Path.home() / ".agents"))
-    claude_home = Path(os.environ.get("CLAUDE_HOME", Path.home() / ".claude"))
-
-    targets = {
-        "codex": codex_home / "skills",
-        "agents": agents_home / "skills",
-        "claude": claude_home / "skills",
-    }
+    targets = {agent: always_on.agent_home(agent) / "skills" for agent in GLOBAL_AGENTS}
     if project is not None:
         targets["project-claude"] = project / ".claude" / "skills"
         targets["project-agents"] = project / ".agents" / "skills"
@@ -120,6 +114,43 @@ def install_skill(src: Path, target_root: Path, mode: str, force: bool, dry_run:
     return f"{action}ed {src.name} -> {dest}"
 
 
+def collect_always_on() -> list[tuple[str, str, str]]:
+    # gather (skill_name, title, content) from every portable skill, sorted by name
+    items: list[tuple[str, str, str]] = []
+    for skill in find_skills(SKILLS_DIR, []):
+        text = (skill / "SKILL.md").read_text(encoding="utf-8")
+        for title, content in always_on.extract_blocks(text):
+            items.append((skill.name, title, content))
+    return sorted(items)
+
+
+def sync_always_on(agents: list[str], dry_run: bool) -> None:
+    # write the generated region into each global agent's instruction file
+    items = collect_always_on()
+    if not items:
+        print("  no always-on blocks found; nothing to write")
+        return
+
+    region = always_on.render_region(items)
+    seen: set[Path] = set()
+    for agent in agents:
+        path = always_on.instruction_file(agent)
+        if path in seen:
+            continue
+        seen.add(path)
+
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        if dry_run:
+            verb = "would update" if always_on.REGION_RE.search(existing) else "would write"
+            print(f"  {verb} always-on region in {path}")
+            continue
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(always_on.apply_region(existing, region), encoding="utf-8")
+        verb = "updated" if always_on.REGION_RE.search(existing) else "wrote"
+        print(f"  {verb} always-on region in {path}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Install canonical skills into local agent skill directories."
@@ -144,6 +175,11 @@ def main() -> int:
     )
     parser.add_argument("--force", action="store_true", help="Replace existing installed skills")
     parser.add_argument("--dry-run", action="store_true", help="Print planned changes only")
+    parser.add_argument(
+        "--skip-always-on",
+        action="store_true",
+        help="Do not emit the always-on region into global instruction files",
+    )
     args = parser.parse_args()
 
     project = args.project.expanduser().resolve() if args.project else None
@@ -180,6 +216,13 @@ def main() -> int:
         print(f"[{target_name}] {target_root}")
         for skill in skills:
             print("  " + install_skill(skill, target_root, args.mode, args.force, args.dry_run))
+
+    # global lane only: keep each agent's instruction file's always-on region current
+    if not args.project_repo and not args.skip_always_on:
+        global_agents = [name for name, _ in targets if name in GLOBAL_AGENTS]
+        if global_agents:
+            print("[always-on] global instruction files")
+            sync_always_on(global_agents, args.dry_run)
 
     return 0
 

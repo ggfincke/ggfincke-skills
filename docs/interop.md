@@ -42,6 +42,16 @@ Reference:
 
 Use personal installs for workflows you want everywhere. Use project installs only when a skill is specific enough that committing it with the repo is useful.
 
+## Always-On Conventions
+
+Skills load lazily, so a standing convention you want applied on nearly every session never reliably triggers. Such rules instead live in each agent's global instruction file, which is loaded unconditionally:
+
+- Codex: `~/.codex/AGENTS.md`
+- Local agents: `~/.agents/AGENTS.md`
+- Claude Code: `~/.claude/CLAUDE.md`
+
+The rules stay single-sourced in the owning skill's `SKILL.md`, wrapped in `always-on:start` / `always-on:end` markers. `scripts/sync-skills.py` collects them on every global sync and writes a `BEGIN/END ggfincke-skills:always-on` region into each file, updating in place and preserving any hand-written content around it.
+
 ## Recommended Distribution
 
 Use this repo as the canonical source, then sync outward:

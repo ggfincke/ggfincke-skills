@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import always_on
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
@@ -149,6 +151,11 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
             + "; keep canonical skills portable unless this is intentional"
         )
         issues.append(SkillIssue(skill_file, message, is_warning=not strict_frontmatter))
+
+    # malformed always-on blocks would silently break the generated region
+    body = skill_file.read_text(encoding="utf-8")
+    for message in always_on.marker_issues(body):
+        issues.append(SkillIssue(skill_file, message))
 
     return issues
 
