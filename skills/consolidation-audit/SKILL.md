@@ -12,10 +12,20 @@ Produce a consolidation audit: map the codebase, find duplication & drift, group
 Start by reading AGENTS.md / CLAUDE.md / README for conventions, build and test gates, and architectural intent; treat them as constraints throughout the audit.
 
 1. **Map the codebase.** Trace bootstrap/initialization, the main interaction or request flow, core service stacks, the UI/presentation layer, and the test suite. Note file counts & responsibilities.
-2. **Find consolidation opportunities.** Look for duplicated logic, copy-pasted helpers, drift between parallel implementations, architectural mismatches, and abstractions that should exist but don't. Each finding = Issue (with evidence) + Recommendation.
-3. **Group findings.** Organize into action groups by file overlap, dependency chains, and shared change patterns - each group is a cohesive unit of work. Carry forward unresolved findings from prior audits, re-verifying each against the current code first - earlier findings may already be resolved or stale (the verify-review-findings discipline, applied to your own prior audit).
+2. **Find consolidation opportunities.** Look for duplicated logic, copy-pasted helpers, drift between parallel implementations, architectural mismatches, and abstractions that should exist but don't. Each finding = Issue (with evidence) + Recommendation. Decompose the search two ways: per-area readers (each owns a module/layer, reports local findings plus cross-module suspicions) and whole-repo hunters for cross-cutting redundancy (duplicate/near-duplicate modules, dead code & unused exports, repeated micro-patterns, constant/type drift, dependency surface, test duplication), seeded by those suspicions. When the harness supports parallel subagents, run these as a fan-out; otherwise sequentially.
+3. **Verify, then group.** Verify every finding - current and carried-forward - against the live code before it makes the list: grep for references before calling anything dead, confirm two implementations are behavior-identical before calling them duplicates, and for high-consequence removals verify adversarially (try to refute). Record false positives and stale findings in a "Considered & Rejected" section rather than dropping them silently (the verify-review-findings discipline, applied to your own audit - prior and current). Then organize survivors into action groups by file overlap, dependency chains, and shared change patterns - each group a cohesive unit of work.
 4. **Sequence by risk.** Order groups into phases: independent/low-risk first, cross-cutting/high-risk later. Treat test coverage as a continuous concern across every group.
 5. **Plan the commits.** Break the approved groups into a commit plan - files staged plus one commit-message line each.
+
+## Thoroughness & subagent budget
+
+Let the user's stated intensity set the dial - read it from their request, don't guess. Scale agent count and model tier together; default to the lightest pass that covers the codebase, and never exceed an explicit cap. A rough ladder (a continuum, not fixed steps):
+
+- **Standard** - a handful of area-scoped readers; cheap/fast tier for reading & per-claim verification, strong tier for synthesis.
+- **Thorough** - one reader per module + whole-repo cross-cutting hunters seeded by their suspicions; adversarial verify; dedup + synthesis.
+- **Exhaustive** - add loop-until-dry discovery, multi-voter refute panels on removal-class findings, and a completeness critic.
+
+Match model to task, not to ambition: reserve the strongest tier for judgment & verification; use the cheapest tier that can do a mechanical, scoped job. When told to be tight/efficient, prefer fewer agents on cheaper models, reserve the strong tier for the verify + synthesis, and report what you scoped out.
 
 ## Templates (`assets/templates/`)
 

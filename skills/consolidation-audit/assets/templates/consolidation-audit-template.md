@@ -89,6 +89,15 @@
 
 ---
 
+## Considered & Rejected
+
+_Claims checked against the live code and discarded - kept so they are not re-raised next audit._
+
+- **[Rejected claim title]** - [why: false positive / intentional divergence / already resolved / status-quo correct], with the evidence that settled it.
+- **[Another rejected/stale claim]** - [reason + evidence].
+
+---
+
 ## Master Consolidation Action Groups
 
 _(Current audit + prior carryovers)_
