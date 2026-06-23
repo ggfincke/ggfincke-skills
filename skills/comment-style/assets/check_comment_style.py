@@ -9,6 +9,7 @@ import ast
 import io
 import re
 import subprocess
+import sys
 import tokenize
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -42,6 +43,8 @@ PYTHON_COMMENT_EXEMPTIONS = (
 	"mypy:",
 )
 SWIFT_COMMENT_EXEMPTIONS = ("swiftlint:",)
+# PEP 263 encoding declaration; must stay on line 1 or 2, above the file header
+PYTHON_ENCODING_RE = re.compile(r"coding[:=]\s*[-\w.]+")
 
 
 @dataclass(frozen=True)
@@ -140,6 +143,22 @@ def normalize_header_description(line: str, prefix: str, fallback: str) -> str:
 	return f"{prefix}{text}{line_ending}"
 
 
+def is_within(path: Path, parent: Path) -> bool:
+	path = path.resolve()
+	parent = parent.resolve()
+	return path == parent or parent in path.parents
+
+
+def python_prelude_len(lines: list[str]) -> int:
+	# count leading shebang & PEP 263 encoding lines the header must sit below
+	count = 1 if lines and lines[0].startswith("#!") else 0
+	if count < len(lines):
+		candidate = lines[count]
+		if candidate.lstrip().startswith("#") and PYTHON_ENCODING_RE.search(candidate):
+			count += 1
+	return count
+
+
 def iter_python_paths() -> list[Path]:
 	paths: list[Path] = []
 	for root in PYTHON_ROOTS:
@@ -175,7 +194,7 @@ def iter_swift_paths() -> list[Path]:
 def normalize_python_header(path: Path, lines: list[str]) -> tuple[list[str], bool]:
 	changed = False
 	rel = path.relative_to(ROOT).as_posix()
-	header_index = 1 if lines and lines[0].startswith("#!") else 0
+	header_index = python_prelude_len(lines)
 	fallback = description_for_path(path, "python")
 
 	while len(lines) <= header_index + 1:
@@ -309,7 +328,7 @@ def check_python_file(path: Path) -> list[Violation]:
 	text = path.read_text()
 	lines = split_keepends(text)
 	rel = path.relative_to(ROOT).as_posix()
-	header_index = 1 if lines and lines[0].startswith("#!") else 0
+	header_index = python_prelude_len(lines)
 
 	if len(lines) <= header_index or line_without_newline(lines[header_index])[0] != f"# {rel}":
 		violations.append(Violation(path, header_index + 1, f'file header must be "# {rel}"'))
@@ -492,7 +511,11 @@ def check_swift_file(path: Path) -> list[Violation]:
 		comment = body[comment_index:]
 		if "→" in comment:
 			violations.append(Violation(path, index, "use ASCII ->, not Unicode arrow"))
-		if COMMENT_WORD_RE.search(comment) and not comment.startswith("// MARK:"):
+		if (
+			COMMENT_WORD_RE.search(comment)
+			and not comment.startswith("// MARK:")
+			and not is_swift_tooling_comment(comment)
+		):
 			violations.append(
 				Violation(
 					path,
@@ -596,6 +619,17 @@ def main() -> int:
 	check = True
 	include_python = args.python or not args.swift
 	include_swift = args.swift or not args.python
+
+	# headers are computed relative to ROOT; a scan root outside it would crash
+	bad_roots: list[str] = []
+	if include_python:
+		bad_roots += [f"--python-root {r}" for r in PYTHON_ROOTS if not is_within(r, ROOT)]
+	if include_swift and not is_within(SWIFT_ROOT, ROOT):
+		bad_roots.append(f"--swift-root {SWIFT_ROOT}")
+	if bad_roots:
+		for entry in bad_roots:
+			print(f"error: {entry} is outside --root {ROOT}", file=sys.stderr)
+		return 2
 
 	python_paths = iter_python_paths() if include_python else []
 	swift_paths = iter_swift_paths() if include_swift else []

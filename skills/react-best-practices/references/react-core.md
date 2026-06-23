@@ -2,6 +2,25 @@
 
 Use this reference for correctness, maintainability, and compiler-friendly React. It is based on official React docs, especially Rules of React, You Might Not Need an Effect, Synchronizing with Effects, Lifecycle of Reactive Effects, Hooks references, and React Compiler docs.
 
+## Contents
+
+- [Purity](#purity)
+- [Hooks](#hooks)
+- [Effects](#effects)
+- [State](#state)
+- [Forms and inputs](#forms-and-inputs)
+- [Refs](#refs)
+- [External stores](#external-stores)
+- [Hydration](#hydration)
+- [Context](#context)
+- [Component APIs](#component-apis)
+- [Accessibility](#accessibility)
+- [Lists and keys](#lists-and-keys)
+- [Escape hatches](#escape-hatches)
+- [Rendering untrusted content](#rendering-untrusted-content)
+- [React Compiler](#react-compiler)
+- [React 19 notes](#react-19-notes)
+
 ## Purity
 
 Components and Hooks must be pure:

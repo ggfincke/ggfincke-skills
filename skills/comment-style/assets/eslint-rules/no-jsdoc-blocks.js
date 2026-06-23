@@ -1,19 +1,19 @@
 // rules/no-jsdoc-blocks.js
-// prohibits JSDoc blocks (/** ... */) - TypeScript types provide documentation
+// prohibits block comments (/** */ and /* */) - use single-line // comments
 
 const rule = {
   meta: {
     type: 'suggestion',
     docs: {
       description:
-        'Disallow JSDoc block comments in favor of single-line comments',
+        'Disallow block comments (JSDoc /** */ and plain /* */) in favor of single-line comments',
       category: 'Stylistic Issues',
     },
     fixable: null,
     schema: [],
     messages: {
-      noJsDoc:
-        'JSDoc blocks are not allowed. Use single-line comments (//) instead. TypeScript types provide documentation.',
+      noBlockComment:
+        'Block comments are not allowed. Use single-line comments (//) instead. TypeScript types provide documentation.',
     },
   },
 
@@ -28,12 +28,12 @@ const rule = {
 
         for (const comment of comments)
         {
-          // check for block comments that start w/ * (JSDoc pattern)
-          if (comment.type === 'Block' && comment.value.startsWith('*'))
+          // every /* ... */ comment, JSDoc or not
+          if (comment.type === 'Block')
           {
             context.report({
               loc: comment.loc,
-              messageId: 'noJsDoc',
+              messageId: 'noBlockComment',
             })
           }
         }

@@ -2,6 +2,22 @@
 
 Ready-made prompts for the `verify-review-findings` skill. The first-turn variants kick off a triage with a concrete input source - better than dropping raw text with no framing. The follow-ups steer the work after the first triage report. Fill in the `[BRACKETED]` parts.
 
+## Contents
+
+- [First-turn variants by input source](#first-turn-variants-by-input-source)
+  - [A. Another model's review](#a-another-models-review)
+  - [B. Human PR review / colleague comments](#b-human-pr-review--colleague-comments)
+  - [C. Scanner / linter / SARIF report](#c-scanner--linter--sarif-report)
+  - [D. CI / automated check failure](#d-ci--automated-check-failure)
+  - [E. Single nagging claim](#e-single-nagging-claim)
+  - [F. Stale-branch review](#f-stale-branch-review)
+- [Follow-up prompts after the first triage](#follow-up-prompts-after-the-first-triage)
+  - [Approve the confirmed set](#approve-the-confirmed-set)
+  - [Hand a finding to a generator skill](#hand-a-finding-to-a-generator-skill)
+  - [Re-verify a verdict](#re-verify-a-verdict)
+  - [Demand stronger dismissal evidence](#demand-stronger-dismissal-evidence)
+  - [Draft the reply to the reviewer](#draft-the-reply-to-the-reviewer)
+
 ## First-turn variants by input source
 
 ### A. Another model's review
