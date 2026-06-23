@@ -1,11 +1,13 @@
 ---
 name: consolidation-audit
-description: Audit a codebase for consolidation opportunities (duplication, drift, architectural mismatch), organize findings into risk-sequenced action groups, and produce a commit plan to execute them. Use when asked to run a consolidation audit, find code to merge or dedupe, plan a refactor across many files, or reduce codebase size and complexity.
+description: Audit a codebase for consolidation opportunities (duplication, drift, architectural mismatch) and produce one extremely thorough audit document with verified findings, considered/rejected claims, integrated action groups, risk sequencing, and testing guidance. Use when asked to run a consolidation audit, find code to merge or dedupe, plan a refactor across many files, or reduce codebase size and complexity.
 ---
 
 # Consolidation Audit
 
-Produce a consolidation audit: map the codebase, find duplication & drift, group findings into implementable units, and sequence them by risk. Output documents use the templates in `assets/templates/`.
+Produce one comprehensive consolidation audit: map the codebase, find duplication & drift, verify/refute each candidate, group surviving findings into implementable action groups inside the audit, and sequence those groups by risk. Output the audit as one self-contained document using `assets/templates/consolidation-audit-template.md`.
+
+Do not create separate action-groups or commit-plan documents unless the user explicitly asks for those additional artifacts.
 
 ## Workflow
 
@@ -15,7 +17,7 @@ Start by reading AGENTS.md / CLAUDE.md / README for conventions, build and test 
 2. **Find consolidation opportunities.** Look for duplicated logic, copy-pasted helpers, drift between parallel implementations, architectural mismatches, and abstractions that should exist but don't. Each finding = Issue (with evidence) + Recommendation. Decompose the search two ways: per-area readers (each owns a module/layer, reports local findings plus cross-module suspicions) and whole-repo hunters for cross-cutting redundancy (duplicate/near-duplicate modules, dead code & unused exports, repeated micro-patterns, constant/type drift, dependency surface, test duplication), seeded by those suspicions. When the harness supports parallel subagents, run these as a fan-out; otherwise sequentially.
 3. **Verify, then group.** Verify every finding - current and carried-forward - against the live code before it makes the list: grep for references before calling anything dead, confirm two implementations are behavior-identical before calling them duplicates, and for high-consequence removals verify adversarially (try to refute). Record false positives and stale findings in a "Considered & Rejected" section rather than dropping them silently (the verify-review-findings discipline, applied to your own audit - prior and current). Then organize survivors into action groups by file overlap, dependency chains, and shared change patterns - each group a cohesive unit of work.
 4. **Sequence by risk.** Order groups into phases: independent/low-risk first, cross-cutting/high-risk later. Treat test coverage as a continuous concern across every group.
-5. **Plan the commits.** Break the approved groups into a commit plan - files staged plus one commit-message line each.
+5. **Write one thorough audit.** Include scope, architecture snapshot, findings, evidence, impact, recommendations, considered/rejected claims, integrated action groups, recommended implementation sequence, test-suite analysis, verification performed, and gates not run. Keep the audit as the single source of truth.
 
 ## Thoroughness & subagent budget
 
@@ -29,12 +31,10 @@ Match model to task, not to ambition: reserve the strongest tier for judgment & 
 
 ## Templates (`assets/templates/`)
 
-- `consolidation-audit-template.md` - the audit doc: approach, architecture snapshot, findings & recommendations, master action groups, test-suite analysis.
-- `action-groups-template.md` - findings reorganized into implementation groups with impact/risk, ordering, and a summary table.
-- `commit-plan-template.md` - the staged git commit plan to execute the groups.
+- `consolidation-audit-template.md` - the single audit doc: scope, approach, architecture snapshot, verified findings, considered/rejected claims, integrated action groups, recommended sequence, test-suite analysis, and verification log.
 
 ## Notes
 
 - This produces a plan, not edits. Get approval on the action groups before implementing.
-- To implement the approved action groups, use the phased-implementation skill: one group at a time, gate between phases, and keep the action-groups and commit-plan docs updated as the source of truth.
+- To implement approved action groups, use the phased-implementation skill: one group at a time, gate between phases, and keep the audit doc updated as the source of truth.
 - For finer-grained, behavior-preserving cleanups within a change, use the simplification-review skill; for comment cleanup, the comment-style skill.

@@ -1,7 +1,17 @@
 # Codebase Consolidation Audit ([Project Name])
 
 **Last Updated:** [Date]
-**Codebase Size:** [X source files in src/]
+**Scope:** [Repo/path/branch/diff surface audited]
+**Codebase Size:** [X source files / Y lines, with exclusions named]
+**Mode:** [Read-only audit / implementation plan only]
+
+## Executive Summary
+
+- **Confirmed findings:** [Count] across [areas].
+- **Highest-value consolidation targets:** [Short list of the most important groups].
+- **Biggest risks:** [Short list of areas that need careful sequencing].
+- **Clean areas checked:** [Boundary scans or suspected issues that were refuted].
+- **Recommended next move:** [First action group or decision to make].
 
 ## Approach
 
@@ -9,7 +19,9 @@
 - [Describe second area: e.g., walked main interaction/request flow to follow data flow, permissions, routing, and historical patterns]
 - [Describe third area: e.g., reviewed core service stacks for duplication & drift]
 - [Describe fourth area: e.g., mapped UI/presentation layer for repeated patterns & execution flows]
+- [Describe cross-cutting hunts: dead exports, duplicate modules, dependency boundaries, constants/schema drift, test duplication]
 - [Describe testing: checked test suite to align coverage gaps with the above systems]
+- [Describe verification discipline: every included claim was checked against live code; false positives are listed below]
 
 ## Current Architecture Snapshot
 
@@ -19,7 +31,7 @@
 - `[path/to/main.ts]` ([X] lines) - [Brief description: initialization, dependency wiring, etc.]
 - `[path/to/other-core.ts]` ([X] lines) - [Brief description]
 
-### Services & [Domain Area] ([X]+ files)
+### Services and [Domain Area] ([X]+ files)
 
 - **[Service Category 1]**: [List key files with line counts and brief descriptions]
   - `path/file1.ts` ([X] lines) - [Description]
@@ -37,21 +49,34 @@
 - [Describe organization of presentation layer]
 - [List key directories and file counts]
 
-### [Utilities/Helpers] ([X]+ files)
+### Utilities and Helpers ([X]+ files)
 
 - **[Category 1]**: [List utility files]
 - **[Category 2]**: [List utility files]
 - **[Category 3]**: [List utility files]
 
-### [Configuration & Types] ([X] files)
+### Configuration and Types ([X] files)
 
 - [List configuration and type definition files]
 
 ---
 
-## Findings & Consolidation Opportunities
+## Finding Index
 
-### 1) [Finding Title: Describe the architectural mismatch or duplication]
+| ID | Area | Finding | Risk | Action Group |
+| -- | ---- | ------- | ---- | ------------ |
+| F1 | [Area] | [Short finding title] | [Low/Med/High] | [Group A] |
+| F2 | [Area] | [Short finding title] | [Low/Med/High] | [Group B] |
+
+---
+
+## Findings and Consolidation Opportunities
+
+### F1. [Finding Title: Describe the architectural mismatch or duplication]
+
+**Status:** Confirmed
+**Risk:** [Low/Medium/High]
+**Action Group:** [Group A/B/etc.]
 
 **Issue:**
 
@@ -59,9 +84,30 @@
 - [Bullet point with evidence or concrete examples]
 - [Bullet point explaining the impact or consequence]
 
-**Recommendation:** [Specific actionable recommendation to address this issue]
+**Evidence:**
 
-### 2) [Finding Title: Another issue]
+- `[path/to/file.ts]` - [line/function/module evidence]
+- `[path/to/other.ts]` - [line/function/module evidence]
+- [Command output or search pattern if relevant]
+
+**Impact:**
+
+- [Why this matters: drift, review cost, bug risk, performance, boundary confusion]
+
+**Recommendation:**
+
+- [Specific actionable recommendation to address this issue]
+- [Non-goals or behavior to preserve]
+
+**Validation Needed If Implemented:**
+
+- [Focused tests/gates/commands]
+
+### F2. [Finding Title: Another issue]
+
+**Status:** Confirmed
+**Risk:** [Low/Medium/High]
+**Action Group:** [Group B]
 
 **Issue:**
 
@@ -69,17 +115,37 @@
 - [Specific examples]
 - [Impact]
 
-**Recommendation:** [How to fix it]
+**Evidence:**
 
-### 3) [Finding Title: Continue pattern]
+- `[path/to/file.ts]` - [line/function/module evidence]
+
+**Recommendation:**
+
+- [How to fix it]
+
+**Validation Needed If Implemented:**
+
+- [Focused tests/gates/commands]
+
+### F3. [Finding Title: Continue pattern]
+
+**Status:** Confirmed
+**Risk:** [Low/Medium/High]
+**Action Group:** [Group C]
 
 **Issue:**
 
 - [Details]
 
-**Recommendation:** [Solution]
+**Evidence:**
 
-### 4) [Add as many findings as discovered]
+- [Details]
+
+**Recommendation:**
+
+- [Solution]
+
+### F4. [Add as many findings as discovered]
 
 **Issue:**
 
@@ -89,115 +155,126 @@
 
 ---
 
-## Considered & Rejected
+## Considered and Rejected
 
-_Claims checked against the live code and discarded - kept so they are not re-raised next audit._
+_Claims checked against the live code and discarded so they are not re-raised next audit._
 
-- **[Rejected claim title]** - [why: false positive / intentional divergence / already resolved / status-quo correct], with the evidence that settled it.
+- **[Rejected claim title]** - [why: false positive / intentional divergence / already resolved / status quo correct], with the evidence that settled it.
 - **[Another rejected/stale claim]** - [reason + evidence].
 
 ---
 
-## Master Consolidation Action Groups
+## Integrated Action Groups
 
-_(Current audit + prior carryovers)_
+These groups are the implementation plan. Do not create a separate action-groups document unless explicitly requested.
 
-### 0. Quick Map (What's in Each Group)
+### Quick Map
 
-| Group | Theme                                          | Carryovers     | New findings ([Date])          |
-| ----- | ---------------------------------------------- | -------------- | ------------------------------ |
-| A     | [Theme A: e.g., Services & runtime]            | [Prior issues] | [New findings from this audit] |
-| B     | [Theme B: e.g., Configuration & architecture]  | [Prior issues] | [New findings]                 |
-| C     | [Theme C: e.g., UI & interaction patterns]     | [Prior issues] | [New findings]                 |
-| D     | [Theme D: e.g., Parsing & validation]          | [Prior issues] | [New findings]                 |
-| E     | [Theme E: e.g., Error handling & presentation] | [Prior issues] | [New findings]                 |
-| F     | [Theme F: e.g., Observability & tests]         | [Prior issues] | [New findings]                 |
-| G     | [Theme G: e.g., Command handlers & utilities]  | [Prior issues] | [New findings]                 |
+| Group | Theme | Findings | Risk | Suggested Order | Key Benefit |
+| ----- | ----- | -------- | ---- | --------------- | ----------- |
+| A | [Theme A] | F1, F2 | [Low/Med/High] | 1 | [Benefit] |
+| B | [Theme B] | F3 | [Low/Med/High] | 2 | [Benefit] |
+| C | [Theme C] | F4, F5 | [Low/Med/High] | 3 | [Benefit] |
 
-Below is the per-group view: what remains, what changed, and how to proceed.
-
----
-
-### Group A – [Group Name & Theme]
+### Group A: [Group Name and Theme]
 
 **Theme:** [One-line description of what this group addresses]
+**Findings:** [F1, F2]
+**Risk:** [Low/Medium/High] - [why]
+**Estimated Impact:** [Consistency gain / complexity reduction / risk reduction]
 
-**From [previous audit name]**
+**Why Group Together**
 
-- [Issue/finding from prior audit that belongs in this group]
-- [Another prior issue]
+- [Shared files, dependency chain, same refactor shape, or same decision point]
 
-**From [current audit name]**
+**Implementation Notes**
 
-- [New finding from current audit (reference F# from above)]
-- [Another new finding]
+- [Action item]
+- [Action item]
+- [Behavior to preserve]
 
-**Net plan (delta)**
+**Files Likely Affected**
 
-- [Consolidated action item combining old + new issues]
-- [Another action item]
-- [Clear implementation steps]
+- `path/to/file1.ts` - [change]
+- `path/to/file2.ts` - [change]
 
----
+**Validation**
 
-### Group B – [Group Name & Theme]
+- [Commands/tests/manual checks]
+
+**Open Decisions**
+
+- [Decision or "None"]
+
+### Group B: [Group Name and Theme]
 
 **Theme:** [Description]
+**Findings:** [F3]
+**Risk:** [Low/Medium/High] - [why]
+**Estimated Impact:** [Impact]
 
-**From [previous audit]**
+**Why Group Together**
 
-- [Prior issues]
+- [Explanation]
 
-**From [current audit]**
+**Implementation Notes**
 
-- [New findings]
-
-**Net plan (delta)**
-
-1. [Numbered action items work well for complex plans]
+1. [First action]
 2. [Second action]
 3. [Third action]
 
----
+**Files Likely Affected**
 
-### Group C – [Group Name & Theme]
+- `path/to/file.ts` - [change]
+
+**Validation**
+
+- [Commands/tests/manual checks]
+
+### Group C: [Group Name and Theme]
 
 **Theme:** [Description]
+**Findings:** [F4, F5]
+**Risk:** [Low/Medium/High] - [why]
 
-**From [previous audit]**
+**Why Group Together**
 
-- [Prior issues]
+- [Explanation]
 
-**From [current audit]**
-
-- [New findings]
-
-**Net plan (delta)**
+**Implementation Notes**
 
 - [Action items]
-- [Can use bullets or numbers]
+
+**Files Likely Affected**
+
+- [Files]
+
+**Validation**
+
+- [Commands/tests/manual checks]
 
 ---
 
-### Group D – [Continue pattern for remaining groups]
+## Recommended Implementation Sequence
 
-**Theme:** [Description]
+This replaces the old separate commit-plan artifact. Include phases and gates, not staged `git add` commands, unless the user explicitly asks for commit commands.
 
-**From [previous audit]**
+### Phase 1: [Phase Name] ([Risk Level])
 
-- [Issues]
+**Groups:** [List group letters]
+**Why first:** [Justification]
 
-**From [current audit]**
+1. **Group [X]** - [Group name]
+2. **Group [Y]** - [Group name]
 
-- [Findings]
+### Phase 2: [Phase Name] ([Risk Level])
 
-**Net plan (delta)**
+**Groups:** [List group letters]
+**Why second:** [Justification]
 
-- [Actions]
+1. **Group [Z]** - [Group name]
 
----
-
-### [Repeat for Groups E, F, G, etc.]
+### Phase 3+: [Continue as needed]
 
 ---
 
@@ -207,17 +284,35 @@ Below is the per-group view: what remains, what changed, and how to proceed.
 
 **Test Infrastructure:** [Test framework/runner details]
 
-| Category           | Files                | Test Status                                |
-| ------------------ | -------------------- | ------------------------------------------ |
+| Category | Files | Test Status |
+| -------- | ----- | ----------- |
 | [Component Area 1] | [file1.ts, file2.ts] | [TESTED / PARTIAL / UNTESTED - with notes] |
-| [Component Area 2] | [files]              | [Status + notes]                           |
-| [Component Area 3] | [files]              | [Status + notes]                           |
-| [Component Area 4] | [files]              | [Status + notes]                           |
-| [Component Area 5] | [files]              | [Status + notes]                           |
-| [etc.]             | [etc.]               | [etc.]                                     |
+| [Component Area 2] | [files] | [Status + notes] |
+| [Component Area 3] | [files] | [Status + notes] |
 
 ### Key Testing Gaps
 
 1. [Major testing gap #1: describe what's untested and why it matters]
 2. [Major testing gap #2: describe missing coverage area]
 3. [Major testing gap #3: continue for all significant gaps]
+
+### Test Strategy by Action Group
+
+- **Group A:** [Focused test/gate plan]
+- **Group B:** [Focused test/gate plan]
+- **Group C:** [Focused test/gate plan]
+
+---
+
+## Verification Performed
+
+- [Command/read/trace performed]
+- [Boundary scan performed]
+- [Tool output inspected]
+- [Manual source trace completed]
+
+## Not Run / Limitations
+
+- [Commands not run and why]
+- [Scope intentionally excluded]
+- [Facts that may need re-verification before implementation]
