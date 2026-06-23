@@ -15,7 +15,7 @@ This skill combines official React correctness guidance with framework-neutral p
 - React hydration and `suppressHydrationWarning`: https://react.dev/reference/react-dom/client/hydrateRoot
 - React with TypeScript: https://react.dev/learn/typescript
 - React TypeScript Cheatsheet: https://react-typescript-cheatsheet.netlify.app/
-- React-layer accessibility and untrusted content cross-reference the `web-design-guidelines` and `security-remediation` skills.
+- React-layer accessibility falls back to a self-contained checklist in `react-core.md`; the `web-design-guidelines` skill (optional, not bundled with this skill) and the `security-remediation` skill cover the general accessibility and untrusted-input rules when installed.
 - Vercel Introducing React Best Practices: https://vercel.com/blog/introducing-react-best-practices
 - Vercel agent skills repo: https://github.com/vercel-labs/agent-skills
 
