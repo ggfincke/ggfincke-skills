@@ -1,10 +1,12 @@
 # Mega Review ([Project Name])
 
 **Last Updated:** [Date]
+**Audit File:** `[path/to/this-doc.md]`
+**Lifecycle Status:** Proposed / Approved / In Progress / Complete / Partially Complete
 **Scope:** [Repo/path/branch/diff surface reviewed]
 **Codebase Size:** [X source files / Y lines, with exclusions named]
 **Lenses run:** [bug-hunt, simplification, consolidation, security, test-gaps, performance - note any scoped out and why]
-**Mode:** Read-only review / implementation plan only
+**Mode:** Read-only review / implementation plan / implementation tracking
 **Effort:** [Standard / Thorough / Exhaustive - agent count & model tiers used, caps honored]
 
 ## Executive Summary
@@ -33,15 +35,15 @@ _Brief - enough to ground the findings. Lean on consolidation-audit's fuller map
 
 ## Finding Index
 
-_One row per root cause. The Lens column lists every lens it surfaced under (dedupe across lenses)._
+_One row per root cause. The Lens column lists every lens it surfaced under (dedupe across lenses). For test gaps, use priority/importance rather than defect severity when severity is not meaningful._
 
-| ID | Lens(es) | Finding | Severity | Confidence | Risk | Action Group |
-| -- | -------- | ------- | -------- | ---------- | ---- | ------------ |
-| F1 | bug-hunt | [Short title] | [Crit/High/Med/Low] | [H/M/L] | [Low/Med/High] | A |
-| F2 | consolidation, simplification | [Short title] | [..] | [..] | [..] | A |
-| F3 | security | [Short title] | [..] | [..] | [..] | B |
-| F4 | performance | [Short title] | [..] | [..] | [..] | C |
-| F5 | test-gaps | [Short title] | [..] | [..] | [..] | C |
+| ID | Lens(es) | Finding / Recommendation | Severity / Priority | Confidence | Risk | Action Group | Status |
+| -- | -------- | ------------------------ | ------------------- | ---------- | ---- | ------------ | ------ |
+| F1 | bug-hunt | [Short title] | [Crit/High/Med/Low] | [H/M/L] | [Low/Med/High] | A | Proposed |
+| F2 | consolidation, simplification | [Short title] | [..] | [..] | [..] | A | Proposed |
+| F3 | security | [Short title] | [..] | [..] | [..] | B | Proposed |
+| F4 | performance | [Short title] | [..] | [..] | [..] | C | Proposed |
+| F5 | test-gaps | [Behavior to protect] | [High/Med/Low priority] | [H/M/L] | [N/A or Low/Med/High] | C | Proposed |
 
 ---
 
@@ -81,12 +83,28 @@ _Grouped by lens for readability; cross-lens findings appear once, under their p
 **Severity / Confidence / Risk:** [..] / [..] / [..]
 **Action Group:** [A]
 
-**Issue / Evidence / Recommendation / Validation:** [as above]
+**Issue:** [what is unnecessarily complex, duplicated locally, inefficient, or harder to understand than needed]
+**Behavior preservation:** [outputs / side effects / API / error behavior that must stay unchanged]
+**Evidence:** [live references showing duplication, dead code, confusing control flow, or hot-path efficiency issue]
+**Recommendation:** [behavior-preserving simplification; no public API or data-shape changes unless explicitly approved]
+**Validation:** [focused tests/checks/manual comparison needed]
+**Considered and rejected:** [nearby simplifications checked but not recommended, with reason]
 
 ### Consolidation / Architecture
 
 #### F[n]. [Finding title]
-[same shape]
+
+**Status:** Confirmed
+**Lens(es):** consolidation / architecture
+**Severity / Confidence / Risk:** [..] / [..] / [..]
+**Action Group:** [A]
+
+**Issue:** [duplication, drift, architectural mismatch, or missing abstraction]
+**Evidence:** [parallel implementations/files/symbols; why they are behavior-identical or intentionally divergent]
+**Impact:** [drift risk, maintenance cost, boundary confusion, bug risk, performance impact]
+**Recommendation:** [shared abstraction, deletion, relocation, or documented divergence]
+**Validation:** [tests/checks/grep confirmations needed]
+**Considered and rejected:** [similar candidates checked and refuted]
 
 ### Security
 
@@ -98,10 +116,12 @@ _Grouped by lens for readability; cross-lens findings appear once, under their p
 **Vulnerability class:** [OWASP/CWE when useful]
 **Action Group:** [B]
 
-**Evidence:** [source -> trust boundary -> propagation -> sink; why current guard is insufficient]
+**Evidence:** [attacker-controlled source -> trust boundary -> propagation -> dangerous sink or missing enforcement point]
+**Current guard:** [what exists today and why it is insufficient]
 **Impact:** [who can exploit, what they gain, preconditions]
-**Recommendation:** [minimal fix; alternative if invasive]
+**Recommendation:** [minimal fix; alternative if invasive; existing primitive to use]
 **Regression tests:** [malicious case that must fail safe; legitimate case that must still work]
+**Residual risk after fix:** [remaining exposure or "None expected"]
 
 ### Performance
 
@@ -117,14 +137,25 @@ _Grouped by lens for readability; cross-lens findings appear once, under their p
 **Recommendation:** [the fix; outputs must be preserved]
 **Validation:** [how to confirm the win without changing behavior]
 
+#### Needs Measurement / Runtime Context
+
+- **[Suspicion]** - [static evidence], [why it may matter], [exact measurement/profile/runtime context needed before promoting to a confirmed finding].
+
 ### Test gaps
 
 #### F5. [Behavior to protect]
 
 **Lens(es):** test-gaps
+**Priority:** [High/Med/Low - importance of the behavior, not defect severity]
 **Why it matters:** [what breaks if wrong - data integrity / money / auth / complex logic]
-**The test:** [inputs, scenario, what to assert]
+**Test setup detected:** [framework/runner/location/fixtures relevant to this test]
+**The test:** [inputs, scenario, and exact assertion]
+**Assertion quality check:** [why this would fail for a real regression rather than just testing mocks]
 **Action Group:** [C]
+
+#### Deliberately Not Testing
+
+- **[Area/behavior]** - [why it is not worth testing: trivial, type-guaranteed, framework glue, low-risk display, too exhaustive].
 
 ---
 
@@ -149,22 +180,26 @@ These groups are the implementation plan. Do not create a separate action-groups
 
 ### Quick Map
 
-| Group | Theme | Findings | Lenses | Risk | Suggested Order | Key Benefit |
-| ----- | ----- | -------- | ------ | ---- | --------------- | ----------- |
-| A | [Theme] | F1, F2 | bug-hunt, simplification | [..] | 1 | [Benefit] |
-| B | [Theme] | F3 | security | [..] | 2 | [Benefit] |
-| C | [Theme] | F4, F5 | perf, test-gaps | [..] | 3 | [Benefit] |
+| Group | Theme | Findings | Lenses | Risk | Suggested Order | Status | Key Benefit |
+| ----- | ----- | -------- | ------ | ---- | --------------- | ------ | ----------- |
+| A | [Theme] | F1, F2 | bug-hunt, simplification | [..] | 1 | Proposed | [Benefit] |
+| B | [Theme] | F3 | security | [..] | 2 | Proposed | [Benefit] |
+| C | [Theme] | F4, F5 | perf, test-gaps | [..] | 3 | Proposed | [Benefit] |
 
 ### Group A: [Name and theme]
 
 **Theme:** [One line]
 **Findings:** [F1, F2]
+**Status:** Proposed / Approved / In Progress / Done / Deferred
 **Risk:** [Low/Med/High] - [why]
 **Why group together:** [shared files / dependency chain / same change shape]
 **Implementation notes:** [actions; behavior to preserve]
 **Files likely affected:** `[path]` - [change]
 **Validation:** [commands/tests/manual checks]
 **Open decisions:** [decision or "None"]
+**Implementation result:** [empty until implemented; summary of actual change]
+**Implemented validation:** [empty until implemented; commands/tests run and outcome]
+**Deviations / deferrals:** [empty until implemented; anything that changed from the plan and why]
 
 ### Group B / C: [continue]
 
@@ -176,6 +211,9 @@ Phases and gates, not staged `git add` commands, unless commit commands are expl
 
 ### Phase 1: [Name] ([Risk level])
 **Groups:** [letters] - **Why first:** [justification]
+**Status:** Proposed / Approved / In Progress / Done / Deferred
+**Gate / validation:** [commands, tests, or manual checks required before moving on]
+**Done when:** [observable condition that closes the phase]
 
 ### Phase 2+: [continue]
 
@@ -198,6 +236,15 @@ Phases and gates, not staged `git add` commands, unless commit commands are expl
 
 - [Commands/reads/traces run; refute panels; gates executed]
 
+## Implementation Log
+
+_Update this section only after approved action groups are implemented._
+
+| Date | Group(s) | Status Change | Files Changed | Validation | Deviations / Deferrals |
+| ---- | -------- | ------------- | ------------- | ---------- | ---------------------- |
+| [Date] | [A] | [Proposed -> Done] | [paths] | [commands + result] | [None / details] |
+
 ## Not Run / Limitations
 
 - [Commands not run and why; scope intentionally excluded; facts to re-verify before implementation]
+- [Runtime/profile/production-like data unavailable; measurements needed before promoting any "Needs Measurement" performance items]
