@@ -1,19 +1,34 @@
 // rules/comment-style-guide.js
-// enforces `&` instead of "and" & `w/` instead of "with" in comments
+// enforces the full comment-style abbreviation set in comments (& w/ w/o calc ...)
+
+// keep in parity w/ COMMENT_WORD_REPLACEMENTS in assets/check_comment_style.py
+const REPLACEMENTS = {
+  and: '&',
+  with: 'w/',
+  without: 'w/o',
+  calculate: 'calc',
+  configuration: 'config',
+  information: 'info',
+  function: 'func',
+  variable: 'var',
+  parameters: 'params',
+}
+
+const WORD_RE = new RegExp(`\\b(${Object.keys(REPLACEMENTS).join('|')})\\b`, 'gi')
 
 const rule = {
   meta: {
     type: 'suggestion',
     docs: {
       description:
-        'Enforce comment style abbreviations (& for and, w/ for with)',
+        'Enforce comment-style abbreviations (& w/ w/o calc config info func var params)',
       category: 'Stylistic Issues',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      useAmpersand: 'Use "&" instead of "and" in comments',
-      useWith: 'Use "w/" instead of "with" in comments',
+      useAbbreviation:
+        'Use comment-style abbreviations (& w/ w/o calc config info func var params).',
     },
   },
 
@@ -21,47 +36,30 @@ const rule = {
   {
     const sourceCode = context.sourceCode ?? context.getSourceCode()
 
-    const stylePatterns = [
-      {
-        pattern: /\band\b/gi,
-        messageId: 'useAmpersand',
-        replacement: '&',
-      },
-      {
-        pattern: /\bwith\b/gi,
-        messageId: 'useWith',
-        replacement: 'w/',
-      },
-    ]
-
     const wrapComment = (comment, text) =>
       comment.type === 'Line' ? `//${text}` : `/*${text}*/`
 
     return {
       Program()
       {
-        const comments = sourceCode.getAllComments()
-
-        for (const comment of comments)
+        for (const comment of sourceCode.getAllComments())
         {
           const text = comment.value
+          WORD_RE.lastIndex = 0
+          if (!WORD_RE.test(text)) continue
 
-          for (const { pattern, messageId, replacement } of stylePatterns)
-          {
-            pattern.lastIndex = 0
-            if (!pattern.test(text)) continue
-
-            context.report({
-              loc: comment.loc,
-              messageId,
-              fix(fixer)
-              {
-                pattern.lastIndex = 0
-                const newText = text.replace(pattern, replacement)
-                return fixer.replaceText(comment, wrapComment(comment, newText))
-              },
-            })
-          }
+          context.report({
+            loc: comment.loc,
+            messageId: 'useAbbreviation',
+            fix(fixer)
+            {
+              const newText = text.replace(
+                WORD_RE,
+                (match) => REPLACEMENTS[match.toLowerCase()]
+              )
+              return fixer.replaceText(comment, wrapComment(comment, newText))
+            },
+          })
         }
       },
     }

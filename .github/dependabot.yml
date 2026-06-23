@@ -1,0 +1,8 @@
+# .github/dependabot.yml
+# keep SHA-pinned GitHub Actions current w/ version-bump PRs
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

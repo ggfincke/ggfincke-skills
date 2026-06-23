@@ -2,6 +2,20 @@
 
 Use this reference for production performance work in React apps. It adapts framework-neutral parts of Vercel's React Best Practices and avoids Next.js-specific APIs by default.
 
+## Contents
+
+- [Performance stance](#performance-stance)
+- [Async waterfalls](#async-waterfalls)
+- [Suspense and loading](#suspense-and-loading)
+- [Bundle hygiene](#bundle-hygiene)
+- [Client data fetching](#client-data-fetching)
+- [Event listeners and browser APIs](#event-listeners-and-browser-apis)
+- [Re-render work](#re-render-work)
+- [Transitions and deferred work](#transitions-and-deferred-work)
+- [Rendering and layout](#rendering-and-layout)
+- [JavaScript hot paths](#javascript-hot-paths)
+- [Server-rendered React](#server-rendered-react)
+
 ## Performance stance
 
 Optimize code the user can feel or the tools can show:

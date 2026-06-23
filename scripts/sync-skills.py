@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
-import sys
 from pathlib import Path
 
 import always_on
@@ -16,6 +16,26 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
 PROJECTS_DIR = ROOT / "projects"
 GLOBAL_AGENTS = ("codex", "agents", "claude")
+# project-repo names index projects/<name>/; a bare slug, never a path
+PROJECT_REPO_RE = re.compile(r"^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$")
+
+
+def is_within(path: Path, parent: Path) -> bool:
+    # true when path is parent itself or nested under it (both resolved)
+    path = path.resolve()
+    parent = parent.resolve()
+    return path == parent or parent in path.parents
+
+
+def assert_target_outside_repo(target_root: Path) -> None:
+    # never install into the canonical source tree: a target that resolves into
+    # this repo means a misset CODEX_HOME/AGENTS_HOME/CLAUDE_HOME or --project,
+    # & under --force --mode copy would delete the source skills it copies from
+    if is_within(target_root, ROOT):
+        raise SystemExit(
+            f"refusing install target {target_root}: it resolves inside this repo "
+            f"({ROOT}). Check CODEX_HOME/AGENTS_HOME/CLAUDE_HOME & --project."
+        )
 
 
 def default_targets(project: Path | None) -> dict[str, Path]:
@@ -98,6 +118,11 @@ def install_skill(src: Path, target_root: Path, mode: str, force: bool, dry_run:
     if dest.exists() or dest.is_symlink():
         if dest.is_symlink() and dest.resolve() == src.resolve() and mode == "link":
             return f"ok existing link {dest}"
+        if not dest.is_symlink() and dest.resolve() == src.resolve():
+            raise SystemExit(
+                f"refusing to install {src.name}: destination is the source itself "
+                f"({dest}); removing it would delete the canonical skill"
+            )
         if not force:
             return f"skip existing {dest} (use --force to replace)"
         if not dry_run:
@@ -196,7 +221,17 @@ def main() -> int:
                 + ", ".join(leaked)
                 + ". Use project-agents or project-claude."
             )
+        if not PROJECT_REPO_RE.fullmatch(args.project_repo):
+            raise SystemExit(
+                f"invalid --project-repo {args.project_repo!r}: use a bare projects/ "
+                "subdirectory name, not a path (no '/', '..', or absolute paths)"
+            )
         base_dir = PROJECTS_DIR / args.project_repo
+        if base_dir.resolve().parent != PROJECTS_DIR.resolve():
+            raise SystemExit(
+                f"--project-repo {args.project_repo!r} must resolve to a direct child of "
+                f"{PROJECTS_DIR}; refusing to read skills from outside projects/"
+            )
         if not base_dir.is_dir():
             raise SystemExit(f"unknown project repo {args.project_repo!r}: {base_dir} does not exist")
         target_names = requested
@@ -211,6 +246,9 @@ def main() -> int:
     if not skills:
         print(f"No installable skills found in {base_dir}.")
         return 0
+
+    for _, target_root in targets:
+        assert_target_outside_repo(target_root)
 
     for target_name, target_root in targets:
         print(f"[{target_name}] {target_root}")
