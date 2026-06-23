@@ -19,6 +19,15 @@ PROJECTS_DIR = ROOT / "projects"
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PORTABLE_FIELDS = {"name", "description"}
 INVALID_PLAIN_SCALAR_RE = re.compile(r":(?:[ \t]|$)")
+# skill-local resource references in SKILL.md (references/... or assets/...),
+# scoped so target-repo paths (convex/, src/, scripts/...) never match
+RESOURCE_REF_RE = re.compile(r"(?<![\w./-])(references|assets)/[\w./-]*[\w-]")
+
+
+def is_within(path: Path, parent: Path) -> bool:
+    path = path.resolve()
+    parent = parent.resolve()
+    return path == parent or parent in path.parents
 
 
 @dataclass
@@ -116,6 +125,42 @@ def find_skills(selected: list[str]) -> tuple[list[Path], list[SkillIssue]]:
     return all_dirs, issues
 
 
+def readme_issues(skill_dir: Path) -> list[SkillIssue]:
+    # the repo contract bans per-skill README files; SKILL.md is the entry point
+    issues: list[SkillIssue] = []
+    for candidate in sorted(skill_dir.rglob("*")):
+        if candidate.is_file() and candidate.name.lower() == "readme.md":
+            issues.append(
+                SkillIssue(candidate, "per-skill README is banned; keep instructions in SKILL.md & references/")
+            )
+    return issues
+
+
+def resource_link_issues(skill_dir: Path, skill_file: Path) -> list[SkillIssue]:
+    # flag references/... or assets/... paths in SKILL.md that do not exist;
+    # only checked when the skill actually has that resource dir, so project
+    # skills that point at a target repo are never touched
+    issues: list[SkillIssue] = []
+    text = skill_file.read_text(encoding="utf-8")
+    seen: set[str] = set()
+    for match in RESOURCE_REF_RE.finditer(text):
+        rel = match.group(0)
+        if rel in seen:
+            continue
+        seen.add(rel)
+        top = match.group(1)
+        if not (skill_dir / top).is_dir():
+            continue
+        if ".." in rel.split("/"):
+            continue
+        target = skill_dir / rel
+        if not is_within(target, skill_dir):
+            continue
+        if not target.exists():
+            issues.append(SkillIssue(skill_file, f"SKILL.md references missing resource {rel}"))
+    return issues
+
+
 def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
     issues: list[SkillIssue] = []
     skill_file = path / "SKILL.md"
@@ -124,6 +169,8 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
         issues.append(
             SkillIssue(path, "folder name must use lowercase letters, digits, and hyphens")
         )
+
+    issues.extend(readme_issues(path))
 
     try:
         frontmatter, _ = parse_frontmatter(skill_file)
@@ -157,6 +204,8 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
     for message in always_on.marker_issues(body):
         issues.append(SkillIssue(skill_file, message))
 
+    issues.extend(resource_link_issues(path, skill_file))
+
     return issues
 
 
@@ -168,13 +217,19 @@ def main() -> int:
     parser.add_argument(
         "--strict-frontmatter",
         action="store_true",
-        help="Fail when frontmatter includes fields beyond name and description",
+        help="(default) fail when frontmatter includes fields beyond name and description",
+    )
+    parser.add_argument(
+        "--lenient-frontmatter",
+        action="store_true",
+        help="Downgrade non-portable frontmatter to a warning instead of an error",
     )
     args = parser.parse_args()
 
+    strict_frontmatter = not args.lenient_frontmatter
     skills, issues = find_skills(args.skill)
     for skill in skills:
-        issues.extend(validate_skill(skill, args.strict_frontmatter))
+        issues.extend(validate_skill(skill, strict_frontmatter))
 
     if not skills and not args.skill:
         print("No skills found in skills/ or projects/.")

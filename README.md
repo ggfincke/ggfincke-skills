@@ -14,7 +14,8 @@ This repo is the source of truth. Skills live here in a portable format, then ge
 - `scripts/validate-skills.py`: validates local skill folders.
 - `scripts/sync-skills.py`: copies or symlinks skills into Codex, Claude Code, or a target project, and emits always-on rules into each agent's global instruction file.
 - `scripts/always_on.py`: shared helper that extracts skills' always-on blocks and manages the generated region.
-- `scripts/hooks/`: git hooks; `pre-commit` runs validation before each commit.
+- `scripts/hooks/`: git hooks; `pre-commit` runs validation + tests before each commit.
+- `tests/`: regression tests for the sync, always-on parser, and comment-style checker.
 - `Makefile`: convenience wrappers around the scripts (`make help` lists targets).
 - `docs/interop.md`: notes on how Codex and Claude Code source skills.
 
@@ -31,19 +32,23 @@ Agent-specific behavior can be added later, but it should be explicit because it
 
 ## Quick Start
 
-Validate all canonical skills:
+Validate all canonical skills, then run the regression tests:
 
 ```bash
 python3 scripts/validate-skills.py   # or: make validate
+make check                            # validate + tests
 ```
 
-Enable the pre-commit hook so validation runs automatically before each commit:
+Validation is strict by default: frontmatter beyond `name`/`description` fails
+unless you pass `--lenient-frontmatter`.
+
+Enable the pre-commit hook so validation + tests run automatically before each commit:
 
 ```bash
 make install-hooks
 ```
 
-CI runs the same validation on every push and pull request
+CI runs the same validation and tests on every push and pull request
 (`.github/workflows/validate.yml`).
 
 Install all skills into personal Codex and Claude locations by symlink for active development:

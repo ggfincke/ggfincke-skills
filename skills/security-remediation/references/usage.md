@@ -2,6 +2,22 @@
 
 Ready-made prompts for the `security-remediation` skill. The first-turn variants start a single-PR security task with a concrete scope (better than "audit the whole repo"). The follow-up prompts steer the work after the first findings report. Fill in the `[BRACKETED]` parts.
 
+## Contents
+
+- [First-turn scope variants](#first-turn-scope-variants)
+  - [A. Endpoint or feature hardening](#a-endpoint-or-feature-hardening)
+  - [B. Injection / data-flow review](#b-injection--data-flow-review)
+  - [C. File upload / download safety](#c-file-upload--download-safety)
+  - [D. Webhook / API integration safety](#d-webhook--api-integration-safety)
+  - [E. Dependency / supply-chain remediation](#e-dependency--supply-chain-remediation)
+- [Follow-up prompts after the first report](#follow-up-prompts-after-the-first-report)
+  - [Approve one finding](#approve-one-finding)
+  - [Push back on overbroad remediation](#push-back-on-overbroad-remediation)
+  - [Demand stronger evidence](#demand-stronger-evidence)
+  - [Add missing negative tests](#add-missing-negative-tests)
+  - [Tenant / authz-specific follow-up](#tenant--authz-specific-follow-up)
+  - [Secrets / logging-specific follow-up](#secrets--logging-specific-follow-up)
+
 ## First-turn scope variants
 
 ### A. Endpoint or feature hardening

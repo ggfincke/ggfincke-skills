@@ -13,10 +13,8 @@ from pathlib import Path
 START_RE = re.compile(r"<!--\s*always-on:start[^>]*-->")
 END_RE = re.compile(r"<!--\s*always-on:end\s*-->")
 TITLE_RE = re.compile(r'title\s*=\s*"(?P<title>[^"]+)"')
-BLOCK_RE = re.compile(
-    r"<!--\s*always-on:start(?P<attrs>[^>]*?)-->\n(?P<body>.*?)\n?<!--\s*always-on:end\s*-->",
-    re.DOTALL,
-)
+# single pass over both marker kinds, in document order, for the ordered parser
+MARKER_RE = re.compile(r"<!--\s*always-on:(?P<kind>start|end)\b(?P<attrs>[^>]*?)-->")
 
 # managed region markers in the generated instruction file
 REGION_BEGIN = "<!-- BEGIN ggfincke-skills:always-on -->"
@@ -41,29 +39,63 @@ def instruction_file(agent: str) -> Path:
     return (agent_home(agent) / AGENT_INSTRUCTION[agent][2]).expanduser()
 
 
-def extract_blocks(text: str) -> list[tuple[str, str]]:
-    # return (title, content) for each well-formed always-on block
+def parse_blocks(text: str) -> tuple[list[tuple[str, str]], list[str]]:
+    # one ordered pass shared by extraction & validation so the two never diverge:
+    # extraction emits only well-formed blocks; validation surfaces every malformation
     blocks: list[tuple[str, str]] = []
-    for match in BLOCK_RE.finditer(text):
-        title_match = TITLE_RE.search(match.group("attrs"))
-        title = title_match.group("title") if title_match else "Untitled"
-        blocks.append((title, match.group("body").strip()))
-    return blocks
+    errors: list[str] = []
+    open_start: re.Match[str] | None = None
+
+    for marker in MARKER_RE.finditer(text):
+        if marker.group("kind") == "start":
+            if open_start is not None:
+                errors.append("nested always-on:start before the previous block closed")
+                continue
+            open_start = marker
+            continue
+
+        if open_start is None:
+            errors.append("always-on:end marker without a matching always-on:start")
+            continue
+
+        start, open_start = open_start, None
+        block_errors: list[str] = []
+
+        title_match = TITLE_RE.search(start.group("attrs"))
+        if not title_match:
+            block_errors.append('always-on:start marker missing title="..." attribute')
+
+        raw_body = text[start.end() : marker.start()]
+        if not raw_body.startswith("\n"):
+            block_errors.append("always-on:start marker must be alone on its line (newline before content)")
+
+        content = raw_body.strip()
+        title = title_match.group("title") if title_match else ""
+
+        for delimiter, label in ((REGION_BEGIN, "begin"), (REGION_END, "end")):
+            if delimiter in title or delimiter in content:
+                block_errors.append(f"always-on block contains the generated-region {label} delimiter")
+        if START_RE.search(content) or END_RE.search(content):
+            block_errors.append("always-on block content contains a nested always-on marker")
+
+        errors.extend(block_errors)
+        if not block_errors:
+            blocks.append((title, content))
+
+    if open_start is not None:
+        errors.append("unclosed always-on:start marker (no matching always-on:end)")
+
+    return blocks, errors
+
+
+def extract_blocks(text: str) -> list[tuple[str, str]]:
+    # (title, content) for each well-formed always-on block
+    return parse_blocks(text)[0]
 
 
 def marker_issues(text: str) -> list[str]:
     # surface malformed markers so validation can fail fast
-    starts = list(START_RE.finditer(text))
-    ends = END_RE.findall(text)
-    issues: list[str] = []
-    if len(starts) != len(ends):
-        issues.append(
-            f"unbalanced always-on markers: {len(starts)} start vs {len(ends)} end"
-        )
-    for marker in starts:
-        if not TITLE_RE.search(marker.group(0)):
-            issues.append('always-on:start marker missing title="..." attribute')
-    return issues
+    return parse_blocks(text)[1]
 
 
 def render_region(items: list[tuple[str, str, str]]) -> str:

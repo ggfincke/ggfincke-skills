@@ -23,9 +23,9 @@ Five custom rules, plus core `no-inline-comments`:
 
 | Rule | What it does | Auto-fix |
 |---|---|---|
-| `file-header` | path header on line 1 + description on line 2; takes a `prefixes` option | inserts missing path |
-| `no-jsdoc-blocks` | bans `/** */` blocks | no |
-| `comment-style-guide` | `and` -> `&`, `with` -> `w/` | yes |
+| `file-header` | path header on line 1 + lowercase description on line 2; takes a `prefixes` option | inserts missing path |
+| `no-jsdoc-blocks` | bans all block comments (`/** */` and `/* */`) | no |
+| `comment-style-guide` | full abbreviation set: `and`->`&`, `with`->`w/`, `without`->`w/o`, plus `calc` `config` `info` `func` `var` `params` | yes |
 | `comment-block-length` | caps consecutive `//` at 3 | no |
 | `no-unicode-arrow` | bans the Unicode arrow; use ASCII `->` | yes |
 

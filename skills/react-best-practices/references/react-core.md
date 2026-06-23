@@ -2,6 +2,25 @@
 
 Use this reference for correctness, maintainability, and compiler-friendly React. It is based on official React docs, especially Rules of React, You Might Not Need an Effect, Synchronizing with Effects, Lifecycle of Reactive Effects, Hooks references, and React Compiler docs.
 
+## Contents
+
+- [Purity](#purity)
+- [Hooks](#hooks)
+- [Effects](#effects)
+- [State](#state)
+- [Forms and inputs](#forms-and-inputs)
+- [Refs](#refs)
+- [External stores](#external-stores)
+- [Hydration](#hydration)
+- [Context](#context)
+- [Component APIs](#component-apis)
+- [Accessibility](#accessibility)
+- [Lists and keys](#lists-and-keys)
+- [Escape hatches](#escape-hatches)
+- [Rendering untrusted content](#rendering-untrusted-content)
+- [React Compiler](#react-compiler)
+- [React 19 notes](#react-19-notes)
+
 ## Purity
 
 Components and Hooks must be pure:
@@ -143,7 +162,16 @@ Do not define components inside components. Nested component definitions reset s
 
 ## Accessibility
 
-Accessibility is mostly correct semantic markup, which is framework-agnostic; for the general rules use the `web-design-guidelines` skill. The React-specific pieces:
+Accessibility is mostly correct semantic markup, which is framework-agnostic. If the `web-design-guidelines` skill is installed, use it for the general rules - but it is not part of this skill's portable set, so do not assume it exists. The baseline when it is unavailable:
+
+- Use semantic elements (`button`, `a`, `nav`, `main`, `label`, ordered headings) before ARIA; a real `button` beats a `div` with a click handler.
+- Give every interactive control an accessible name: visible text, an associated `label`, or `aria-label`.
+- Keep all functionality keyboard-operable and never remove visible focus without an equivalent.
+- Tie form controls to their labels and errors (`htmlFor`/`id`, `aria-describedby`).
+- Do not rely on color alone, and meet contrast minimums.
+- Respect `prefers-reduced-motion` for non-essential animation.
+
+The React-specific pieces:
 
 - Manage focus on view changes React controls: move focus to the new content on route change, into a dialog on open, and back to the trigger on close. Use a ref and an Effect, not autofocus guesswork.
 - Restore focus across portals. A modal or menu rendered through a portal still owns focus and Escape/return behavior even though its DOM lives elsewhere.

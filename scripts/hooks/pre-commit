@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # scripts/hooks/pre-commit
-# validate canonical skills before commits
+# validate skills & run script regression tests before commits
 set -e
 
 repo_root=$(git rev-parse --show-toplevel)
-exec python3 "$repo_root/scripts/validate-skills.py"
+python3 "$repo_root/scripts/validate-skills.py"
+python3 -m unittest discover -s "$repo_root/tests" -p 'test_*.py'

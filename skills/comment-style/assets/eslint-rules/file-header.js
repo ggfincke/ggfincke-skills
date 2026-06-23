@@ -45,6 +45,8 @@ const rule = {
       invalidPath:
         'File header path does not match actual file path. Expected: {{ expected }}',
       missingDescription: 'File header is missing a description on line 2',
+      descriptionNotLowercase:
+        'File header description must start lowercase (a-z, 0-9, or * ! ?)',
     },
   },
 
@@ -112,7 +114,7 @@ const rule = {
           })
         }
 
-        // check for description on the line after the path header
+        // check for a lowercase description on the line after the path header
         const secondComment = comments[headerIndex + 1]
         if (
           !secondComment ||
@@ -124,6 +126,13 @@ const rule = {
           context.report({
             loc: { line: descriptionLine, column: 0 },
             messageId: 'missingDescription',
+          })
+        }
+        else if (!/^[a-z0-9*!?]/.test(secondComment.value.trim()))
+        {
+          context.report({
+            node: secondComment,
+            messageId: 'descriptionNotLowercase',
           })
         }
       },
