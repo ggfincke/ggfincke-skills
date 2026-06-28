@@ -112,3 +112,4 @@ Claim only what you added. Do not call the scope well tested beyond the importan
 - The guiding rule is major, important tests only - not exhaustive coverage. Default to few; name what you are not testing.
 - references/usage.md has first-turn variants by stack (JS/TS, Python, Go, mixed or unknown) and by scope (a diff, a module/feature), plus follow-ups (approve the list, hand off to phased-implementation, a bug surfaced while testing, strengthen a weak test on critical logic).
 - This systematizes the "add a regression test" step the other skills mention. It produces the short test list; phased-implementation executes it; if a gap turns out to be a bug, security-remediation or simplification-review owns the fix.
+- For the inverse - pruning low-value tests that already exist rather than adding missing ones - use test-pruning-audit. This skill finds the few major tests worth adding; that one finds the excess tests worth deleting.
