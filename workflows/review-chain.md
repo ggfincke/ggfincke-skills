@@ -11,11 +11,15 @@ The spine: every stage reads from and writes to the SAME audit document - not a 
 Choose by how many lenses the work needs:
 
 - Multi-lens / "the works" / everything-at-once -> `mega-review`. Orchestrates bug-hunt, simplification, consolidation, security, test-gap, and performance together, dedupes across lenses, emits one mega audit doc. Also the right call for a scoped 2+ lens pass (e.g. bugs + security + tests). It runs this verify/dedupe loop within a single session; this workflow is the across-session form.
+- Same thing minus security -> `mega-review-core`. Bug-hunt, simplification, consolidation, test-gaps, and performance only, security explicitly out of scope - for when security is handled elsewhere or the security lens would blow the budget. Same doc shape and same downstream loop as `mega-review`.
 - Many-file dedupe / merge / drift / refactor-across-files -> `consolidation-audit`. Maps the codebase, verifies/refutes each candidate, groups survivors.
+- Boundaries / layering / dependency direction / where code should live -> `architecture-review`. Emits a target architecture + migration plan, not a duplication list; when the problem is duplication first, that's `consolidation-audit`.
 - One focused lens -> that lens's own skill, which owns its audit:
   - simplify / local cleanup / narrow reuse pass -> `simplification-review`
   - vulnerabilities / authz / injection / secrets / harden -> `security-remediation`
   - missing tests / test gaps / is this covered -> `test-coverage-audit`
+  - too many tests / redundant, brittle, over-mocked, coverage-filler tests / what to delete -> `test-pruning-audit`. The INVERSE of the bullet above; every gap question goes up, every prune question goes here. Neither one answers the other's direction.
+  - README / docs / CHANGELOG stale vs the code -> `docs-freshness-audit`. Docs-vs-code drift only; code-vs-code drift is `consolidation-audit`, and internal `AGENTS.md`/`CLAUDE.md` are out of its scope.
 
 Output in every case: ONE read-only audit doc w/ grouped findings + risk sequencing. That doc is the hand-off artifact for the rest of the loop.
 

@@ -30,6 +30,16 @@ def is_within(path: Path, parent: Path) -> bool:
     return path == parent or parent in path.parents
 
 
+def display_path(path: Path) -> str:
+    # issue paths are normally under ROOT, but a relocated SKILLS_DIR/PROJECTS_DIR
+    # yields one that is not; print it whole rather than crash the gate that is
+    # mid-way through reporting the very error that relocation caused
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 @dataclass
 class SkillIssue:
     path: Path
@@ -204,6 +214,18 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
     for message in always_on.marker_issues(body):
         issues.append(SkillIssue(skill_file, message))
 
+    # sync-skills.py collects always-on blocks from skills/ only, so a well-formed
+    # block on a project-only skill would pass the gate & still reach no agent
+    if is_within(path, PROJECTS_DIR) and always_on.extract_blocks(body):
+        issues.append(
+            SkillIssue(
+                skill_file,
+                "always-on blocks only take effect for skills under skills/; this "
+                "project-only block never reaches an instruction file",
+                is_warning=True,
+            )
+        )
+
     issues.extend(resource_link_issues(path, skill_file))
 
     return issues
@@ -214,12 +236,15 @@ def main() -> int:
         description="Validate skill folders (portable and project-only) in this repo."
     )
     parser.add_argument("--skill", action="append", default=[], help="Validate one skill name")
-    parser.add_argument(
+    # strictness is the default, so --strict-frontmatter only affirms it; the
+    # group keeps a contradictory pair from silently resolving to lenient
+    frontmatter_mode = parser.add_mutually_exclusive_group()
+    frontmatter_mode.add_argument(
         "--strict-frontmatter",
         action="store_true",
-        help="(default) fail when frontmatter includes fields beyond name and description",
+        help="Fail when frontmatter includes fields beyond name and description",
     )
-    parser.add_argument(
+    frontmatter_mode.add_argument(
         "--lenient-frontmatter",
         action="store_true",
         help="Downgrade non-portable frontmatter to a warning instead of an error",
@@ -231,20 +256,23 @@ def main() -> int:
     for skill in skills:
         issues.extend(validate_skill(skill, strict_frontmatter))
 
-    if not skills and not args.skill:
-        print("No skills found in skills/ or projects/.")
-        return 0
-
+    # partition & report before any early return: an empty skill set is itself
+    # something find_skills reports an error for, so it must never short-circuit
+    # the exit code this gate exists to produce
     warnings = [issue for issue in issues if issue.is_warning]
     errors = [issue for issue in issues if not issue.is_warning]
 
     for issue in errors:
-        print(f"ERROR {issue.path.relative_to(ROOT)}: {issue.message}", file=sys.stderr)
+        print(f"ERROR {display_path(issue.path)}: {issue.message}", file=sys.stderr)
     for issue in warnings:
-        print(f"WARN  {issue.path.relative_to(ROOT)}: {issue.message}")
+        print(f"WARN  {display_path(issue.path)}: {issue.message}")
 
     if errors:
         return 1
+
+    if not skills and not args.skill:
+        print("No skills found in skills/ or projects/.")
+        return 0
 
     print(f"Validated {len(skills)} skill(s).")
     return 0

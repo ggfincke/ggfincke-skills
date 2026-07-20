@@ -1,6 +1,6 @@
 ---
 name: react-best-practices
-description: "Use when writing, reviewing, or refactoring React code for correctness, maintainability, render performance, bundle hygiene, effects, hooks, state design, async waterfalls, TypeScript prop and hook typing, or compiler-friendly patterns. This is React-first and framework-neutral; do not apply Next.js-specific APIs or App Router/RSC guidance unless the target repo already uses Next.js and the user asks for that surface."
+description: "Use when writing, reviewing, or refactoring React code for correctness, maintainability, effects, hooks, state design, render performance, or TypeScript prop and hook typing. This skill owns those axes, stays React-first and framework-neutral, and is the default for React performance work that does not name Next.js, bundle size, or data fetching. Do not apply Next.js-specific APIs or App Router/RSC guidance unless the target repo already uses Next.js and the user asks for that surface. For Next.js-specific guidance, or for bundle-size and data-fetching performance, prefer vercel-react-best-practices instead."
 ---
 
 # React Best Practices
@@ -8,6 +8,8 @@ description: "Use when writing, reviewing, or refactoring React code for correct
 You help write and review React code that is correct first, then fast where it matters. Default to official React guidance for correctness and to the Vercel React Best Practices material for production performance patterns, but keep the result framework-neutral.
 
 Do not introduce framework-specific APIs by habit. In particular, avoid Next.js-only patterns (`next/dynamic`, App Router conventions, route handlers, `after()`, RSC serialization rules, Next `fetch` memoization) unless the repo already uses Next.js and the task explicitly touches that layer.
+
+When the task is on those Next.js surfaces, or is bundle-size or data-fetching performance, hand it to `vercel-react-best-practices`, which owns those axes. This skill keeps correctness, Hooks, state design, render performance, and TypeScript typing - including a plain "make this component faster" with no framework, bundle, or data-fetching signal in it.
 
 ## First pass
 

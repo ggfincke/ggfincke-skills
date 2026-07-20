@@ -1,24 +1,27 @@
 ---
 name: comment-style
-description: Apply a low-noise, single-line comment style when writing or editing code in any language - comments above the code (never inline), a path+description file header, terse abbreviations (& w/ w/o), ASCII arrows, a 3-line cap, and sparing Better Comments tags. Use whenever adding or revising comments, or wiring up comment-style enforcement (ESLint, Ruff, SwiftFormat) in a repo.
+description: Apply a low-noise comment style in any language - exact path+purpose file headers, glanceable plain comments by default, sentence-style block docs only on large units (classes and similar), lowercase why-comments above code, canonical structured tags, and ASCII arrows. Use whenever adding or revising comments/docstrings or wiring comment-style enforcement (ESLint, Ruff, SwiftFormat) in a repo.
 ---
 
 # Comment Style
 
-Comments are source-code annotations, not a design journal. Durable rationale belongs in `dev-docs/` or the PR, never the source file. The principles below are uniform across languages; only enforcement differs (see `references/` + `assets/`).
+Plain comments are the default: a short note above a unit so a glance explains what it does and why it is shaped that way. Block docs (docstrings / TSDoc / `///`) are for larger constructs — typically classes, or similarly substantial types — not routine functions. Move architecture essays, incident history, and long tradeoff records to maintained docs. The principles below are uniform across languages; only enforcement differs (see `references/` + `assets/`).
 
 ## Core rules
 
 <!-- always-on:start title="Comment style" -->
-- Single-line comments only (`//`, `#`). Never side/inline comments - always on the line above the code.
-- File header = path line + one short lowercase description. 2-3 lines max; a 3rd line only if line 2 would wrap. No module essays.
-- Direct, imperative, terse.
-- Abbreviations: `&` not "and", `w/` not "with", `w/o` not "without"; `calc`, `config`, `info`, `func`, `var`, `params`.
+
+- Every covered file starts with exactly two comment lines: repo-relative path, then a lowercase untagged purpose phrase. Shebangs stay above them; module docstrings do not duplicate them. A file meant to be copied into another repo is the one exception: it carries the path it will live at in the destination, not its path where it is stored.
+- Plain `#` / `//` comments are the default. Put them above the unit they describe so a glance explains what that function or block is for (and why it is shaped that way when that matters).
+- Docstrings / TSDoc / `///` blocks are for larger constructs (typically classes; TypeScript also interfaces/enums; Swift types similarly), not routine functions. When used, they are full sentences with capitalization and terminal punctuation.
+- Plain comments are lowercase and casual. Put them above the code, never beside it, and do not repeat a block doc or types already visible in the signature.
+- Natural abbreviations such as `&`, `w/`, `w/o`, `config`, and `params` are welcome when they improve brevity, but are not mandatory rewrites.
 - ASCII `->`, never the Unicode arrow.
-- Hard cap: 3 consecutive comment lines.
-- Better Comments tags, used sparingly: `*` foundational classes / entry points, `!` warnings / deprecated / circular-import avoidance, `?` design questions, `todo` real follow-ups.
-- No doc-comment blocks (JSDoc/TSDoc `/** */`, Swift `///`, narrative Python docstrings) and no `/* */` block comments.
-- Don't restate what types or signatures already say.
+- Plain comments are the default. Use structured tags sparingly: `*` important invariant, `!` warning/deprecation, `?` unresolved design question, `TODO` actionable follow-up.
+- TODOs use one short `TODO action` or `TODO(scope): action` line with a lowercase scope. Put context immediately above in a plain block.
+- Keep comment blocks concise; there is no hard line cap. Move durable architecture and long rationale to maintained docs.
+- Cross-reference exact symbols plus stable module paths, never source line numbers.
+
 <!-- always-on:end -->
 
 ## Placement
@@ -30,21 +33,23 @@ payload = normalize(raw)
 payload = normalize(raw)  # normalize ...   <- wrong: side comment
 ```
 
-## The 3-line cap
+## Plain comments vs. block docs
 
-When a comment block wants a 4th line, do one of:
+There is no separate “public API documentation” category. A short “what this does” plain comment above a function is welcome when it helps orientation. Do not narrate every assignment, branch, or type already visible in the code.
 
-1. Delete - most overlong comments restate the code or say things the reader needn't act on.
-2. Condense - merge clauses with `;`, swap words for `&`/`w/`/`->`. A 6-line rationale usually collapses to 1-2: state the rule, then one short "why".
-3. Relocate - genuine design rationale, algorithm walkthroughs, tradeoff matrices, and incident history go in `dev-docs/` or the PR.
+Block docs orient maintainers (and agents) on a larger unit — usually a class, or a similarly substantial TypeScript type/class when a paragraph helps. Ordinary functions and private helpers get a plain comment above them, not a docstring or TSDoc block.
+
+Do not duplicate a block doc and a plain comment that say the same thing. Put constructor-level behavior on the class docstring rather than repeating it on `__init__` or a constructor.
 
 ## Anti-patterns that bloat comments
 
-- File-header module essays (what it does, why it exists, what it replaces).
+- Third file-header lines or tagged purpose phrases.
 - "Why not X" tradeoff dumps - belongs in the commit/PR.
 - Edge-case enumeration - the types and body already show it.
 - Step-by-step narration - name steps with helper functions or let the code read itself.
 - Defensive "future-reader" notes - they rot silently when the code changes.
+- Docstring/TSDoc/`///` on every function or export; “public API docstring theater”.
+- Legacy labels such as `NOTE:`, `HACK:`, `FIXME:`, or `FOOTGUN:` when a plain comment or canonical tag expresses the real meaning.
 
 ## Applying in a repo
 
@@ -55,3 +60,5 @@ Principles stay the same; pick the matching language guide and copy its enforcer
 - Swift -> `references/swift.md`, `assets/check_comment_style.py` + `assets/swift/`
 
 `assets/` holds the actual enforcers to copy into a target repo. They are project-by-project wiring, not run by this skill.
+
+Because they ship, their own headers name the destination path rather than their path in this repo - `# tools/check_comment_style.py` and `// eslint-rules/index.js`, which is where each lands once copied. A checker run over this repo will flag those two; that is the exception above, not a violation. Update the header if you change where an asset is meant to land.

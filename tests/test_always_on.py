@@ -102,5 +102,45 @@ class ApplyRegionStaysIdempotent(unittest.TestCase):
         self.assertEqual(always_on.extract_blocks(bad_text), [])
 
 
+class RemoveRegionLeavesSurroundingContentIntact(unittest.TestCase):
+    # a blanket .strip() de-indents the user's first line; where that line is a
+    # 4-space Markdown code block it silently becomes a paragraph
+    def test_leading_indent_survives_and_matches_apply_region(self) -> None:
+        region = always_on.render_region([("demo-skill", "Demo", "be terse")])
+        source = f"    indented code block\n\n{region}\n\nmy own trailer\n"
+
+        removed = always_on.remove_region(source)
+        applied = always_on.apply_region(source, region)
+
+        self.assertTrue(removed.startswith("    indented code block"), repr(removed[:40]))
+        self.assertTrue(applied.startswith("    indented code block"), repr(applied[:40]))
+        self.assertNotIn(always_on.REGION_BEGIN, removed)
+        self.assertIn("my own trailer", removed)
+
+
+class ApplyRegionRefusesBrokenMarkers(unittest.TestCase):
+    # a stray marker makes REGION_RE span the user's own prose, so substituting
+    # would delete it; every unbalanced shape must refuse instead of writing
+    def setUp(self) -> None:
+        self.region = always_on.render_region([("good-skill", "Good", "be terse")])
+
+    def assert_refuses(self, existing: str) -> None:
+        with self.assertRaises(SystemExit):
+            always_on.apply_region(existing, self.region)
+
+    def test_orphan_begin(self) -> None:
+        self.assert_refuses(
+            f"{always_on.REGION_BEGIN}\nmy own notes\n\n{self.region}\n"
+        )
+
+    def test_two_complete_regions(self) -> None:
+        self.assert_refuses(f"{self.region}\n\nmy own notes\n\n{self.region}\n")
+
+    def test_begin_after_end(self) -> None:
+        self.assert_refuses(
+            f"{always_on.REGION_END}\nmy own notes\n{always_on.REGION_BEGIN}\n"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

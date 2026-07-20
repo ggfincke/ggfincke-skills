@@ -6,7 +6,7 @@ SCRIPTS   := scripts
 HOOKS_DIR := scripts/hooks
 
 .DEFAULT_GOAL := help
-.PHONY: help validate test check sync sync-copy sync-project sync-project-repo install-hooks uninstall-hooks clean
+.PHONY: help validate test check sync sync-force sync-copy sync-copy-force sync-project sync-project-repo install-hooks uninstall-hooks clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -20,11 +20,17 @@ test: ## Run the sync/parser/checker regression tests
 
 check: validate test ## Run validation + tests (the full gate)
 
-sync: check ## Symlink all skills into Codex/agents/Claude (active dev)
+sync: check ## Symlink all skills into canonical Codex/agents + Claude roots
 	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode link
+
+sync-force: check ## Symlink all skills, replacing existing installs
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode link --force
 
 sync-copy: check ## Copy all skills as stable snapshots
 	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode copy
+
+sync-copy-force: check ## Copy all skills as stable snapshots, replacing existing installs
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode copy --force
 
 sync-project: check ## Install portable skills into a project's .claude/skills (PROJECT=/path)
 	@test -n "$(PROJECT)" || { echo "set PROJECT=/path/to/repo"; exit 1; }

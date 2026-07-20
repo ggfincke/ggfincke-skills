@@ -10,6 +10,8 @@ Invocation variants, lens scoping, and the two owner-less lens protocols (bug-hu
 - **Scoped lenses:** "mega-review but skip security" / "just bugs + simplification + perf" / "everything except the test-gap lens."
 - **With a cap:** "mega-review, but stay tight - don't spawn more than ~10 agents, lean tiers, tell me what you skipped."
 
+For a repeatable security-free five-lens profile, use `mega-review-core`; use the scoped form below when you need a different subset.
+
 ## Lens scoping
 
 Default is all six. Only drop a lens when the user requests or approves that scope, then state which lenses ran in the doc's header. Common user-approved scopes:
@@ -18,7 +20,7 @@ Default is all six. Only drop a lens when the user requests or approves that sco
 - Drop test-gaps for a throwaway/spike branch.
 - Bug-hunt + performance only, for a "why is this slow / what's broken" pass that does not need refactor proposals.
 
-If the user names a stack-specific concern (React render churn, Convex limits, Django ORM), make sure the relevant lens (perf/simplification) picks up the stack specialization - react-best-practices for React/TS.
+If the user names a stack-specific concern (React render churn, Convex limits, Django ORM), make sure the relevant lens (perf/simplification) picks up the stack specialization - react-best-practices for framework-neutral React/TS, vercel-react-best-practices for Next.js surfaces and bundle/data-fetching performance.
 
 ## Bug-hunt lens: finder -> refute -> synthesize
 
@@ -38,7 +40,7 @@ Real hot paths only - confirm something is hot before calling it slow, and prese
 
 - **Data access:** N+1 queries, over-fetching, missing indexes, full scans, repeated identical queries, unbatched writes, missing pagination.
 - **Compute:** unnecessary recomputation, work inside loops that could hoist, repeated expensive lookups, avoidable allocations, O(n^2) where the n is real.
-- **Frontend/React:** wasteful re-renders, unstable deps/keys, derived state recomputed each render, large lists without virtualization, heavy work on the main thread, layout thrash. (Fold in react-best-practices.)
+- **Frontend/React:** wasteful re-renders, unstable deps/keys, derived state recomputed each render, large lists without virtualization, heavy work on the main thread, layout thrash. (Fold in react-best-practices; use vercel-react-best-practices for bundle size, data fetching, and Next.js surfaces.)
 - **I/O & async:** blocking I/O on a hot path, serialized awaits that could be parallel, missing caching/memoization, chatty network round-trips, oversized payloads.
 - **Platform limits:** backend ceilings that turn into correctness failures at scale - e.g. Convex per-query read limits and per-second write throughput, serverless time/memory caps, request/response size limits. Propose the chunk/batch/stream fix.
 

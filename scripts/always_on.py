@@ -1,6 +1,5 @@
 # scripts/always_on.py
-# shared helper: extract skills' always-on blocks & manage the generated region
-# in each agent's global instruction file
+# shared helper: extract skills' always-on blocks & manage the generated instruction-file region
 
 from __future__ import annotations
 
@@ -20,6 +19,10 @@ MARKER_RE = re.compile(r"<!--\s*always-on:(?P<kind>start|end)\b(?P<attrs>[^>]*?)
 REGION_BEGIN = "<!-- BEGIN ggfincke-skills:always-on -->"
 REGION_END = "<!-- END ggfincke-skills:always-on -->"
 REGION_RE = re.compile(re.escape(REGION_BEGIN) + r".*?" + re.escape(REGION_END), re.DOTALL)
+# same span plus the blank lines around it, so removing it leaves no ragged seam
+REGION_REMOVE_RE = re.compile(
+    r"\n*" + re.escape(REGION_BEGIN) + r".*?" + re.escape(REGION_END) + r"\n*", re.DOTALL
+)
 
 # global agents that receive a generated instruction file
 # name -> (home env var, default home dir, instruction filename)
@@ -31,8 +34,10 @@ AGENT_INSTRUCTION = {
 
 
 def agent_home(agent: str) -> Path:
+    # an empty env var counts as unset: Path("") is PosixPath("."), which would
+    # silently aim the instruction file at whatever directory sync runs from
     env_var, default, _ = AGENT_INSTRUCTION[agent]
-    return Path(os.environ.get(env_var, Path.home() / default))
+    return Path(os.environ.get(env_var) or Path.home() / default)
 
 
 def instruction_file(agent: str) -> Path:
@@ -123,11 +128,44 @@ def render_region(items: list[tuple[str, str, str]]) -> str:
     return "\n".join(parts)
 
 
+def region_marker_error(existing: str) -> str | None:
+    # the destination file is user-owned, so only two shapes are safe to touch:
+    # no markers at all, or exactly one balanced pair. anything else (an orphan
+    # BEGIN, a duplicated region, BEGIN after END) would make REGION_RE span the
+    # user's own prose & the substitution would delete it
+    begins = existing.count(REGION_BEGIN)
+    ends = existing.count(REGION_END)
+    if begins == 0 and ends == 0:
+        return None
+    if begins == 1 and ends == 1 and REGION_RE.search(existing):
+        return None
+    return (
+        f"malformed always-on region markers ({begins} BEGIN, {ends} END); repair them by "
+        "hand so exactly one BEGIN...END pair remains, then re-run sync"
+    )
+
+
 def apply_region(existing: str, region: str) -> str:
     # replace the managed region in place, else append it; preserve other content
+    error = region_marker_error(existing)
+    if error:
+        raise SystemExit(error)
     if REGION_RE.search(existing):
         return REGION_RE.sub(lambda _match: region, existing).rstrip() + "\n"
     base = existing.rstrip()
     if base:
         return base + "\n\n" + region.rstrip() + "\n"
     return region.rstrip() + "\n"
+
+
+def remove_region(existing: str) -> str:
+    # strip the managed region when no always-on blocks remain repo-wide,
+    # leaving the user's surrounding content intact
+    error = region_marker_error(existing)
+    if error:
+        raise SystemExit(error)
+    # newlines only on the leading side: a blanket .strip() would eat the indent
+    # of a first line that is a 4-space Markdown code block, silently demoting it
+    # to a paragraph. trailing side rstrips to stay symmetric w/ apply_region
+    remainder = REGION_REMOVE_RE.sub("\n\n", existing).strip("\n").rstrip()
+    return remainder + "\n" if remainder else ""

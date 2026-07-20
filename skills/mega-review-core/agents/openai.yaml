@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mega Review Core"
+  short_description: "Five-lens mega review without security"
+  default_prompt: "Run a thorough mega review using bug-hunt, simplification, consolidation, test-gaps, and performance only; keep security explicitly out of scope."

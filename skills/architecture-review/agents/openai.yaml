@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture Review"
+  short_description: "Audit codebase architecture and restructuring"
+  default_prompt: "Use $architecture-review to audit this codebase's architecture and propose a verified, risk-sequenced restructuring plan without editing code."

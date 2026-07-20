@@ -1,143 +1,180 @@
 // eslint-rules/file-header.js
-// validates repo-relative file headers with a non-empty description line
+// validate exact two-line repo-relative file headers
 
-import { isAbsolute, relative } from 'node:path'
+import {
+  getCwd,
+  getFilename,
+  getSourceCode,
+  resolveRepoRelative,
+} from "./rule-context.js";
 
-const DEFAULT_PREFIXES = ['src/', 'convex/', 'packages/contracts/', 'scripts/']
+const descriptionText = (comment) => comment.value.trim();
 
-const normalizePath = (value) => value.replace(/\\/g, '/')
-
-const resolveRelativePath = (filename, cwd, prefixes) =>
-{
-  const repoRelative = normalizePath(
-    isAbsolute(filename) ? relative(cwd, filename) : filename
-  )
-  const isCovered = prefixes.some((prefix) => repoRelative.startsWith(prefix))
-  if (!isCovered)
-  {
-    return null
-  }
-  return repoRelative
-}
+const isTaggedDescription = (description) =>
+  /^(?:[*!?](?:\s|$)|todo(?:\([^)]*\))?:?\s)/i.test(description);
 
 const rule = {
   meta: {
-    type: 'suggestion',
+    type: "suggestion",
     docs: {
-      description: 'Enforce file header comments with path and description',
-      category: 'Stylistic Issues',
+      description: "Enforce exact path and purpose file headers",
+      category: "Stylistic Issues",
     },
-    fixable: 'code',
+    fixable: "code",
     schema: [
       {
-        type: 'object',
+        type: "object",
         properties: {
           prefixes: {
-            type: 'array',
-            items: { type: 'string' },
+            type: "array",
+            items: { type: "string" },
+          },
+          root: {
+            type: "string",
           },
         },
         additionalProperties: false,
       },
     ],
     messages: {
-      missingHeader: 'File is missing a header comment with the file path',
+      missingHeader: "File is missing a header comment with the file path",
       invalidPath:
-        'File header path does not match actual file path. Expected: {{ expected }}',
-      missingDescription: 'File header is missing a description on line 2',
+        "File header path does not match actual file path. Expected: {{ expected }}",
+      missingDescription: "File header is missing a purpose phrase on line 2",
       descriptionNotLowercase:
-        'File header description must start lowercase (a-z, 0-9, or * ! ?)',
+        "File header purpose must begin with a lowercase letter or number",
+      descriptionPeriod: "File header purpose must not end with a period",
+      taggedDescription:
+        "File header purposes must be plain phrases, not tagged annotations",
+      thirdHeaderLine:
+        "File headers must contain exactly two consecutive comment lines",
     },
   },
 
-  create(context)
-  {
-    const sourceCode = context.sourceCode ?? context.getSourceCode()
-    const filename = context.filename ?? context.getFilename()
-    const cwd = context.cwd ?? process.cwd()
-    const prefixes = context.options[0]?.prefixes ?? DEFAULT_PREFIXES
+  create(context) {
+    const sourceCode = getSourceCode(context);
+    const filename = getFilename(context);
+    const cwd = getCwd(context);
 
     return {
-      Program(node)
-      {
-        const comments = sourceCode.getAllComments()
-        const firstComment = comments[0]
-        const hasShebang = firstComment?.type === 'Shebang'
-        const headerIndex = hasShebang ? 1 : 0
-        const headerLine = hasShebang ? 2 : 1
-        const descriptionLine = headerLine + 1
-        const headerComment = comments[headerIndex]
-
-        const relativePath = resolveRelativePath(filename, cwd, prefixes)
-        if (relativePath === null)
-        {
-          return
+      Program(node) {
+        const { path: relativePath, guessed: rootIsGuessed } =
+          resolveRepoRelative(filename, {
+            root: context.options[0]?.root,
+            cwd,
+          });
+        const prefixes = context.options[0]?.prefixes;
+        if (
+          prefixes &&
+          !prefixes.some((prefix) => relativePath.startsWith(prefix))
+        ) {
+          return;
         }
 
-        // check if first comment exists & is on line 1
+        const comments = sourceCode.getAllComments();
+        const firstComment = comments[0];
+        // ESLint's SourceCode normalizes a hashbang back to "Shebang" for
+        // backward compatibility, so getAllComments() reports "Shebang" on
+        // every ESLint version (measured on ESLint 10.7.0 / espree 11.2.0).
+        // ! the "Shebang" arm is the live path, not the legacy one -- dropping
+        // it breaks the rule everywhere. the "Hashbang" arm only matters if
+        // this rule is ever driven by a raw espree AST, which emits the
+        // ESTree-standard name
+        const hasShebang =
+          firstComment?.type === "Shebang" ||
+          firstComment?.type === "Hashbang";
+        const headerIndex = hasShebang ? 1 : 0;
+        const headerLine = hasShebang ? 2 : 1;
+        const descriptionLine = headerLine + 1;
+        const headerComment = comments[headerIndex];
+
         if (
           !headerComment ||
           headerComment.loc.start.line !== headerLine ||
-          headerComment.type !== 'Line'
-        )
-        {
-          context.report({
-            node,
-            messageId: 'missingHeader',
-            fix(fixer)
-            {
-              if (hasShebang && firstComment)
-              {
-                return fixer.insertTextAfter(
-                  firstComment,
-                  `\n// ${relativePath}\n// `
-                )
-              }
-              return fixer.insertTextBefore(node, `// ${relativePath}\n// \n\n`)
-            },
-          })
-          return
+          headerComment.type !== "Line"
+        ) {
+          context.report({ node, messageId: "missingHeader" });
+          return;
         }
 
-        // validate the path in the header
-        const headerPath = headerComment.value.trim()
-        if (headerPath !== relativePath)
-        {
+        const headerPath = headerComment.value.trim();
+        if (headerPath !== relativePath) {
+          // a guessed anchor makes the expected path a guess too, so report it
+          // but do not hand `eslint --fix` a rewrite it cannot justify
+          const pathFix = (fixer) =>
+            fixer.replaceText(headerComment, `// ${relativePath}`);
           context.report({
             node: headerComment,
-            messageId: 'invalidPath',
+            messageId: "invalidPath",
             data: { expected: relativePath },
-            fix(fixer)
-            {
-              return fixer.replaceText(headerComment, `// ${relativePath}`)
-            },
-          })
+            fix: rootIsGuessed ? undefined : pathFix,
+          });
         }
 
-        // check for a lowercase description on the line after the path header
-        const secondComment = comments[headerIndex + 1]
+        const secondComment = comments[headerIndex + 1];
         if (
           !secondComment ||
           secondComment.loc.start.line !== descriptionLine ||
-          secondComment.type !== 'Line' ||
-          secondComment.value.trim() === ''
-        )
-        {
+          secondComment.type !== "Line" ||
+          secondComment.value.trim() === ""
+        ) {
           context.report({
             loc: { line: descriptionLine, column: 0 },
-            messageId: 'missingDescription',
-          })
+            messageId: "missingDescription",
+          });
+          return;
         }
-        else if (!/^[a-z0-9*!?]/.test(secondComment.value.trim()))
-        {
+
+        const description = descriptionText(secondComment);
+        if (!/^[a-z0-9]/.test(description)) {
+          const fix = /^[A-Z]/.test(description)
+            ? (fixer) =>
+                fixer.replaceText(
+                  secondComment,
+                  `// ${description[0].toLowerCase()}${description.slice(1)}`,
+                )
+            : undefined;
           context.report({
             node: secondComment,
-            messageId: 'descriptionNotLowercase',
-          })
+            messageId: "descriptionNotLowercase",
+            fix,
+          });
+        }
+        if (description.endsWith(".")) {
+          context.report({
+            node: secondComment,
+            messageId: "descriptionPeriod",
+            fix(fixer) {
+              return fixer.replaceText(
+                secondComment,
+                `// ${description.slice(0, -1)}`,
+              );
+            },
+          });
+        }
+        if (isTaggedDescription(description)) {
+          context.report({
+            node: secondComment,
+            messageId: "taggedDescription",
+          });
+        }
+
+        const thirdComment = comments[headerIndex + 2];
+        if (
+          thirdComment?.type === "Line" &&
+          thirdComment.loc.start.line === descriptionLine + 1
+        ) {
+          context.report({
+            node: thirdComment,
+            messageId: "thirdHeaderLine",
+            fix(fixer) {
+              return fixer.insertTextBefore(thirdComment, "\n");
+            },
+          });
         }
       },
-    }
+    };
   },
-}
+};
 
-export default rule
+export default rule;

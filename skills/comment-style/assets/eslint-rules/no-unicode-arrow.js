@@ -1,50 +1,47 @@
-// rules/no-unicode-arrow.js
-// bans Unicode arrow glyphs (->) in comments; use ASCII `->` per CLAUDE.md
+// eslint-rules/no-unicode-arrow.js
+// replace Unicode right arrows in comments with ASCII ->
 
-const UNICODE_ARROW = '\u2192'
+import { getAllComments, wrapCommentText } from "./rule-context.js";
+
+const UNICODE_ARROW = "\u2192";
 
 const rule = {
   meta: {
-    type: 'suggestion',
+    type: "suggestion",
     docs: {
-      description: 'Disallow Unicode arrow → in comments; use ASCII -> instead',
-      category: 'Stylistic Issues',
+      description: "Disallow Unicode arrow → in comments; use ASCII -> instead",
+      category: "Stylistic Issues",
     },
-    fixable: 'code',
+    fixable: "code",
     schema: [],
     messages: {
-      noUnicodeArrow: 'Use ASCII `->` instead of Unicode `\u2192` in comments.',
+      noUnicodeArrow: "Use ASCII `->` instead of Unicode `\u2192` in comments.",
     },
   },
 
-  create(context)
-  {
-    const sourceCode = context.sourceCode ?? context.getSourceCode()
-
+  create(context) {
     return {
-      Program()
-      {
-        const comments = sourceCode.getAllComments()
+      Program() {
+        const comments = getAllComments(context);
 
-        for (const comment of comments)
-        {
-          if (!comment.value.includes(UNICODE_ARROW)) continue
+        for (const comment of comments) {
+          if (!comment.value.includes(UNICODE_ARROW)) continue;
 
           context.report({
             loc: comment.loc,
-            messageId: 'noUnicodeArrow',
-            fix(fixer)
-            {
-              const replaced = comment.value.split(UNICODE_ARROW).join('->')
-              const wrapped =
-                comment.type === 'Line' ? `//${replaced}` : `/*${replaced}*/`
-              return fixer.replaceText(comment, wrapped)
+            messageId: "noUnicodeArrow",
+            fix(fixer) {
+              const replaced = comment.value.split(UNICODE_ARROW).join("->");
+              return fixer.replaceText(
+                comment,
+                wrapCommentText(comment, replaced),
+              );
             },
-          })
+          });
         }
       },
-    }
+    };
   },
-}
+};
 
-export default rule
+export default rule;

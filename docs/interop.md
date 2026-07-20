@@ -17,16 +17,15 @@ That shape is compatible with the local Codex skill-creator guidance and with Cl
 
 ## Codex
 
-OpenAI's public help docs currently note that skills are supported in Codex and the API, and that skills do not sync across products yet:
+OpenAI's Codex customization docs designate the shared Agents directory as the personal global skill location:
 
-- https://help.openai.com/en/articles/20001066-skills-in-chatgpt
+- https://learn.chatgpt.com/docs/customization/overview#skills
 
-For local development in this environment, install canonical skills to:
+For local development in this environment, install canonical personal skills to:
 
-- `~/.codex/skills/<skill-name>/`
 - `~/.agents/skills/<skill-name>/`
 
-`~/.codex/skills` follows the local Codex skill-creator default. `~/.agents/skills` is also present on this machine for installed local agent skills, so `scripts/sync-skills.py --target all` updates both.
+Codex discovers that shared location directly. Do not also install the same personal skill under `~/.codex/skills`; Codex can discover both paths and surface duplicate entries. `scripts/sync-skills.py --target all` therefore updates `~/.agents/skills` and `~/.claude/skills`, while the explicit `--target codex` option remains only for legacy environments.
 
 ## Claude Code
 
@@ -58,8 +57,7 @@ Use this repo as the canonical source, then sync outward:
 
 - Active development: `--mode link`
 - Stable snapshots: `--mode copy`
-- Personal global use: `--target all`
+- Personal global Codex and Claude use: `--target all`
 - Project-local Claude use: `--target project-claude --project <repo>`
 
 Avoid editing installed copies directly. They are deployment artifacts.
-

@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -99,6 +102,43 @@ class RealRepoStaysClean(unittest.TestCase):
         result = support.run_script(VALIDATE_PATH, [])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Validated", result.stdout)
+
+
+class ExitCodeContract(unittest.TestCase):
+    # the gate's whole job is to fail closed: an error must be printed & must
+    # decide the exit code, never be swallowed by an early return
+    def test_missing_skills_dir_is_a_failure(self) -> None:
+        self.addCleanup(setattr, vs, "SKILLS_DIR", vs.SKILLS_DIR)
+        self.addCleanup(setattr, vs, "PROJECTS_DIR", vs.PROJECTS_DIR)
+        self.addCleanup(setattr, sys, "argv", sys.argv)
+        vs.SKILLS_DIR = vs.ROOT / "nope"
+        vs.PROJECTS_DIR = vs.ROOT / "nope-projects"
+        sys.argv = ["validate-skills.py"]
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = vs.main()
+
+        self.assertEqual(code, 1)
+        self.assertIn("skills directory does not exist", stderr.getvalue())
+
+    def test_skills_dir_outside_root_reports_instead_of_crashing(self) -> None:
+        # the reporting loop relativizes issue paths against ROOT; a SKILLS_DIR
+        # that is not under ROOT must still fail closed, not raise from relative_to
+        self.addCleanup(setattr, vs, "SKILLS_DIR", vs.SKILLS_DIR)
+        self.addCleanup(setattr, vs, "PROJECTS_DIR", vs.PROJECTS_DIR)
+        self.addCleanup(setattr, sys, "argv", sys.argv)
+        with tempfile.TemporaryDirectory() as d:
+            vs.SKILLS_DIR = Path(d) / "nope"
+            vs.PROJECTS_DIR = Path(d) / "nope-projects"
+            sys.argv = ["validate-skills.py"]
+
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = vs.main()
+
+            self.assertEqual(code, 1)
+            self.assertIn(str(vs.SKILLS_DIR), stderr.getvalue())
 
 
 if __name__ == "__main__":

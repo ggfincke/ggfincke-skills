@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # tools/check_comment_style.py
-# cross-language comment style checker & fixer
+# check Python & Swift headers, comments, & large-unit block docs
 
 from __future__ import annotations
 
@@ -15,36 +15,31 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-# repo & language roots are resolved from CLI args in main(); see resolve_root()
 ROOT = Path.cwd()
 PYTHON_ROOTS: tuple[Path, ...] = (ROOT,)
 SWIFT_ROOT = ROOT
-MAX_COMMENT_RUN = 3
-COMMENT_WORD_REPLACEMENTS = {
-	"and": "&",
-	"with": "w/",
-	"without": "w/o",
-	"calculate": "calc",
-	"configuration": "config",
-	"information": "info",
-	"function": "func",
-	"variable": "var",
-	"parameters": "params",
-}
-COMMENT_WORD_RE = re.compile(
-	r"\b(" + "|".join(re.escape(word) for word in COMMENT_WORD_REPLACEMENTS) + r")\b",
+PYTHON_ENCODING_RE = re.compile(r"coding[:=]\s*[-\w.]+")
+PYTHON_TOOLING_RE = re.compile(
+	r"^#\s*(?:noqa\b|type:\s*ignore\b|pragma:\s*no cover\b|pyright:|mypy:|ruff:|fmt:|isort:|coverage:)",
 	re.IGNORECASE,
 )
-PYTHON_COMMENT_EXEMPTIONS = (
-	"noqa",
-	"type: ignore",
-	"pragma: no cover",
-	"pyright:",
-	"mypy:",
+SWIFT_TOOLING_RE = re.compile(r"^//\s*swiftlint:", re.IGNORECASE)
+# word-bounded so the rule cannot fire on a substring; callers pass only the code portion of a line
+SWIFT_PREVIEW_PROVIDER_RE = re.compile(r"\bPreviewProvider\b")
+TODO_PREFIX_RE = re.compile(r"^(?:#|//)\s*todo\b", re.IGNORECASE)
+VALID_TODO_RE = re.compile(r"^(?:#|//) TODO(?:\([a-z0-9][a-z0-9._/-]*\):)?\s+\S")
+TAG_PREFIX_RE = re.compile(r"^(?:#|//)\s*([*!?])")
+VALID_TAG_RE = re.compile(r"^(?:#|//) [*!?] \S")
+LEGACY_TAG_RE = re.compile(
+	r"^(?:#|//)\s*(?:FOOTGUN|HACK|NOTE|WARN(?:ING)?|FIXME|XXX):\s*",
+	re.IGNORECASE,
 )
-SWIFT_COMMENT_EXEMPTIONS = ("swiftlint:",)
-# PEP 263 encoding declaration; must stay on line 1 or 2, above the file header
-PYTHON_ENCODING_RE = re.compile(r"coding[:=]\s*[-\w.]+")
+PLAIN_COMMENT_RE = re.compile(r"^(?:#|//)\s+([A-Z][^\s]*)")
+SKIP_PARTS = {".venv", "__pycache__", "migrations", "node_modules"}
+TEST_DIR_PARTS = {"test", "tests", "e2e"}
+SWIFT_SKIP_PARTS = {"Pods", "Carthage", ".build", "DerivedData"}
+UNDECODABLE_MESSAGE = "file is not valid UTF-8; skipped"
+UNREADABLE_MESSAGE = "file could not be read; skipped"
 
 
 @dataclass(frozen=True)
@@ -58,8 +53,6 @@ class Violation:
 
 
 def split_keepends(text: str) -> list[str]:
-	if text == "":
-		return []
 	return text.splitlines(keepends=True)
 
 
@@ -71,86 +64,26 @@ def line_without_newline(line: str) -> tuple[str, str]:
 	return line, ""
 
 
-def leading_whitespace(value: str) -> str:
-	return value[: len(value) - len(value.lstrip())]
-
-
-def replace_comment_words(comment: str) -> str:
-	comment = comment.replace("→", "->")
-
-	def replace(match: re.Match[str]) -> str:
-		return COMMENT_WORD_REPLACEMENTS[match.group(1).lower()]
-
-	return COMMENT_WORD_RE.sub(replace, comment)
-
-
-def is_python_tooling_comment(comment: str) -> bool:
-	lower = comment.lower()
-	return any(token in lower for token in PYTHON_COMMENT_EXEMPTIONS)
-
-
-def is_swift_tooling_comment(comment: str) -> bool:
-	lower = comment.lower()
-	return any(token in lower for token in SWIFT_COMMENT_EXEMPTIONS)
-
-
-def description_for_path(path: Path, language: str) -> str:
-	name = path.name
-	parent = path.parent.name.lower()
-	stem = path.stem.lower()
-
-	if name == "__init__.py":
-		return "package marker"
-	if name == "conftest.py":
-		return "pytest config"
-	if name == "apps.py":
-		return "django app config"
-	if name == "admin.py":
-		return "django admin registration"
-	if name == "models.py":
-		return "django models"
-	if name == "serializers.py":
-		return "api serializers"
-	if name == "views.py":
-		return "api views"
-	if name == "urls.py":
-		return "url routes"
-	if name == "tests.py" or stem.startswith("test_"):
-		return "test coverage"
-	if language == "swift":
-		return "swift source"
-	if parent == "tools" or path.parts[-2:-1] == ("tools",):
-		return "developer tooling"
-	return "module helpers"
-
-
-def normalize_header_description(line: str, prefix: str, fallback: str) -> str:
-	body, newline = line_without_newline(line)
-	line_ending = newline or "\n"
-	if not body.startswith(prefix):
-		return f"{prefix}{fallback}{line_ending}"
-
-	text = body[len(prefix) :].strip()
-	if not text:
-		text = fallback
-	elif text[:1].isalpha():
-		match = re.match(r"([A-Za-z]+)(.*)", text)
-		if match and match.group(1).isupper():
-			text = match.group(1).lower() + match.group(2)
-		else:
-			text = text[:1].lower() + text[1:]
-	text = replace_comment_words(text).rstrip(".")
-	return f"{prefix}{text}{line_ending}"
+# read a source file as UTF-8; on failure returns the reason instead of the text so one bad
+# file is skipped & reported instead of aborting the run over the rest of the tree. unreadable
+# is as common as undecodable in practice (permissions, a dangling symlink, a vanished file),
+# so both land here rather than as a traceback that discards the results gathered so far
+def read_source(path: Path) -> tuple[str | None, str | None]:
+	try:
+		return path.read_text(encoding="utf-8"), None
+	except UnicodeDecodeError:
+		return None, UNDECODABLE_MESSAGE
+	except OSError as exc:
+		return None, f"{UNREADABLE_MESSAGE} ({exc.strerror or exc})"
 
 
 def is_within(path: Path, parent: Path) -> bool:
-	path = path.resolve()
-	parent = parent.resolve()
-	return path == parent or parent in path.parents
+	resolved = path.resolve()
+	root = parent.resolve()
+	return resolved == root or root in resolved.parents
 
 
 def python_prelude_len(lines: list[str]) -> int:
-	# count leading shebang & PEP 263 encoding lines the header must sit below
 	count = 1 if lines and lines[0].startswith("#!") else 0
 	if count < len(lines):
 		candidate = lines[count]
@@ -159,224 +92,304 @@ def python_prelude_len(lines: list[str]) -> int:
 	return count
 
 
-def iter_python_paths() -> list[Path]:
-	paths: list[Path] = []
-	for root in PYTHON_ROOTS:
-		if not root.exists():
-			continue
-		paths.extend(root.rglob("*.py"))
-	conftest = ROOT / "conftest.py"
-	if conftest.exists():
-		paths.append(conftest)
-
-	filtered: list[Path] = []
-	for path in paths:
-		rel_parts = path.relative_to(ROOT).parts
-		if "migrations" in rel_parts or ".venv" in rel_parts or "__pycache__" in rel_parts:
-			continue
-		filtered.append(path)
-	return sorted(set(filtered))
+def is_code_like_token(token: str) -> bool:
+	return (
+		token == "No."
+		or any(char.isupper() for char in token[1:])
+		or bool(re.search(r"[._\d]", token))
+	)
 
 
-def iter_swift_paths() -> list[Path]:
-	if not SWIFT_ROOT.exists() or not SWIFT_ROOT.is_dir():
-		return []
+def is_tagged_description(description: str) -> bool:
+	return bool(re.match(r"^(?:[*!?](?:\s|$)|todo(?:\([^)]*\))?:?\s)", description, re.I))
 
-	filtered: list[Path] = []
-	for path in SWIFT_ROOT.rglob("*.swift"):
-		rel_parts = path.relative_to(SWIFT_ROOT).parts
-		if any(part in rel_parts for part in ("Pods", "Carthage", ".build", "DerivedData")):
-			continue
-		filtered.append(path)
-	return sorted(filtered)
+
+def normalize_header_description(line: str, prefix: str) -> str:
+	body, newline = line_without_newline(line)
+	if not body.startswith(prefix):
+		return line
+	description = body[len(prefix) :].strip()
+	if re.match(r"^[A-Z]", description):
+		description = f"{description[0].lower()}{description[1:]}"
+	description = description.rstrip(".")
+	# hoisted out of the f-string: a backslash in an expression is a SyntaxError before 3.12
+	ending = newline or "\n"
+	return f"{prefix}{description}{ending}"
 
 
 def normalize_python_header(path: Path, lines: list[str]) -> tuple[list[str], bool]:
-	changed = False
-	rel = path.relative_to(ROOT).as_posix()
 	header_index = python_prelude_len(lines)
-	fallback = description_for_path(path, "python")
+	if (
+		len(lines) <= header_index + 1
+		or not lines[header_index].lstrip().startswith("# ")
+		or not lines[header_index + 1].lstrip().startswith("# ")
+	):
+		return lines, False
 
-	while len(lines) <= header_index + 1:
-		lines.append("\n")
+	changed = False
+	expected = f"# {path.relative_to(ROOT).as_posix()}"
+	body, newline = line_without_newline(lines[header_index])
+	if body != expected:
+		ending = newline or "\n"
+		lines[header_index] = f"{expected}{ending}"
 		changed = True
-
-	expected_header = f"# {rel}\n"
-	if lines[header_index] != expected_header:
-		if lines[header_index].lstrip().startswith("#") or lines[header_index].strip() == "":
-			lines[header_index] = expected_header
-		else:
-			lines.insert(header_index, expected_header)
+	normalized = normalize_header_description(lines[header_index + 1], "# ")
+	if lines[header_index + 1] != normalized:
+		lines[header_index + 1] = normalized
 		changed = True
-
-	if header_index + 1 >= len(lines):
-		lines.insert(header_index + 1, f"# {fallback}\n")
-		return lines, True
-
-	new_description = normalize_header_description(lines[header_index + 1], "# ", fallback)
-	if lines[header_index + 1] != new_description:
-		if (
-			lines[header_index + 1].lstrip().startswith("#")
-			or lines[header_index + 1].strip() == ""
-		):
-			lines[header_index + 1] = new_description
-		else:
-			lines.insert(header_index + 1, f"# {fallback}\n")
-		changed = True
-
 	return lines, changed
 
 
-def normalize_python_comment_text(lines: list[str]) -> tuple[list[str], bool]:
-	changed = False
-	text = "".join(lines)
-	try:
-		tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
-	except tokenize.TokenError:
-		return lines, changed
-
-	for token in tokens:
-		if token.type != tokenize.COMMENT:
-			continue
-		line_index = token.start[0] - 1
-		line = lines[line_index]
-		body, newline = line_without_newline(line)
-		comment = body[token.start[1] :]
-		if is_python_tooling_comment(comment):
-			continue
-		normalized = replace_comment_words(comment)
-		if normalized != comment:
-			lines[line_index] = f"{body[: token.start[1]]}{normalized}{newline}"
-			changed = True
-
-	return lines, changed
+# mirrors isTestFile in assets/eslint-rules/block-doc-comments.js so one repo is judged
+# the same way in Python & TypeScript
+def is_test_path(path: Path) -> bool:
+	relative = path.relative_to(ROOT)
+	return (
+		bool(TEST_DIR_PARTS.intersection(relative.parts))
+		or path.stem.startswith("test_")
+		or path.stem.endswith((".spec", ".test"))
+	)
 
 
-def move_python_side_comments(lines: list[str]) -> tuple[list[str], bool]:
-	changed = False
-	text = "".join(lines)
-	try:
-		tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
-	except tokenize.TokenError:
-		return lines, changed
-
-	comment_tokens = [token for token in tokens if token.type == tokenize.COMMENT]
-	for token in sorted(comment_tokens, key=lambda item: item.start[0], reverse=True):
-		line_index = token.start[0] - 1
-		line = lines[line_index]
-		body, newline = line_without_newline(line)
-		prefix = body[: token.start[1]]
-		comment = body[token.start[1] :].strip()
-		if not prefix.strip() or is_python_tooling_comment(comment):
-			continue
-
-		indent = leading_whitespace(prefix)
-		lines[line_index : line_index + 1] = [
-			f"{indent}{comment}\n",
-			f"{prefix.rstrip()}{newline}",
-		]
-		changed = True
-
-	return lines, changed
+def docstring_expr(node: ast.AST) -> ast.Expr | None:
+	body = getattr(node, "body", None)
+	if not body:
+		return None
+	first = body[0]
+	if (
+		isinstance(first, ast.Expr)
+		and isinstance(first.value, ast.Constant)
+		and isinstance(first.value.value, str)
+	):
+		return first
+	return None
 
 
-def fix_python_file(path: Path) -> bool:
-	original = path.read_text()
-	lines = split_keepends(original)
-	changed = False
-
-	lines, did_change = normalize_python_header(path, lines)
-	changed = changed or did_change
-	lines, did_change = normalize_python_comment_text(lines)
-	changed = changed or did_change
-	lines, did_change = move_python_side_comments(lines)
-	changed = changed or did_change
-
-	if changed:
-		path.write_text("".join(lines))
-	return changed
+def docstring_summary(expr: ast.Expr) -> str:
+	value = expr.value.value
+	paragraph = value.strip().split("\n\n", 1)[0]
+	return " ".join(line.strip() for line in paragraph.splitlines()).strip()
 
 
-def python_docstring_violations(path: Path) -> list[Violation]:
-	try:
-		tree = ast.parse(path.read_text())
-	except SyntaxError:
-		return []
-
+def docstring_violations(path: Path, tree: ast.Module) -> list[Violation]:
 	violations: list[Violation] = []
+	# body is Module's only child-bearing field, so membership here answers "is this class
+	# module-level?" without the extra whole-tree walk a parent map would cost
+	toplevel = {id(child) for child in tree.body if isinstance(child, ast.ClassDef)}
+	test_file = is_test_path(path)
+
 	for node in ast.walk(tree):
 		if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
 			continue
-		body = getattr(node, "body", [])
-		if not body:
+		expr = docstring_expr(node)
+		if expr is None:
 			continue
-		first = body[0]
-		if (
-			isinstance(first, ast.Expr)
-			and isinstance(first.value, ast.Constant)
-			and isinstance(
-				first.value.value,
-				str,
+
+		allowed = (
+			isinstance(node, ast.ClassDef)
+			and id(node) in toplevel
+			and not node.name.startswith("_")
+			and not test_file
+		)
+		if not allowed:
+			if isinstance(node, ast.Module):
+				message = "module docstrings are replaced by the two-line file header"
+			elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+				message = (
+					"docstrings are for classes; use a plain comment above ordinary functions"
+				)
+			elif test_file:
+				message = "test files use plain comments, not docstrings"
+			else:
+				message = "docstrings are allowed only on module-level classes"
+			violations.append(Violation(path, expr.lineno, message))
+			continue
+
+		summary = docstring_summary(expr)
+		if not summary or not re.match(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])", summary):
+			violations.append(
+				Violation(
+					path, expr.lineno, "class docstrings start with a capitalized sentence"
+				)
 			)
-		):
-			violations.append(Violation(path, first.lineno, "use # comments, not docstrings"))
+		if summary and not re.search(r"\.(?:[`'\"\])}]*)$", summary):
+			violations.append(
+				Violation(path, expr.lineno, "class docstring summaries end with a period")
+			)
 	return violations
+
+
+def python_header_violations(path: Path, lines: list[str]) -> list[Violation]:
+	violations: list[Violation] = []
+	header_index = python_prelude_len(lines)
+	expected = f"# {path.relative_to(ROOT).as_posix()}"
+	if len(lines) <= header_index or line_without_newline(lines[header_index])[0] != expected:
+		violations.append(Violation(path, header_index + 1, f'file header must be "{expected}"'))
+	if len(lines) <= header_index + 1:
+		violations.append(
+			Violation(path, header_index + 2, "file header needs a lowercase purpose phrase")
+		)
+		return violations
+	description_line = line_without_newline(lines[header_index + 1])[0]
+	if not description_line.startswith("# ") or not description_line[2:].strip():
+		violations.append(
+			Violation(path, header_index + 2, "file header needs a lowercase purpose phrase")
+		)
+		return violations
+	description = description_line[2:].strip()
+	if not re.match(r"^[a-z0-9]", description):
+		violations.append(
+			Violation(path, header_index + 2, "file header purpose must begin lowercase")
+		)
+	if description.endswith("."):
+		violations.append(
+			Violation(path, header_index + 2, "file header purpose must not end with a period")
+		)
+	if is_tagged_description(description):
+		violations.append(
+			Violation(path, header_index + 2, "file header purpose must not use an annotation tag")
+		)
+	if len(lines) > header_index + 2 and lines[header_index + 2].startswith("#"):
+		violations.append(
+			Violation(
+				path, header_index + 3, "file headers contain exactly two consecutive comment lines"
+			)
+		)
+	return violations
+
+
+def structured_comment_violations(path: Path, line: int, comment: str) -> list[Violation]:
+	if LEGACY_TAG_RE.match(comment):
+		return [Violation(path, line, "use a canonical `*`, `!`, `?`, or `TODO` annotation")]
+	if TODO_PREFIX_RE.match(comment) and not VALID_TODO_RE.match(comment):
+		return [
+			Violation(
+				path, line, "use `TODO action` or `TODO(scope): action` with a lowercase scope"
+			)
+		]
+	if TAG_PREFIX_RE.match(comment) and not VALID_TAG_RE.match(comment):
+		return [Violation(path, line, "use one space around the structured comment tag")]
+	match = PLAIN_COMMENT_RE.match(comment)
+	if match and not is_code_like_token(match.group(1)):
+		return [
+			Violation(path, line, "plain comments start lowercase; preserve exact code symbols")
+		]
+	return []
+
+
+def normalize_comment(comment: str) -> str:
+	normalized = comment.replace("→", "->")
+	if (
+		not TODO_PREFIX_RE.match(normalized)
+		and not TAG_PREFIX_RE.match(normalized)
+		and (match := PLAIN_COMMENT_RE.match(normalized))
+		and not is_code_like_token(match.group(1))
+	):
+		marker = match.start(1)
+		normalized = f"{normalized[:marker]}{normalized[marker].lower()}{normalized[marker + 1 :]}"
+	return normalized
+
+
+def fix_python_file(path: Path) -> bool:
+	text, _ = read_source(path)
+	if text is None:
+		return False
+	lines = split_keepends(text)
+	lines, changed = normalize_python_header(path, lines)
+	text = "".join(lines)
+	header_index = python_prelude_len(lines)
+	try:
+		comments = [
+			token
+			for token in tokenize.generate_tokens(io.StringIO(text).readline)
+			if token.type == tokenize.COMMENT
+		]
+	except tokenize.TokenError:
+		comments = []
+	for token in comments:
+		if token.start[0] in {header_index + 1, header_index + 2} or PYTHON_TOOLING_RE.match(
+			token.string
+		):
+			continue
+		replacement = normalize_comment(token.string)
+		if replacement == token.string:
+			continue
+		line_index = token.start[0] - 1
+		line = lines[line_index]
+		start = token.start[1]
+		end = start + len(token.string)
+		lines[line_index] = f"{line[:start]}{replacement}{line[end:]}"
+		changed = True
+	if changed:
+		path.write_text("".join(lines), encoding="utf-8")
+	return changed
 
 
 def check_python_file(path: Path) -> list[Violation]:
-	violations: list[Violation] = []
-	text = path.read_text()
+	text, error = read_source(path)
+	if text is None:
+		return [Violation(path, 1, error or UNDECODABLE_MESSAGE)]
 	lines = split_keepends(text)
-	rel = path.relative_to(ROOT).as_posix()
 	header_index = python_prelude_len(lines)
-
-	if len(lines) <= header_index or line_without_newline(lines[header_index])[0] != f"# {rel}":
-		violations.append(Violation(path, header_index + 1, f'file header must be "# {rel}"'))
-	if len(lines) <= header_index + 1 or not re.match(
-		r"^# [a-z0-9*!?]",
-		line_without_newline(lines[header_index + 1])[0],
-	):
-		violations.append(
-			Violation(path, header_index + 2, "file header description must be lowercase")
-		)
-
-	violations.extend(python_docstring_violations(path))
-
+	violations = python_header_violations(path, lines)
 	try:
-		tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+		tree = ast.parse(text)
+	except SyntaxError:
+		tree = None
+	if tree is not None:
+		violations.extend(docstring_violations(path, tree))
+	# generate_tokens is a generator, so it raises during iteration, never on the call itself
+	tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+	try:
+		for token in tokens:
+			if token.type != tokenize.COMMENT:
+				continue
+			comment = token.string
+			prefix = token.line[: token.start[1]]
+			if "→" in comment:
+				violations.append(
+					Violation(path, token.start[0], "use ASCII ->, not the Unicode arrow")
+				)
+			# `#!` is a shebang only on line 1; anywhere else it is a mis-spaced `!` tag & is
+			# held to the same rule comment-tags.js already applies to the `//!` form
+			if (token.start[0] == 1 and comment.startswith("#!")) or PYTHON_ENCODING_RE.search(
+				comment
+			):
+				continue
+			if prefix.strip() and not PYTHON_TOOLING_RE.match(comment):
+				violations.append(
+					Violation(path, token.start[0], "move prose comments above the code")
+				)
+			if token.start[0] in {header_index + 1, header_index + 2} or PYTHON_TOOLING_RE.match(
+				comment
+			):
+				continue
+			violations.extend(structured_comment_violations(path, token.start[0], comment))
 	except tokenize.TokenError as exc:
-		return [Violation(path, exc.args[1][0], "could not tokenize python file")]
-
-	for token in tokens:
-		if token.type != tokenize.COMMENT:
-			continue
-		line = token.line
-		prefix = line[: token.start[1]]
-		comment = token.string
-		if "→" in comment:
-			violations.append(Violation(path, token.start[0], "use ASCII ->, not Unicode arrow"))
-		if COMMENT_WORD_RE.search(comment) and not is_python_tooling_comment(comment):
-			violations.append(
-				Violation(
-					path,
-					token.start[0],
-					"use comment abbreviations: &, w/, w/o, calc, config, info, func, var, params",
-				),
-			)
-		if prefix.strip() and not is_python_tooling_comment(comment):
-			violations.append(
-				Violation(path, token.start[0], "move side comment above the code it describes")
-			)
-
-	violations.extend(check_comment_runs(path, lines, "#"))
+		violations.append(Violation(path, exc.args[1][0], "could not tokenize Python file"))
 	return violations
 
 
-def find_swift_line_comment(line: str) -> int:
+# a raw-string opener: the `#` run immediately before the quote that starts the literal
+SWIFT_RAW_STRING_OPEN_RE = re.compile(r'(#+)"')
+
+
+# find a line comment on one Swift line while carrying `"""` literal state across lines.
+# `pending` is the closing delimiter awaited from an earlier line, or None outside a literal;
+# returns the comment index (-1 when none) & the delimiter still open at end of line
+def scan_swift_line(line: str, pending: str | None = None) -> tuple[int, str | None]:
+	# most lines hold neither a comment nor a literal delimiter; the C-level substring search
+	# skips the character loop for them. `"""` is the only state a line can carry forward
+	if pending is None and "//" not in line and '"""' not in line:
+		return -1, None
+	index = 0
+	if pending is not None:
+		close = line.find(pending)
+		if close == -1:
+			return -1, pending
+		index = close + len(pending)
 	in_string = False
 	escaped = False
-	index = 0
-
 	while index < len(line):
 		char = line[index]
 		if escaped:
@@ -387,199 +400,270 @@ def find_swift_line_comment(line: str) -> int:
 			escaped = True
 			index += 1
 			continue
+		# a raw string owns every quote up to its own `"#` terminator, so the multi-line probe
+		# has to run at this nesting level. probing blind would let the bare `"""` inside
+		# `#"a """" b"#` open a literal that never closes & silently skip the rest of the file
+		if not in_string and char == "#":
+			raw = SWIFT_RAW_STRING_OPEN_RE.match(line, index)
+			if raw:
+				hashes = raw.group(1)
+				# an opening `"""` must be followed by a newline, so anything trailing on the line
+				# means this was a single-line raw string whose content merely starts w/ a quote,
+				# e.g. `#"""#` -- treating that as an opener leaves a literal that never closes
+				if line.startswith(f'{hashes}"""', index) and not line[index + len(hashes) + 3 :].strip():
+					return -1, f'"""{hashes}'
+				close = line.find(f'"{hashes}', index + len(hashes) + 1)
+				# only the `"""` form spans lines, so an unterminated single-line raw string is
+				# malformed; stop rather than guess at what the rest of the line means
+				if close == -1:
+					return -1, None
+				index = close + len(hashes) + 1
+				continue
+			index += 1
+			continue
+		if not in_string and line.startswith('"""', index):
+			return -1, '"""'
 		if char == '"':
 			in_string = not in_string
 			index += 1
 			continue
 		if not in_string and line.startswith("//", index):
-			return index
+			return index, None
 		index += 1
-	return -1
+	return -1, None
+
+
+# per-line scan of a whole Swift file: for each line its comment index (-1 when none) & whether
+# the line sits wholly inside an open `"""` literal, plus the 1-based line that opened a literal
+# still unclosed at EOF. Swift rejects an unterminated literal, so a leftover means a truncated
+# file or a scanner bug; either way the tail went unchecked & the caller must say so
+def scan_swift_lines(lines: list[str]) -> tuple[list[tuple[int, bool]], int | None]:
+	scanned: list[tuple[int, bool]] = []
+	pending: str | None = None
+	opened_at: int | None = None
+	for number, line in enumerate(lines, start=1):
+		was_inside = pending is not None
+		comment_index, pending = scan_swift_line(line_without_newline(line)[0], pending)
+		if pending is not None and not was_inside:
+			opened_at = number
+		scanned.append((comment_index, was_inside and pending is not None))
+	return scanned, opened_at if pending is not None else None
 
 
 def normalize_swift_header(path: Path, lines: list[str]) -> tuple[list[str], bool]:
+	if (
+		len(lines) < 2
+		or not lines[0].lstrip().startswith("// ")
+		or not lines[1].lstrip().startswith("// ")
+	):
+		return lines, False
 	changed = False
-	rel = path.relative_to(SWIFT_ROOT).as_posix()
-	fallback = description_for_path(path, "swift")
-
-	while len(lines) < 2:
-		lines.append("\n")
+	expected = f"// {path.relative_to(ROOT).as_posix()}"
+	body, newline = line_without_newline(lines[0])
+	if body != expected:
+		ending = newline or "\n"
+		lines[0] = f"{expected}{ending}"
 		changed = True
-
-	expected_header = f"// {rel}\n"
-	if lines[0] != expected_header:
-		if lines[0].lstrip().startswith("//") or lines[0].strip() == "":
-			lines[0] = expected_header
-		else:
-			lines.insert(0, expected_header)
+	normalized = normalize_header_description(lines[1], "// ")
+	if lines[1] != normalized:
+		lines[1] = normalized
 		changed = True
-
-	new_description = normalize_header_description(lines[1], "// ", fallback)
-	if lines[1] != new_description:
-		if lines[1].lstrip().startswith("//") or lines[1].strip() == "":
-			lines[1] = new_description
-		else:
-			lines.insert(1, f"// {fallback}\n")
-		changed = True
-
-	return lines, changed
-
-
-def normalize_swift_comment_text(lines: list[str]) -> tuple[list[str], bool]:
-	changed = False
-
-	for index, line in enumerate(lines):
-		body, newline = line_without_newline(line)
-		comment_index = find_swift_line_comment(body)
-		if comment_index == -1:
-			continue
-		comment = body[comment_index:]
-		if comment.startswith("// MARK:") or is_swift_tooling_comment(comment):
-			continue
-		normalized = replace_comment_words(comment)
-		if normalized != comment:
-			lines[index] = f"{body[:comment_index]}{normalized}{newline}"
-			changed = True
-
-	return lines, changed
-
-
-def move_swift_side_comments(lines: list[str]) -> tuple[list[str], bool]:
-	changed = False
-
-	for index in range(len(lines) - 1, -1, -1):
-		body, newline = line_without_newline(lines[index])
-		comment_index = find_swift_line_comment(body)
-		if comment_index == -1:
-			continue
-		prefix = body[:comment_index]
-		comment = body[comment_index:].strip()
-		if not prefix.strip() or is_swift_tooling_comment(comment):
-			continue
-		indent = leading_whitespace(prefix)
-		lines[index : index + 1] = [
-			f"{indent}{comment}\n",
-			f"{prefix.rstrip()}{newline}",
-		]
-		changed = True
-
 	return lines, changed
 
 
 def fix_swift_file(path: Path) -> bool:
-	original = path.read_text()
-	lines = split_keepends(original)
-	changed = False
-
-	lines, did_change = normalize_swift_header(path, lines)
-	changed = changed or did_change
-	lines, did_change = normalize_swift_comment_text(lines)
-	changed = changed or did_change
-	lines, did_change = move_swift_side_comments(lines)
-	changed = changed or did_change
-
+	text, _ = read_source(path)
+	if text is None:
+		return False
+	lines = split_keepends(text)
+	lines, changed = normalize_swift_header(path, lines)
+	scanned, _ = scan_swift_lines(lines)
+	for index, line in enumerate(lines):
+		body, newline = line_without_newline(line)
+		comment_index, inside_literal = scanned[index]
+		# a line wholly inside an open `"""` literal is runtime data, not source
+		if inside_literal or comment_index == -1:
+			continue
+		comment = body[comment_index:]
+		if (
+			comment.startswith("///")
+			or comment.startswith("// MARK:")
+			or SWIFT_TOOLING_RE.match(comment)
+		):
+			continue
+		normalized = normalize_comment(comment)
+		if normalized != comment:
+			lines[index] = f"{body[:comment_index]}{normalized}{newline}"
+			changed = True
 	if changed:
-		path.write_text("".join(lines))
+		path.write_text("".join(lines), encoding="utf-8")
 	return changed
 
 
-def check_swift_file(path: Path) -> list[Violation]:
+SWIFT_TYPE_DECL_RE = re.compile(
+	r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|open|internal|fileprivate|private|final|indirect)\s+)*"
+	r"(?:class|struct|enum|actor|protocol)\b"
+)
+
+
+def next_swift_code_line(lines: list[str], start: int) -> str | None:
+	index = start
+	while index < len(lines):
+		body = line_without_newline(lines[index])[0].strip()
+		if not body or body.startswith("//"):
+			index += 1
+			continue
+		return body
+	return None
+
+
+def swift_doc_violations(
+	path: Path, lines: list[str], inside_literal: list[bool]
+) -> list[Violation]:
 	violations: list[Violation] = []
-	lines = split_keepends(path.read_text())
-	rel = path.relative_to(SWIFT_ROOT).as_posix()
 
-	if not lines or line_without_newline(lines[0])[0] != f"// {rel}":
-		violations.append(Violation(path, 1, f'file header must be "// {rel}"'))
-	if len(lines) < 2 or not re.match(r"^// [a-z0-9*!?]", line_without_newline(lines[1])[0]):
-		violations.append(Violation(path, 2, "file header description must be lowercase"))
+	# a `///` inside an open `"""` literal is literal text, not documentation, so no fixer
+	# could ever clear a violation reported against it
+	def is_doc_line(position: int) -> bool:
+		if position >= len(lines) or inside_literal[position]:
+			return False
+		return line_without_newline(lines[position])[0].strip().startswith("///")
 
-	for index, line in enumerate(lines, start=1):
-		body, _ = line_without_newline(line)
-		if "///" in body:
-			violations.append(Violation(path, index, "use // comments, not /// doc comments"))
-		if "/*" in body or "*/" in body:
+	index = 0
+	while index < len(lines):
+		if not is_doc_line(index):
+			index += 1
+			continue
+		start = index
+		paragraph: list[str] = []
+		while is_doc_line(index):
+			text = line_without_newline(lines[index])[0].strip()[3:].strip()
+			if not text and paragraph:
+				break
+			if text:
+				paragraph.append(text)
+			index += 1
+		# consume the rest of the contiguous /// run so a multi-paragraph block reports once,
+		# not once per paragraph break
+		while is_doc_line(index):
+			index += 1
+		target = next_swift_code_line(lines, index)
+		if target is None or not SWIFT_TYPE_DECL_RE.match(target):
 			violations.append(
-				Violation(path, index, "use single-line // comments, not block comments")
+				Violation(
+					path,
+					start + 1,
+					"/// belongs on types (class/struct/enum/actor/protocol); "
+					"use a plain // comment above ordinary functions",
+				)
 			)
-		if "PreviewProvider" in body:
-			violations.append(Violation(path, index, "use #Preview instead of PreviewProvider"))
+			continue
+		summary = " ".join(paragraph)
+		if not summary or not re.match(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])", summary):
+			violations.append(
+				Violation(
+					path, start + 1, "block documentation starts with a capitalized sentence"
+				)
+			)
+		if summary and not re.search(r"\.(?:[`'\"\])}]*)$", summary):
+			violations.append(
+				Violation(path, start + 1, "block documentation summaries end with a period")
+			)
+	return violations
 
-		comment_index = find_swift_line_comment(body)
+
+def check_swift_file(path: Path) -> list[Violation]:
+	text, error = read_source(path)
+	if text is None:
+		return [Violation(path, 1, error or UNDECODABLE_MESSAGE)]
+	lines = split_keepends(text)
+	violations: list[Violation] = []
+	expected = f"// {path.relative_to(ROOT).as_posix()}"
+	if not lines or line_without_newline(lines[0])[0] != expected:
+		violations.append(Violation(path, 1, f'file header must be "{expected}"'))
+	if len(lines) < 2 or not re.match(r"^// [a-z0-9]", line_without_newline(lines[1])[0]):
+		violations.append(Violation(path, 2, "file header needs a lowercase purpose phrase"))
+	elif is_tagged_description(line_without_newline(lines[1])[0][3:].strip()):
+		violations.append(Violation(path, 2, "file header purpose must not use an annotation tag"))
+	elif line_without_newline(lines[1])[0].endswith("."):
+		violations.append(Violation(path, 2, "file header purpose must not end with a period"))
+	if len(lines) > 2 and lines[2].startswith("//"):
+		violations.append(
+			Violation(path, 3, "file headers contain exactly two consecutive comment lines")
+		)
+
+	scanned, unterminated = scan_swift_lines(lines)
+	violations.extend(swift_doc_violations(path, lines, [inside for _, inside in scanned]))
+	for index, line in enumerate(lines, start=1):
+		body = line_without_newline(line)[0]
+		comment_index, inside_literal = scanned[index - 1]
+		# a line wholly inside an open `"""` literal is runtime data, not source
+		if inside_literal:
+			continue
+		code = body if comment_index == -1 else body[:comment_index]
+		if "/*" in body or "*/" in body:
+			violations.append(Violation(path, index, "use line comments, not block comments"))
+		if SWIFT_PREVIEW_PROVIDER_RE.search(code):
+			violations.append(Violation(path, index, "use #Preview instead of PreviewProvider"))
 		if comment_index == -1:
 			continue
 		prefix = body[:comment_index]
 		comment = body[comment_index:]
-		if "→" in comment:
-			violations.append(Violation(path, index, "use ASCII ->, not Unicode arrow"))
 		if (
-			COMMENT_WORD_RE.search(comment)
-			and not comment.startswith("// MARK:")
-			and not is_swift_tooling_comment(comment)
+			comment.startswith("///")
+			or comment.startswith("// MARK:")
+			or SWIFT_TOOLING_RE.match(comment)
 		):
-			violations.append(
-				Violation(
-					path,
-					index,
-					"use comment abbreviations: &, w/, w/o, calc, config, info, func, var, params",
-				),
-			)
-		if prefix.strip() and not is_swift_tooling_comment(comment):
-			violations.append(
-				Violation(path, index, "move side comment above the code it describes")
-			)
-
-	violations.extend(check_comment_runs(path, lines, "//"))
-	return violations
-
-
-def check_comment_runs(path: Path, lines: list[str], comment_prefix: str) -> list[Violation]:
-	violations: list[Violation] = []
-	run_start = 0
-	run_length = 0
-
-	for index, line in enumerate(lines, start=1):
-		stripped = line.strip()
-		if stripped.startswith(comment_prefix) and not stripped.startswith("#!"):
-			if run_length == 0:
-				run_start = index
-			run_length += 1
 			continue
-
-		if stripped == "":
-			if run_length > MAX_COMMENT_RUN:
-				violations.append(
-					Violation(path, run_start, f"comment block exceeds {MAX_COMMENT_RUN} lines")
-				)
-			run_length = 0
-			continue
-
-		if run_length > MAX_COMMENT_RUN:
-			violations.append(
-				Violation(path, run_start, f"comment block exceeds {MAX_COMMENT_RUN} lines")
-			)
-		run_length = 0
-
-	if run_length > MAX_COMMENT_RUN:
+		if "→" in comment:
+			violations.append(Violation(path, index, "use ASCII ->, not the Unicode arrow"))
+		if prefix.strip():
+			violations.append(Violation(path, index, "move prose comments above the code"))
+		if index > 2:
+			violations.extend(structured_comment_violations(path, index, comment))
+	# every line after an unclosed literal was skipped as literal text. Swift does not compile
+	# an unterminated `"""`, so this is a truncated file or a scanner bug, never valid source;
+	# say so rather than let a whole file pass unchecked in silence
+	if unterminated is not None:
 		violations.append(
-			Violation(path, run_start, f"comment block exceeds {MAX_COMMENT_RUN} lines")
+			Violation(
+				path,
+				unterminated,
+				'unterminated `"""` literal; the rest of the file was not checked',
+			)
 		)
-
 	return violations
+
+
+def iter_python_paths() -> list[Path]:
+	paths = [path for root in PYTHON_ROOTS if root.exists() for path in root.rglob("*.py")]
+	# the cheap prune is tested first: is_within() resolves both operands, so running it on
+	# everything under .venv/ & node_modules/ costs two realpath chains per discarded path
+	return sorted(
+		{
+			path
+			for path in paths
+			if not SKIP_PARTS.intersection(path.relative_to(ROOT).parts) and is_within(path, ROOT)
+		}
+	)
+
+
+def iter_swift_paths() -> list[Path]:
+	if not SWIFT_ROOT.exists():
+		return []
+	return sorted(
+		path
+		for path in SWIFT_ROOT.rglob("*.swift")
+		if not SWIFT_SKIP_PARTS.intersection(path.relative_to(SWIFT_ROOT).parts)
+	)
 
 
 def run_checks(paths: Iterable[Path], checker) -> list[Violation]:
-	violations: list[Violation] = []
-	for path in paths:
-		violations.extend(checker(path))
-	return violations
+	return [violation for path in paths for violation in checker(path)]
 
 
 def run_fixes(paths: Iterable[Path], fixer) -> int:
-	changed = 0
-	for path in paths:
-		if fixer(path):
-			changed += 1
-	return changed
+	return sum(1 for path in paths if fixer(path))
 
 
 def resolve_root(explicit: Path | None) -> Path:
@@ -598,14 +682,15 @@ def resolve_root(explicit: Path | None) -> Path:
 
 
 def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(description="check & fix low-noise comment style (python & swift)")
-	parser.add_argument("--check", action="store_true", help="check only")
-	parser.add_argument("--fix", action="store_true", help="apply safe mechanical fixes")
+	parser = argparse.ArgumentParser(description="check & fix comment style for Python & Swift")
+	mode = parser.add_mutually_exclusive_group()
+	mode.add_argument("--check", action="store_true", help="check only (default)")
+	mode.add_argument("--fix", action="store_true", help="apply safe mechanical fixes")
 	parser.add_argument("--python", action="store_true", help="include Python files")
 	parser.add_argument("--swift", action="store_true", help="include Swift files")
-	parser.add_argument("--root", type=Path, default=None, help="repo root for header paths (default: git toplevel or cwd)")
-	parser.add_argument("--python-root", action="append", type=Path, default=None, metavar="DIR", help="dir to scan for .py; repeatable (default: repo root)")
-	parser.add_argument("--swift-root", type=Path, default=None, metavar="DIR", help="dir to scan for .swift (default: repo root)")
+	parser.add_argument("--root", type=Path, default=None, help="repo root for header paths")
+	parser.add_argument("--python-root", action="append", type=Path, default=None, metavar="DIR")
+	parser.add_argument("--swift-root", type=Path, default=None, metavar="DIR")
 	return parser.parse_args()
 
 
@@ -613,45 +698,42 @@ def main() -> int:
 	args = parse_args()
 	global ROOT, PYTHON_ROOTS, SWIFT_ROOT
 	ROOT = resolve_root(args.root)
-	PYTHON_ROOTS = tuple(p.resolve() for p in args.python_root) if args.python_root else (ROOT,)
+	PYTHON_ROOTS = (
+		tuple(path.resolve() for path in args.python_root) if args.python_root else (ROOT,)
+	)
 	SWIFT_ROOT = args.swift_root.resolve() if args.swift_root else ROOT
-	fix = args.fix
-	check = True
 	include_python = args.python or not args.swift
 	include_swift = args.swift or not args.python
 
-	# headers are computed relative to ROOT; a scan root outside it would crash
-	bad_roots: list[str] = []
+	bad_roots: list[Path] = []
 	if include_python:
-		bad_roots += [f"--python-root {r}" for r in PYTHON_ROOTS if not is_within(r, ROOT)]
+		bad_roots.extend(root for root in PYTHON_ROOTS if not is_within(root, ROOT))
 	if include_swift and not is_within(SWIFT_ROOT, ROOT):
-		bad_roots.append(f"--swift-root {SWIFT_ROOT}")
+		bad_roots.append(SWIFT_ROOT)
 	if bad_roots:
-		for entry in bad_roots:
-			print(f"error: {entry} is outside --root {ROOT}", file=sys.stderr)
+		for path in bad_roots:
+			print(f"error: {path} is outside --root {ROOT}", file=sys.stderr)
 		return 2
 
 	python_paths = iter_python_paths() if include_python else []
 	swift_paths = iter_swift_paths() if include_swift else []
-
-	if fix:
+	# --fix only fixes; applying a fix is not a failure, so an explicit --check owns the exit code
+	if args.fix:
 		changed_python = run_fixes(python_paths, fix_python_file)
 		changed_swift = run_fixes(swift_paths, fix_swift_file)
 		if changed_python or changed_swift:
 			print(
 				f"comment style fixed {changed_python} Python files & {changed_swift} Swift files"
 			)
+		return 0
 
-	if check:
-		violations: list[Violation] = []
-		violations.extend(run_checks(python_paths, check_python_file))
-		violations.extend(run_checks(swift_paths, check_swift_file))
-		if violations:
-			for violation in violations:
-				print(violation.render())
-			return 1
-
-	return 0
+	violations = [
+		*run_checks(python_paths, check_python_file),
+		*run_checks(swift_paths, check_swift_file),
+	]
+	for violation in violations:
+		print(violation.render())
+	return 1 if violations else 0
 
 
 if __name__ == "__main__":

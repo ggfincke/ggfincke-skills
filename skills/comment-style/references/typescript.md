@@ -6,51 +6,59 @@ Follows the shared principles in `../SKILL.md`. TypeScript specifics + how to en
 
 ```ts
 // src/path/file.ts
-// brief lowercase purpose using & and w/
+// brief lowercase purpose
 ```
 
-Path is repo-relative; the description is one lowercase fragment, no trailing period.
+Path is repo-relative. The purpose is an untagged lowercase phrase with no trailing period. Keep it short when practical, but preserve useful module context rather than truncating it.
 
 ## Language specifics
 
-- No JSDoc/TSDoc `/** */` - the types are the documentation.
-- Comment interface/type members on the line above each member.
-- No `eslint-disable` comments; follow the configured rules.
+- TSDoc/JSDoc belongs on classes, interfaces, and enums when a short paragraph helps orient on the larger unit. Ordinary functions and methods use a plain `//` comment above them instead.
+- Block-doc summaries are capitalized, full sentences, and period-terminated. Tests and private helpers use plain why-comments only.
+- Comment interface/type members on the line above each member when a note helps; do not put a TSDoc block on every member.
+- Keep `eslint-disable` and other tooling directives narrow. Add a plain rationale above only when the reason is not obvious.
 
 ## Enforcement (`assets/eslint-rules/`)
 
 Five custom rules, plus core `no-inline-comments`:
 
-| Rule | What it does | Auto-fix |
-|---|---|---|
-| `file-header` | path header on line 1 + lowercase description on line 2; takes a `prefixes` option | inserts missing path |
-| `no-jsdoc-blocks` | bans all block comments (`/** */` and `/* */`) | no |
-| `comment-style-guide` | full abbreviation set: `and`->`&`, `with`->`w/`, `without`->`w/o`, plus `calc` `config` `info` `func` `var` `params` | yes |
-| `comment-block-length` | caps consecutive `//` at 3 | no |
-| `no-unicode-arrow` | bans the Unicode arrow; use ASCII `->` | yes |
+| Rule                  | What it does                                                                              | Auto-fix                         |
+| --------------------- | ----------------------------------------------------------------------------------------- | -------------------------------- |
+| `file-header`         | exact two-line path + untagged lowercase purpose; optional `prefixes` filter and `root` anchor | path/case/period/separation only |
+| `comment-tags`        | canonical `*`, `!`, `?`, and uppercase `TODO(scope):` syntax                              | no                               |
+| `plain-comment-case`  | lowercase natural-language starts while preserving code-like symbols                      | yes                              |
+| `block-doc-comments`  | bans implementation block comments; allows sentence-style TSDoc only on class/interface/enum | no                            |
+| `no-unicode-arrow`    | bans the Unicode arrow; use ASCII `->`                                                    | yes                              |
 
 Wire it up:
 
-1. Copy `assets/eslint-rules/` into the repo (e.g. `eslint-rules/`).
+1. Copy `assets/eslint-rules/` into the repo (e.g. `eslint-rules/`). Keep the folder's `package.json` — the rules are ESM, and Node resolves module type from the nearest `package.json`, so without it the plugin fails to load in a repo declaring `"type": "commonjs"` (or one with no type field on Node 20).
 2. Register it as a local plugin in `eslint.config.js` and enable the rules:
 
 ```js
-import ggfincke from './eslint-rules/index.js'
+import ggfincke from "./eslint-rules/index.js";
 
 export default [
   {
     plugins: { ggfincke },
     rules: {
-      'ggfincke/file-header': ['error', { prefixes: ['src/'] }],
-      'ggfincke/no-jsdoc-blocks': 'error',
-      'ggfincke/comment-style-guide': 'warn',
-      'ggfincke/comment-block-length': 'warn',
-      'ggfincke/no-unicode-arrow': 'error',
-      'no-inline-comments': 'error',
+      "ggfincke/file-header": ["error", { prefixes: ["src/", "scripts/"] }],
+      "ggfincke/comment-tags": "error",
+      "ggfincke/plain-comment-case": "error",
+      "ggfincke/block-doc-comments": "error",
+      "ggfincke/no-unicode-arrow": "error",
+      "no-inline-comments": [
+        "error",
+        {
+          ignorePattern:
+            "^\\s*(?:eslint(?:-disable)?|@ts-|istanbul|c8\\b|v8\\b)",
+        },
+      ],
     },
   },
-]
+];
 ```
 
-3. Set `prefixes` to your repo's source roots. The rule ships with defaults `['src/', 'convex/', 'packages/contracts/', 'scripts/']` - override per repo.
+3. Omit `prefixes` to cover every linted file, or set it to the repo's owned source roots.
+   Header paths are resolved against the nearest `.git` ancestor, matching `git rev-parse --show-toplevel`, so linting from a package subdirectory reports the same path as linting from the root. Set `root` only when the repo has no `.git` (vendored trees, build sandboxes).
 4. Run via your `format` / `lint` scripts (Prettier for formatting, ESLint for the comment rules).

@@ -1,11 +1,13 @@
 ---
 name: web-design-guidelines
-description: Review UI code for Web Interface Guidelines compliance. Use when asked to "review my UI", "check accessibility", "audit design", "review UX", or "check my site against best practices".
+description: Review existing UI code for Web Interface Guidelines compliance, reporting findings as file:line. Use when asked to "review my UI", "check accessibility", "audit design", "review UX", or "check my site against best practices". For creating, redesigning, or extending an interface rather than auditing one - including the build-time accessibility and design-system guidance - use the frontend-workbench router instead.
 ---
 
 # Web Interface Guidelines
 
 Review files for compliance with the pinned Web Interface Guidelines in `references/guidelines.md`.
+
+This skill owns the review direction: existing UI code in, `file:line` findings out. When the task is building or redesigning an interface rather than reviewing one, use the `frontend-workbench` router instead - it owns visual direction, design systems, and the build-time accessibility guidance.
 
 ## How It Works
 

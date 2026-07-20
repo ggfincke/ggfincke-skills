@@ -10,11 +10,16 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # 3.9 pins the supported floor; 3.x tracks the newest release
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.x"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: "3.x"
+          python-version: ${{ matrix.python-version }}
       - name: Validate skills
         run: python3 scripts/validate-skills.py
       - name: Run script regression tests

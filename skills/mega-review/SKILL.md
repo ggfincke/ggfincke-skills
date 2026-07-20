@@ -1,6 +1,6 @@
 ---
 name: mega-review
-description: Run an explicit multi-lens review/audit of a codebase, branch, or large diff into one durable mega audit document - orchestrate bug-hunt, simplification, consolidation, security, test-gap, and performance lenses, adversarially verify and dedupe findings, and produce integrated action groups, risk sequencing, and testing guidance, read-only until approved. Use when the user explicitly asks for mega-review, the works, all lenses, max-effort/everything audit, one multi-lens audit doc, or a scoped 2+ lens audit such as bugs + security + tests + perf. Do not use for ordinary deep/full PR reviews unless they ask for multi-lens synthesis into one document; for one focused lens use that lens's own skill, and for a fast correctness or PR pass use /code-review.
+description: Run an explicit multi-lens review/audit of a codebase, branch, or large diff into one durable mega audit document - orchestrate bug-hunt, simplification, consolidation, security, test-gap, and performance lenses, adversarially verify and dedupe findings, and produce integrated action groups, risk sequencing, and testing guidance, read-only until approved. Use when the user explicitly asks for mega-review, the works, all lenses, max-effort/everything audit, one multi-lens audit doc, or a scoped 2+ lens audit that includes security. For a security-free five-lens profile, use mega-review-core. Do not use for ordinary deep/full PR reviews unless they ask for multi-lens synthesis into one document; for one focused lens use that lens's own skill, and for a fast correctness or PR pass use /code-review.
 ---
 
 # Mega Review
@@ -14,6 +14,7 @@ This skill is an orchestrator, not a reimplementation. Each lens delegates to th
 - Use mega-review only when explicitly asked for multi-lens synthesis into one document: `mega-review`, "the works", "all lenses", "every lens, one doc", "one multi-lens audit doc", "max-effort audit", or a scoped 2+ lens audit such as "bugs + security + tests + perf". It is deliberately heavy.
 - Do not use it for ordinary "deep review" or "full PR review" requests unless the user also asks for multi-lens synthesis or one audit document.
 - For a single lens, use that lens's skill directly - simplification-review, consolidation-audit, security-remediation, test-coverage-audit. They are sharper and cheaper for a focused pass, and they still exist on their own.
+- For the repeatable five-lens profile with security explicitly out of scope, use `mega-review-core`. Ad hoc lens scoping remains valid when the request calls for a different subset.
 - For a fast correctness pass or PR review, use /code-review. mega-review does not replace it; it is the slow, broad, document-producing counterpart.
 
 ## The lenses
@@ -27,7 +28,7 @@ Run all six by default. The user can scope them ("everything but security", "jus
 5. **Test gaps** -> test-coverage-audit. The few major, important tests worth adding - and what is deliberately not worth testing. Major-tests-only, never exhaustive coverage.
 6. **Performance** (owned here - no standalone skill). Real hot paths only: N+1 and over-fetching, repeated expensive lookups, unnecessary recomputation/allocations, wasteful renders/state updates, blocking I/O, missing batching/caching, query/index problems, payload size. Backend-platform limits count (e.g. Convex read/write ceilings). See the perf checklist in `references/usage.md`. Do not propose speculative micro-optimizations off the hot path.
 
-In a React/TS repo, fold react-best-practices into the simplification and performance lenses rather than running it as a seventh - it is the same lens, stack-specialized.
+In a React/TS repo, fold react-best-practices into the simplification and performance lenses rather than running it as a seventh - it is the same lens, stack-specialized. It owns correctness, Hooks, state design, and typing; when the repo is on Next.js or the finding is bundle size or data fetching, fold in vercel-react-best-practices instead, which owns those axes.
 
 ## Orchestration
 

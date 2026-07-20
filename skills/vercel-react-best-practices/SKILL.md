@@ -1,11 +1,13 @@
 ---
 name: vercel-react-best-practices
-description: React and Next.js performance optimization guidelines from Vercel Engineering. This skill should be used when writing, reviewing, or refactoring React/Next.js code to ensure optimal performance patterns. Triggers on tasks involving React components, Next.js pages, data fetching, bundle optimization, or performance improvements.
+description: Next.js guidance plus bundle-size and data-fetching performance optimization from Vercel Engineering. This skill owns the Next.js surfaces and the bundle/data-fetching axis, and should be used when writing, reviewing, or refactoring React/Next.js code for those concerns. Triggers on tasks involving Next.js pages, App Router or RSC surfaces, server and client data fetching, bundle size, or build output. For framework-neutral React work - correctness, hooks, effects, state design, render performance, and TypeScript prop and hook typing - prefer react-best-practices instead.
 ---
 
 # Vercel React Best Practices
 
 Comprehensive performance optimization guide for React and Next.js applications, maintained by Vercel. Contains 70 rules across 8 categories, prioritized by impact to guide automated refactoring and code generation.
+
+This skill owns the Next.js surfaces and bundle/data-fetching performance. For framework-neutral React correctness - Hooks, Effects, state design, render performance, and TypeScript prop and hook typing - use `react-best-practices` instead. A performance request that names no Next.js, bundle, or data-fetching surface belongs there, not here.
 
 ## When to Apply
 
@@ -142,4 +144,4 @@ Each rule file contains:
 
 ## Full Compiled Document
 
-For the complete guide with all rules expanded: `references/compiled.md`
+`references/compiled.md` is a generated snapshot of every rule expanded into one file. It is useful for a broad read, but it may lag `rules/`, which is authoritative. When a rule matters to the change you are making, read its file in `rules/` rather than trusting the snapshot.
