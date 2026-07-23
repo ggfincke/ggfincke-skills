@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orchestrate"
+  short_description: "Delegate bounded work across native coding agents"
+  default_prompt: "Use $orchestrate to decompose this change and delegate bounded work through the worker broker."

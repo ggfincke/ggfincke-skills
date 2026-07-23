@@ -1,12 +1,13 @@
 # ggfincke-skills - automation entrypoints.
-# Run `make` (or `make help`) to list targets.
+# run `make` (or `make help`) to list targets
 
 PYTHON    ?= python3
 SCRIPTS   := scripts
 HOOKS_DIR := scripts/hooks
+BROKER     := tools/worker-broker
 
 .DEFAULT_GOAL := help
-.PHONY: help validate test check sync sync-force sync-copy sync-copy-force sync-project sync-project-repo install-hooks uninstall-hooks clean
+.PHONY: help validate test broker-check check sync sync-force sync-copy sync-copy-force sync-project sync-project-repo install-hooks uninstall-hooks clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -18,7 +19,10 @@ validate: ## Validate all canonical skills (strict frontmatter)
 test: ## Run the sync/parser/checker regression tests
 	$(PYTHON) -m unittest discover -s tests -p 'test_*.py'
 
-check: validate test ## Run validation + tests (the full gate)
+broker-check: ## Typecheck, build, & test the worker broker
+	npm --prefix $(BROKER) run check
+
+check: validate test broker-check ## Run validation + tests (the full gate)
 
 sync: check ## Symlink all skills into canonical Codex/agents + Claude roots
 	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode link

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Worker broker terminal result",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "job_id": { "type": "string" },
+    "status": {
+      "enum": ["completed", "failed", "rejected", "cancelled"]
+    },
+    "provider": { "type": "string" },
+    "mode": { "enum": ["read", "edit"] },
+    "repo": { "type": "string" },
+    "base_ref": { "type": "string" },
+    "base_sha": { "type": "string" },
+    "head_sha": { "type": "string" },
+    "worktree": { "type": "string" },
+    "branch": { "type": "string" },
+    "summary": { "type": "string" },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "follow_ups": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "changed_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": { "type": "string" },
+          "paths": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["status", "paths"]
+      }
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "command": { "type": "string" },
+          "exit_code": { "type": ["integer", "null"] },
+          "signal": { "type": ["string", "null"] },
+          "timed_out": { "type": "boolean" },
+          "stdout_path": { "type": "string" },
+          "stderr_path": { "type": "string" },
+          "elapsed_ms": { "type": "integer", "minimum": 0 }
+        },
+        "required": [
+          "command",
+          "exit_code",
+          "signal",
+          "timed_out",
+          "stdout_path",
+          "stderr_path",
+          "elapsed_ms"
+        ]
+      }
+    },
+    "scope_violations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "patch_path": { "type": "string" },
+    "event_log_path": { "type": "string" },
+    "stderr_path": { "type": "string" },
+    "model_result_path": { "type": "string" },
+    "worker_session_id": { "type": "string" },
+    "process_exit_code": { "type": ["integer", "null"] },
+    "process_signal": { "type": ["string", "null"] },
+    "error": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "elapsed_ms": { "type": "integer", "minimum": 0 }
+  },
+  "required": [
+    "job_id",
+    "status",
+    "provider",
+    "mode",
+    "repo",
+    "base_ref",
+    "base_sha",
+    "assumptions",
+    "risks",
+    "follow_ups",
+    "changed_files",
+    "changes",
+    "verification",
+    "scope_violations",
+    "event_log_path",
+    "stderr_path",
+    "model_result_path",
+    "created_at"
+  ]
+}

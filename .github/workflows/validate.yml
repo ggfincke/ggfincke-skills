@@ -24,3 +24,19 @@ jobs:
         run: python3 scripts/validate-skills.py
       - name: Run script regression tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+  worker-broker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/worker-broker/package-lock.json
+      - name: Install worker broker dependencies
+        run: npm --prefix tools/worker-broker ci
+      - name: Validate worker broker
+        run: npm --prefix tools/worker-broker run check
+      - name: Audit worker broker dependencies
+        run: npm --prefix tools/worker-broker audit --audit-level=high

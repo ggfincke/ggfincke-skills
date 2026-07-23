@@ -8,6 +8,7 @@ This repo is the source of truth. Skills live here in a portable format, then ge
 
 - `skills/`: installable Agent Skills, one folder per skill.
 - `projects/<repo>/`: project-only skills installed into a single repo, never synced globally.
+- `tools/worker-broker/`: local stdio MCP broker for isolated native-harness workers.
 - `prompts/`: reusable prompts that are not ready to become skills yet.
 - `workflows/`: longer playbooks, checklists, and process notes.
 - `templates/skill/`: starter structure for a new portable skill.
@@ -48,7 +49,7 @@ Enable the pre-commit hook so validation + tests run automatically before each c
 make install-hooks
 ```
 
-CI runs the same validation and tests on every push and pull request
+CI runs the same skill, sync, and worker-broker validation on every push and pull request
 (`.github/workflows/validate.yml`).
 
 Install all skills into the personal Agents and Claude locations by symlink for active development. Codex discovers personal skills from the shared Agents location:
@@ -56,6 +57,19 @@ Install all skills into the personal Agents and Claude locations by symlink for 
 ```bash
 python3 scripts/sync-skills.py --target all --mode link
 ```
+
+The worker broker is a Node 24+ package. Install, build, and register its stdio server with Claude Code:
+
+```bash
+npm --prefix tools/worker-broker ci
+npm --prefix tools/worker-broker run build
+claude mcp add --transport stdio --scope user worker-broker \
+  -- /absolute/path/to/node /absolute/path/to/ggfincke-skills/tools/worker-broker/dist/src/server.js
+```
+
+The broker exposes native Codex, Cursor, and Coral workers. Override their executable paths or defaults with `WORKER_BROKER_CODEX_BINARY`, `WORKER_BROKER_CODEX_MODEL`, `WORKER_BROKER_CURSOR_BINARY`, `WORKER_BROKER_CURSOR_MODEL`, `WORKER_BROKER_CORAL_BINARY`, `WORKER_BROKER_CORAL_MODEL`, and `WORKER_BROKER_CORAL_HOST`. Cursor effort belongs in the Cursor model identifier rather than the broker's generic `effort` field. Coral rejects generic effort and nested-agent overrides.
+
+Claude Code is the orchestration UI. Worker jobs remain isolated broker records surfaced through MCP tool output and job artifacts; they do not appear as native Claude Code child conversations. T3 is not part of this setup.
 
 Install a specific skill into one Claude Code project:
 
