@@ -9,7 +9,7 @@ import type { Writable } from 'node:stream'
 import { finished } from 'node:stream/promises'
 import { preparePrivateFile, PRIVATE_FILE_MODE } from './artifact.js'
 
-export interface ProcessRunOptions
+interface ProcessRunOptions
 {
   command: string
   args: string[]
@@ -24,7 +24,7 @@ export interface ProcessRunOptions
   on_process_started?: (pid: number) => void | Promise<void>
 }
 
-export interface ProcessRunResult
+interface ProcessRunResult
 {
   exit_code: number | null
   signal: NodeJS.Signals | null

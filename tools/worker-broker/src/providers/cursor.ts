@@ -9,6 +9,7 @@ import type {
   ProviderRunContext,
   WorkerProvider,
 } from '../contracts.js'
+import { serializePrettyJson } from '../json.js'
 import { parseModelResultText } from '../model-result.js'
 import { runProcess } from '../process-runner.js'
 
@@ -32,7 +33,7 @@ function textFromAssistantEvent(
   return text === '' ? undefined : text
 }
 
-export interface CursorEventData
+interface CursorEventData
 {
   session_id?: string
   assistant_text?: string
@@ -141,7 +142,7 @@ export class CursorProvider implements WorkerProvider
       const modelResult = parseCursorResultText(text)
       await writePrivateFile(
         context.model_result_path,
-        `${JSON.stringify(modelResult, null, 2)}\n`
+        serializePrettyJson(modelResult)
       )
       outcome.model_result = modelResult
     }

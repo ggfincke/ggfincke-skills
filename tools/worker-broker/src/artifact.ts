@@ -4,7 +4,7 @@
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-export const PRIVATE_DIRECTORY_MODE = 0o700
+const PRIVATE_DIRECTORY_MODE = 0o700
 export const PRIVATE_FILE_MODE = 0o600
 
 export async function secureDirectory(directory: string): Promise<void>
@@ -15,9 +15,7 @@ export async function secureDirectory(directory: string): Promise<void>
 
 export async function preparePrivateFile(filePath: string): Promise<void>
 {
-  await secureDirectory(path.dirname(filePath))
-  await writeFile(filePath, '', { mode: PRIVATE_FILE_MODE })
-  await chmod(filePath, PRIVATE_FILE_MODE)
+  await writePrivateFile(filePath, '')
 }
 
 export async function writePrivateFile(

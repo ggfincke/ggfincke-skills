@@ -83,11 +83,26 @@ async function fixtureConfig(): Promise<{
   }
 }
 
-test('job manager rejects final changes outside the assignment', async () =>
+async function withJobManagerFixture(
+  run: (fixture: { config: BrokerConfig; repo: string }) => Promise<void>
+): Promise<void>
 {
   const repo = await initializeTestRepo()
   const { config, stateDir } = await fixtureConfig()
   try
+  {
+    await run({ config, repo })
+  }
+  finally
+  {
+    await rm(repo, { recursive: true, force: true })
+    await rm(stateDir, { recursive: true, force: true })
+  }
+}
+
+test('job manager rejects final changes outside the assignment', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
   {
     const manager = new JobManager(config, [new OutOfScopeProvider()])
     const started = await manager.start({
@@ -101,19 +116,12 @@ test('job manager rejects final changes outside the assignment', async () =>
     assert.equal(finished.status, 'rejected')
     assert.deepEqual(finished.result?.scope_violations, ['outside.txt'])
     assert.ok(finished.result?.patch_path)
-  }
-  finally
-  {
-    await rm(repo, { recursive: true, force: true })
-    await rm(stateDir, { recursive: true, force: true })
-  }
+  })
 })
 
 test('verification mutations are included in final scope enforcement', async () =>
 {
-  const repo = await initializeTestRepo()
-  const { config, stateDir } = await fixtureConfig()
-  try
+  await withJobManagerFixture(async ({ config, repo }) =>
   {
     const manager = new JobManager(config, [
       {
@@ -134,21 +142,14 @@ test('verification mutations are included in final scope enforcement', async () 
     assert.deepEqual(finished.result?.scope_violations, ['outside.txt'])
     assert.deepEqual(finished.result?.changed_files, ['outside.txt'])
     assert.equal(finished.result?.verification[0]?.exit_code, 0)
-  }
-  finally
-  {
-    await rm(repo, { recursive: true, force: true })
-    await rm(stateDir, { recursive: true, force: true })
-  }
+  })
 })
 
 test('overlapping edit jobs serialize and a queued job cancels without starting', async () =>
 {
-  const repo = await initializeTestRepo()
-  const { config, stateDir } = await fixtureConfig()
-  const provider = new ControlledProvider()
-  try
+  await withJobManagerFixture(async ({ config, repo }) =>
   {
+    const provider = new ControlledProvider()
     const manager = new JobManager(config, [provider])
     const first = await manager.start({
       provider: 'codex',
@@ -176,21 +177,14 @@ test('overlapping edit jobs serialize and a queued job cancels without starting'
       'completed'
     )
     assert.deepEqual(provider.started, [first.job_id])
-  }
-  finally
-  {
-    await rm(repo, { recursive: true, force: true })
-    await rm(stateDir, { recursive: true, force: true })
-  }
+  })
 })
 
 test('a running job reaches cancelled after its provider observes abort', async () =>
 {
-  const repo = await initializeTestRepo()
-  const { config, stateDir } = await fixtureConfig()
-  const provider = new ControlledProvider()
-  try
+  await withJobManagerFixture(async ({ config, repo }) =>
   {
+    const provider = new ControlledProvider()
     const manager = new JobManager(config, [provider])
     const started = await manager.start({
       provider: 'codex',
@@ -204,21 +198,14 @@ test('a running job reaches cancelled after its provider observes abort', async 
     const finished = await manager.waitForTerminal(started.job_id)
     assert.equal(finished.status, 'cancelled')
     assert.equal(finished.result?.process_signal, 'SIGTERM')
-  }
-  finally
-  {
-    await rm(repo, { recursive: true, force: true })
-    await rm(stateDir, { recursive: true, force: true })
-  }
+  })
 })
 
 test('dirty parent checkout does not block start and stays out of the worktree', async () =>
 {
-  const repo = await initializeTestRepo()
-  const { config, stateDir } = await fixtureConfig()
-  const dirtyName = 'parent-only-dirty.txt'
-  try
+  await withJobManagerFixture(async ({ config, repo }) =>
   {
+    const dirtyName = 'parent-only-dirty.txt'
     await writeFile(path.join(repo, dirtyName), 'parent wip\n')
     const manager = new JobManager(config, [
       {
@@ -240,10 +227,5 @@ test('dirty parent checkout does not block start and stays out of the worktree',
     assert.ok(worktree)
     await access(path.join(worktree, 'README.md'))
     await assert.rejects(access(path.join(worktree, dirtyName)))
-  }
-  finally
-  {
-    await rm(repo, { recursive: true, force: true })
-    await rm(stateDir, { recursive: true, force: true })
-  }
+  })
 })

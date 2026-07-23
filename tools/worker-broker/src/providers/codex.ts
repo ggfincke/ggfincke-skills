@@ -1,7 +1,6 @@
 // tools/worker-broker/src/providers/codex.ts
 // invoke Codex noninteractively with broker-owned boundaries & structured prose output
 
-import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { securePrivateFile, writePrivateFile } from '../artifact.js'
 import { assignmentPrompt } from '../assignment-prompt.js'
@@ -11,6 +10,7 @@ import type {
   ProviderRunContext,
   WorkerProvider,
 } from '../contracts.js'
+import { readJson } from '../json.js'
 import { parseModelResult } from '../model-result.js'
 import { runProcess } from '../process-runner.js'
 
@@ -103,9 +103,7 @@ export class CodexProvider implements WorkerProvider
       outcome.worker_session_id = workerSessionId
     if (processResult.exit_code === 0)
     {
-      const modelResult = JSON.parse(
-        await readFile(context.model_result_path, 'utf8')
-      ) as unknown
+      const modelResult = await readJson(context.model_result_path)
       outcome.model_result = parseModelResult(modelResult, 'Codex')
     }
     return outcome

@@ -2,7 +2,6 @@
 // tools/worker-broker/src/cli.ts
 // provide a deterministic local CLI over the broker core before MCP wrapping
 
-import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import type {
@@ -11,8 +10,10 @@ import type {
   WorkerJob,
 } from './contracts.js'
 import { defaultBrokerConfig } from './config.js'
+import { errorMessage } from './errors.js'
 import { JobManager } from './job-manager.js'
 import { JobStore } from './job-store.js'
+import { readJson } from './json.js'
 import { CodexProvider } from './providers/codex.js'
 import { CoralProvider } from './providers/coral.js'
 import { CursorProvider } from './providers/cursor.js'
@@ -91,9 +92,9 @@ async function runJob(
 {
   if (parsed.request_path === undefined)
     throw new Error('run requires --request <file>')
-  const request = JSON.parse(
-    await readFile(path.resolve(parsed.request_path), 'utf8')
-  ) as StartWorkerRequest
+  const request = await readJson<StartWorkerRequest>(
+    path.resolve(parsed.request_path)
+  )
   const manager = new JobManager(config, [
     new CodexProvider(config),
     new CursorProvider(config),
@@ -143,8 +144,6 @@ async function main(): Promise<void>
 
 main().catch((error: unknown) =>
 {
-  process.stderr.write(
-    `${error instanceof Error ? error.message : String(error)}\n`
-  )
+  process.stderr.write(`${errorMessage(error)}\n`)
   process.exitCode = 1
 })

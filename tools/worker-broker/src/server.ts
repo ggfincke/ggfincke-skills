@@ -5,6 +5,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import process from 'node:process'
 import { defaultBrokerConfig } from './config.js'
+import { errorMessage } from './errors.js'
 import { JobManager } from './job-manager.js'
 import { createWorkerBrokerServer } from './mcp-server.js'
 import { CodexProvider } from './providers/codex.js'
@@ -42,8 +43,6 @@ async function main(): Promise<void>
 
 main().catch((error: unknown) =>
 {
-  process.stderr.write(
-    `${error instanceof Error ? error.message : String(error)}\n`
-  )
+  process.stderr.write(`${errorMessage(error)}\n`)
   process.exitCode = 1
 })
