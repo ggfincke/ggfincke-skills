@@ -18,6 +18,7 @@ branch="$(git branch --show-current 2>/dev/null || true)"
 head_short="$(git rev-parse --short HEAD 2>/dev/null || true)"
 head_full="$(git rev-parse HEAD 2>/dev/null || true)"
 upstream=""
+log_limit="${LOG_LIMIT:-16}"
 
 if [ -n "$branch" ]; then
   upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
@@ -61,11 +62,11 @@ section "Submodules"
 git submodule status --recursive 2>/dev/null || true
 
 section "Recent commits"
-git log --oneline --decorate --graph -n "${LOG_LIMIT:-16}" || true
+git log --oneline --decorate --graph -n "$log_limit" || true
 
 if [ -n "$upstream" ]; then
   section "Ahead / behind"
-  git log --oneline --left-right --cherry-pick "$upstream"...HEAD -n "${LOG_LIMIT:-16}" || true
+  git log --oneline --left-right --cherry-pick "$upstream"...HEAD -n "$log_limit" || true
 fi
 
 section "Worktrees"

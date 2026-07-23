@@ -34,7 +34,7 @@ export async function resolveBaseSha(
   ).trim()
 }
 
-export interface CreatedWorktree
+interface CreatedWorktree
 {
   path: string
   branch?: string

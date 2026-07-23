@@ -225,13 +225,13 @@ const out = await pipeline(
 )
 
 const clean = out.filter(Boolean)
-const dead = clean
+const templatesNeedingResource = clean
   .filter((r) => !r.verdicts.some((v) => v.usable))
   .map((r) => r.slug)
 log(
-  `sourced+scored ${clean.length} templates; ${dead.length} with nothing usable${dead.length ? ': ' + dead.join(', ') : ''}`
+  `sourced+scored ${clean.length} templates; ${templatesNeedingResource.length} with nothing usable${templatesNeedingResource.length ? ': ' + templatesNeedingResource.join(', ') : ''}`
 )
 log(
   'NEXT (human): contact-sheet the folders, run simulate-cover-surfaces.py to pick coverZoom, then install the winner as examples/<cat>/<slug>/_cover.jpg'
 )
-return { templates: clean, templatesNeedingResource: dead }
+return { templates: clean, templatesNeedingResource }

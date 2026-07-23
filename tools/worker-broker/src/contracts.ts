@@ -1,15 +1,14 @@
 // tools/worker-broker/src/contracts.ts
 // define broker requests, lifecycle state, provider outcomes, & computed results
 
-export type ProviderName = 'codex' | 'cursor' | 'coral'
+type ProviderName = 'codex' | 'cursor' | 'coral'
 export type WorkerMode = 'read' | 'edit'
 export type WorkerStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
 
-export type ReasoningEffort =
-  'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
-export interface VerificationCommandInput
+interface VerificationCommandInput
 {
   command: string
   timeout_seconds?: number

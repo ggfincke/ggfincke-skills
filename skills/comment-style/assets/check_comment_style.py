@@ -35,6 +35,8 @@ LEGACY_TAG_RE = re.compile(
 	re.IGNORECASE,
 )
 PLAIN_COMMENT_RE = re.compile(r"^(?:#|//)\s+([A-Z][^\s]*)")
+SUMMARY_START_RE = re.compile(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])")
+SUMMARY_PERIOD_RE = re.compile(r"\.(?:[`'\"\])}]*)$")
 SKIP_PARTS = {".venv", "__pycache__", "migrations", "node_modules"}
 TEST_DIR_PARTS = {"test", "tests", "e2e"}
 SWIFT_SKIP_PARTS = {"Pods", "Carthage", ".build", "DerivedData"}
@@ -204,11 +206,11 @@ def docstring_violations(path: Path, tree: ast.Module) -> list[Violation]:
 			continue
 
 		summary = docstring_summary(expr)
-		if not summary or not re.match(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])", summary):
+		if not summary or not SUMMARY_START_RE.match(summary):
 			violations.append(
 				Violation(path, expr.lineno, "class docstrings start with a capitalized sentence")
 			)
-		if summary and not re.search(r"\.(?:[`'\"\])}]*)$", summary):
+		if summary and not SUMMARY_PERIOD_RE.search(summary):
 			violations.append(
 				Violation(path, expr.lineno, "class docstring summaries end with a period")
 			)
@@ -558,11 +560,11 @@ def swift_doc_violations(
 			)
 			continue
 		summary = " ".join(paragraph)
-		if not summary or not re.match(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])", summary):
+		if not summary or not SUMMARY_START_RE.match(summary):
 			violations.append(
 				Violation(path, start + 1, "block documentation starts with a capitalized sentence")
 			)
-		if summary and not re.search(r"\.(?:[`'\"\])}]*)$", summary):
+		if summary and not SUMMARY_PERIOD_RE.search(summary):
 			violations.append(
 				Violation(path, start + 1, "block documentation summaries end with a period")
 			)

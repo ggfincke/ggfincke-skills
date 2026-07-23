@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { BrokerConfig } from './contracts.js'
 
-export function defaultStateDirectory(
+function defaultStateDirectory(
   environment: NodeJS.ProcessEnv = process.env
 ): string
 {

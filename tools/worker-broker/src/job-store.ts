@@ -1,7 +1,7 @@
 // tools/worker-broker/src/job-store.ts
 // persist job state atomically & expose durable artifacts to later frontends
 
-import { readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import { readdir, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import {
@@ -10,6 +10,7 @@ import {
   securePrivateFile,
 } from './artifact.js'
 import type { WorkerJob } from './contracts.js'
+import { readJson, serializePrettyJson } from './json.js'
 
 async function secureJobDirectory(directory: string): Promise<void>
 {
@@ -89,7 +90,7 @@ export class JobStore
   async write(job: WorkerJob): Promise<void>
   {
     await this.initialize()
-    const payload = `${JSON.stringify(job, null, 2)}\n`
+    const payload = serializePrettyJson(job)
     const previous = this.pendingWrites.get(job.job_id) ?? Promise.resolve()
     const pending = previous
       .catch(() => undefined)
@@ -124,7 +125,7 @@ export class JobStore
   async read(jobId: string): Promise<WorkerJob>
   {
     await this.initialize()
-    return JSON.parse(await readFile(this.jobPath(jobId), 'utf8')) as WorkerJob
+    return await readJson<WorkerJob>(this.jobPath(jobId))
   }
 
   async list(): Promise<WorkerJob[]>

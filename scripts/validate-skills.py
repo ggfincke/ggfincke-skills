@@ -47,7 +47,7 @@ class SkillIssue:
 	is_warning: bool = False
 
 
-def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
+def parse_frontmatter(path: Path) -> dict[str, str]:
 	text = path.read_text(encoding="utf-8")
 	lines = text.splitlines()
 	if not lines or lines[0] != "---":
@@ -59,8 +59,7 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
 		raise ValueError("missing closing YAML frontmatter marker") from exc
 
 	values: dict[str, str] = {}
-	raw_lines = lines[1:end_index]
-	for line_number, line in enumerate(raw_lines, start=2):
+	for line_number, line in enumerate(lines[1:end_index], start=2):
 		stripped = line.strip()
 		if not stripped or stripped.startswith("#"):
 			continue
@@ -73,7 +72,7 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
 			raise ValueError(f"empty frontmatter key on line {line_number}")
 		values[key] = value
 
-	return values, raw_lines
+	return values
 
 
 def parse_frontmatter_value(value: str, line_number: int) -> str:
@@ -186,7 +185,7 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
 	issues.extend(readme_issues(path))
 
 	try:
-		frontmatter, _ = parse_frontmatter(skill_file)
+		frontmatter = parse_frontmatter(skill_file)
 	except ValueError as exc:
 		return [SkillIssue(skill_file, str(exc))]
 
@@ -214,12 +213,13 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
 
 	# malformed always-on blocks would silently break the generated region
 	body = skill_file.read_text(encoding="utf-8")
-	for message in always_on.marker_issues(body):
+	blocks, marker_errors = always_on.parse_blocks(body)
+	for message in marker_errors:
 		issues.append(SkillIssue(skill_file, message))
 
 	# sync-skills.py collects always-on blocks from skills/ only, so a well-formed
 	# block on a project-only skill would pass the gate & still reach no agent
-	if is_within(path, PROJECTS_DIR) and always_on.extract_blocks(body):
+	if is_within(path, PROJECTS_DIR) and blocks:
 		issues.append(
 			SkillIssue(
 				skill_file,

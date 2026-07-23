@@ -5,7 +5,7 @@ import path from 'node:path'
 
 const GLOB_CHARACTERS = /[*?[\]{}!]/u
 
-export function normalizeAllowedPath(value: string): string
+function normalizeAllowedPath(value: string): string
 {
   if (value.length === 0 || value.trim() !== value)
   {
@@ -57,7 +57,7 @@ export function normalizeAllowedPaths(values: readonly string[]): string[]
   )
 }
 
-export function isPathWithinPrefix(filePath: string, prefix: string): boolean
+function isPathWithinPrefix(filePath: string, prefix: string): boolean
 {
   return filePath === prefix || filePath.startsWith(`${prefix}/`)
 }

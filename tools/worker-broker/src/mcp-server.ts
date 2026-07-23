@@ -8,6 +8,7 @@ import type {
   WorkerJob,
   WorkerStatus,
 } from './contracts.js'
+import { errorMessage } from './errors.js'
 import { JobManager } from './job-manager.js'
 
 const WorkerStatusSchema = z.enum([
@@ -94,7 +95,7 @@ function success(value: Record<string, unknown>, message: string)
 
 function failure(error: unknown)
 {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   return {
     isError: true,
     content: [{ type: 'text' as const, text: message }],

@@ -1,7 +1,6 @@
 // tools/worker-broker/src/providers/coral.ts
 // invoke Coral's headless Agent surface & normalize its native result evidence
 
-import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { securePrivateFile, writePrivateFile } from '../artifact.js'
 import { assignmentPrompt } from '../assignment-prompt.js'
@@ -11,10 +10,11 @@ import type {
   ProviderRunContext,
   WorkerProvider,
 } from '../contracts.js'
+import { readJson, serializePrettyJson } from '../json.js'
 import { parseModelResultText } from '../model-result.js'
 import { runProcess } from '../process-runner.js'
 
-export interface CoralExecResult
+interface CoralExecResult
 {
   version: 1
   run_id: string
@@ -134,7 +134,7 @@ export class CoralProvider implements WorkerProvider
     if (processResult.exit_code === 0)
     {
       const nativeResult = parseCoralExecResult(
-        JSON.parse(await readFile(nativeResultPath, 'utf8')) as unknown
+        await readJson(nativeResultPath)
       )
       if (nativeResult.status !== 'completed')
       {
@@ -143,7 +143,7 @@ export class CoralProvider implements WorkerProvider
       const modelResult = parseModelResultText(nativeResult.response, 'Coral')
       await writePrivateFile(
         context.model_result_path,
-        `${JSON.stringify(modelResult, null, 2)}\n`
+        serializePrettyJson(modelResult)
       )
       outcome.model_result = modelResult
       outcome.worker_session_id = nativeResult.run_id

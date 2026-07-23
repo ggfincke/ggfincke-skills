@@ -20,6 +20,7 @@ import {
   resolveRepository,
   snapshotWorktree,
 } from './git-worktree.js'
+import { errorMessage } from './errors.js'
 import { JobStore } from './job-store.js'
 import { scopesOverlap, scopeViolations } from './path-scope.js'
 import {
@@ -49,11 +50,6 @@ function taskSlug(task: string): string
 function createJobId(task: string): string
 {
   return `${taskSlug(task)}-${randomBytes(4).toString('hex')}`
-}
-
-function errorMessage(error: unknown): string
-{
-  return error instanceof Error ? error.message : String(error)
 }
 
 function verificationFailed(
@@ -238,13 +234,19 @@ export class JobManager
   private canRun(job: WorkerJob): boolean
   {
     if (job.request.mode === 'read') return true
-    return ![...this.jobs.values()].some(
-      (running) =>
+    for (const running of this.jobs.values())
+    {
+      if (
         running.status === 'running' &&
         running.request.mode === 'edit' &&
         running.request.repo === job.request.repo &&
         scopesOverlap(running.request.allowed_paths, job.request.allowed_paths)
-    )
+      )
+      {
+        return false
+      }
+    }
+    return true
   }
 
   private async schedule(): Promise<void>

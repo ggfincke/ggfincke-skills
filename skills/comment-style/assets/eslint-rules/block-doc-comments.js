@@ -112,6 +112,7 @@ const rule = {
     const filename = repoRelativePath(getFilename(context), {
       cwd: getCwd(context),
     })
+    const testFile = isTestFile(filename)
 
     return {
       Program()
@@ -129,7 +130,7 @@ const rule = {
             }
             continue
           }
-          if (isTestFile(filename))
+          if (testFile)
           {
             context.report({ node: comment, messageId: 'testDocumentation' })
             continue
