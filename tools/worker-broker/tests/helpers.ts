@@ -9,12 +9,14 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 
-export async function git(cwd: string, ...args: string[]): Promise<string> {
+export async function git(cwd: string, ...args: string[]): Promise<string>
+{
   const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8' })
   return stdout
 }
 
-export async function initializeTestRepo(): Promise<string> {
+export async function initializeTestRepo(): Promise<string>
+{
   const repo = await mkdtemp(path.join(os.tmpdir(), 'worker-broker-repo-'))
   await git(repo, 'init', '-q')
   await git(repo, 'config', 'user.name', 'Worker Broker Tests')
@@ -27,11 +29,14 @@ export async function initializeTestRepo(): Promise<string> {
 
 export async function waitUntil(
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 5_000,
-): Promise<void> {
+  timeoutMs = 5_000
+): Promise<void>
+{
   const deadline = Date.now() + timeoutMs
-  while (!(await predicate())) {
-    if (Date.now() >= deadline) throw new Error('timed out waiting for test condition')
+  while (!(await predicate()))
+  {
+    if (Date.now() >= deadline)
+      throw new Error('timed out waiting for test condition')
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }

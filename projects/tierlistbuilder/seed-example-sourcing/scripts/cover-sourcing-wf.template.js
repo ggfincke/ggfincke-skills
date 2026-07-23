@@ -1,5 +1,6 @@
-// seed-example-sourcing: cover-image sourcing Workflow template (TierListBuilder)
+// projects/tierlistbuilder/seed-example-sourcing/scripts/cover-sourcing-wf.template.js
 // sources _cover.jpg hero-banner CANDIDATES for templates that already have item images,
+
 // then read-only vision-scores them. adapt COVERS + SCRATCH, copy to the scratchpad, run via {scriptPath}.
 // pipeline = sonnet multi-angle source (write-only, ADD never overwrite) -> read-only sonnet verify.
 // output is RANKED CANDIDATES for a human to eyeball (contact sheet + simulate-cover-surfaces.py); it does NOT install.
@@ -7,10 +8,19 @@
 
 export const meta = {
   name: 'seed-cover-sourcing',
-  description: 'Source + read-only verify _cover.jpg hero-banner candidates for TierListBuilder seed templates',
+  description:
+    'Source + read-only verify _cover.jpg hero-banner candidates for TierListBuilder seed templates',
   phases: [
-    { title: 'Source', detail: 'sonnet fetches several textless wide hero candidates per template, unique scratch paths' },
-    { title: 'Verify', detail: 'read-only sonnet vision-scores each candidate; human makes the final call' },
+    {
+      title: 'Source',
+      detail:
+        'sonnet fetches several textless wide hero candidates per template, unique scratch paths',
+    },
+    {
+      title: 'Verify',
+      detail:
+        'read-only sonnet vision-scores each candidate; human makes the final call',
+    },
   ],
 }
 
@@ -24,7 +34,10 @@ const SCRATCH = '<SESSION_SCRATCHPAD>/covers'
 //     | 'artist'    (band/artist press photo; a compilation grid only if unusually strong)
 const COVERS = [
   {
-    slug: 'example-slug', cat: 'gaming', id: 'gaming:example-slug', kind: 'franchise',
+    slug: 'example-slug',
+    cat: 'gaming',
+    id: 'gaming:example-slug',
+    kind: 'franchise',
     title: 'Example Roster',
     hint: 'What the set IS + traps: wrong entry/era, must be textless, must not reuse an image another template owns.',
   },
@@ -32,23 +45,41 @@ const COVERS = [
 
 // three blind search angles per template; each source agent works one angle so candidates stay diverse
 const ANGLES = [
-  { key: 'official', how: 'official key art / promo poster / textless theatrical one-sheet / game box-art hero / studio press art' },
-  { key: 'editorial', how: 'editorial or press photography: cast/band group shot, tour or live photo, era-defining portrait' },
-  { key: 'archive', how: 'high-res archive, fan-wiki, lobby card, or production still that is wide, textless, and on-brand' },
+  {
+    key: 'official',
+    how: 'official key art / promo poster / textless theatrical one-sheet / game box-art hero / studio press art',
+  },
+  {
+    key: 'editorial',
+    how: 'editorial or press photography: cast/band group shot, tour or live photo, era-defining portrait',
+  },
+  {
+    key: 'archive',
+    how: 'high-res archive, fan-wiki, lobby card, or production still that is wide, textless, and on-brand',
+  },
 ]
 
 const SOURCE_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['saved'],
+  type: 'object',
+  additionalProperties: false,
+  required: ['saved'],
   properties: {
     saved: {
       type: 'array',
       items: {
-        type: 'object', additionalProperties: false,
+        type: 'object',
+        additionalProperties: false,
         required: ['file', 'width', 'height'],
         properties: {
-          file: { type: 'string', description: 'basename saved under SCRATCH/<slug>/' },
-          width: { type: 'number' }, height: { type: 'number' },
-          sourceUrl: { type: 'string' }, sourcePage: { type: 'string' }, note: { type: 'string' },
+          file: {
+            type: 'string',
+            description: 'basename saved under SCRATCH/<slug>/',
+          },
+          width: { type: 'number' },
+          height: { type: 'number' },
+          sourceUrl: { type: 'string' },
+          sourcePage: { type: 'string' },
+          note: { type: 'string' },
         },
       },
     },
@@ -56,18 +87,44 @@ const SOURCE_SCHEMA = {
 }
 
 const VERDICT_SCHEMA = {
-  type: 'object', additionalProperties: false,
-  required: ['file', 'usable', 'entityCorrect', 'textFree', 'resolutionOk', 'composition', 'depicts', 'vibeFit', 'score', 'reason'],
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'file',
+    'usable',
+    'entityCorrect',
+    'textFree',
+    'resolutionOk',
+    'composition',
+    'depicts',
+    'vibeFit',
+    'score',
+    'reason',
+  ],
   properties: {
     file: { type: 'string' },
     usable: { type: 'boolean' },
     entityCorrect: { type: 'boolean' },
-    textFree: { type: 'boolean', description: 'false if ANY baked-in title/logo/credits/watermark/site stamp' },
+    textFree: {
+      type: 'boolean',
+      description:
+        'false if ANY baked-in title/logo/credits/watermark/site stamp',
+    },
     resolutionOk: { type: 'boolean' },
-    composition: { type: 'string', enum: ['highlight', 'ensemble', 'compilation', 'other'] },
-    depicts: { type: 'string', description: 'literally what is in the frame, as YOU see it' },
+    composition: {
+      type: 'string',
+      enum: ['highlight', 'ensemble', 'compilation', 'other'],
+    },
+    depicts: {
+      type: 'string',
+      description: 'literally what is in the frame, as YOU see it',
+    },
     vibeFit: { type: 'string' },
-    score: { type: 'number', description: '0-10 as a wide hero banner; portrait aspect + baked-in text cost points' },
+    score: {
+      type: 'number',
+      description:
+        '0-10 as a wide hero banner; portrait aspect + baked-in text cost points',
+    },
     reason: { type: 'string' },
   },
 }
@@ -77,7 +134,11 @@ const guidance = (m) =>
     ? `DISCOGRAPHY: the cover should evoke the ARTIST. Best is professional photography of the artist/band (press shot, live/tour photo, era-defining portrait). A single album cover alone is weak; a compilation grid of album art is acceptable only if unusually strong, but a highlight photo is preferred. Wrong-lineup traps matter (e.g. The Strokes != The Voidz).`
     : `FRANCHISE: best is official key art, textless poster art, box-art hero, or an iconic ensemble/vista. A single striking on-brand image is as valid as ensemble art. It MUST NOT reuse an image another template already owns. A highlight image beats a compilation grid.`
 
-const sourcePrompt = (m, angle, folder) => `Source WIDE cover-banner candidates for a TierListBuilder tier-list. Save each clean candidate; do NOT install anything into examples/.
+const sourcePrompt = (
+  m,
+  angle,
+  folder
+) => `Source WIDE cover-banner candidates for a TierListBuilder tier-list. Save each clean candidate; do NOT install anything into examples/.
 
 TEMPLATE: "${m.title}" (${m.id})
 THE SET: ${m.hint}
@@ -94,7 +155,10 @@ RULES:
 
 Return the saved candidates (basename, dimensions, sourceUrl/sourcePage).`
 
-const verifyPrompt = (f, m) => `Verify ONE cover-image candidate. YOU ARE READ-ONLY: do not create, modify, move, or delete any file. Report only.
+const verifyPrompt = (
+  f,
+  m
+) => `Verify ONE cover-image candidate. YOU ARE READ-ONLY: do not create, modify, move, or delete any file. Report only.
 
 TEMPLATE: "${m.title}" (${m.id})
 THE SET: ${m.hint}
@@ -112,27 +176,62 @@ If you cannot open the image, set usable=false and say so. Never guess from the 
 
 const out = await pipeline(
   COVERS,
-  async (m) => {
+  async (m) =>
+  {
     const folder = `${SCRATCH}/${m.slug}`
-    const perAngle = await parallel(ANGLES.map((a) => () => agent(
-      sourcePrompt(m, a, folder),
-      { label: `source:${m.slug}:${a.key}`, phase: 'Source', model: 'sonnet' /* write-capable on purpose */, schema: SOURCE_SCHEMA }
-    )))
-    const files = perAngle.filter(Boolean).flatMap((r) => (r.saved || []).map((s) => ({ ...s, file: `${folder}/${s.file}` })))
+    const perAngle = await parallel(
+      ANGLES.map(
+        (a) => () =>
+          agent(sourcePrompt(m, a, folder), {
+            label: `source:${m.slug}:${a.key}`,
+            phase: 'Source',
+            // write-capable on purpose
+            model: 'sonnet',
+            schema: SOURCE_SCHEMA,
+          })
+      )
+    )
+    const files = perAngle
+      .filter(Boolean)
+      .flatMap((r) =>
+        (r.saved || []).map((s) => ({ ...s, file: `${folder}/${s.file}` }))
+      )
     return { ...m, folder, files }
   },
-  async (t) => {
-    if (!t || !t.files.length) return { slug: t?.slug, verdicts: [], error: 'no candidates saved' }
-    const verdicts = await parallel(t.files.map((f) => () => agent(
-      verifyPrompt(f, t),
-      { label: `verify:${t.slug}`, phase: 'Verify', model: 'sonnet', agentType: 'Explore', schema: VERDICT_SCHEMA }
-    )))
-    return { slug: t.slug, id: t.id, kind: t.kind, folder: t.folder, verdicts: verdicts.filter(Boolean).sort((a, b) => b.score - a.score) }
+  async (t) =>
+  {
+    if (!t || !t.files.length)
+      return { slug: t?.slug, verdicts: [], error: 'no candidates saved' }
+    const verdicts = await parallel(
+      t.files.map(
+        (f) => () =>
+          agent(verifyPrompt(f, t), {
+            label: `verify:${t.slug}`,
+            phase: 'Verify',
+            model: 'sonnet',
+            agentType: 'Explore',
+            schema: VERDICT_SCHEMA,
+          })
+      )
+    )
+    return {
+      slug: t.slug,
+      id: t.id,
+      kind: t.kind,
+      folder: t.folder,
+      verdicts: verdicts.filter(Boolean).sort((a, b) => b.score - a.score),
+    }
   }
 )
 
 const clean = out.filter(Boolean)
-const dead = clean.filter((r) => !r.verdicts.some((v) => v.usable)).map((r) => r.slug)
-log(`sourced+scored ${clean.length} templates; ${dead.length} with nothing usable${dead.length ? ': ' + dead.join(', ') : ''}`)
-log('NEXT (human): contact-sheet the folders, run simulate-cover-surfaces.py to pick coverZoom, then install the winner as examples/<cat>/<slug>/_cover.jpg')
+const dead = clean
+  .filter((r) => !r.verdicts.some((v) => v.usable))
+  .map((r) => r.slug)
+log(
+  `sourced+scored ${clean.length} templates; ${dead.length} with nothing usable${dead.length ? ': ' + dead.join(', ') : ''}`
+)
+log(
+  'NEXT (human): contact-sheet the folders, run simulate-cover-surfaces.py to pick coverZoom, then install the winner as examples/<cat>/<slug>/_cover.jpg'
+)
 return { templates: clean, templatesNeedingResource: dead }

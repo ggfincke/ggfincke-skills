@@ -7,7 +7,8 @@ import type { BrokerConfig, ProviderRunContext } from '../src/contracts.js'
 import { buildCoralArgs, parseCoralExecResult } from '../src/providers/coral.js'
 import { normalizeRequest } from '../src/request.js'
 
-function context(mode: 'read' | 'edit'): ProviderRunContext {
+function context(mode: 'read' | 'edit'): ProviderRunContext
+{
   return {
     job_id: 'job-coral',
     request: {
@@ -41,8 +42,13 @@ const config: BrokerConfig = {
   coral_host: 'http://ollama.test:11434',
 }
 
-test('Coral arguments select deterministic headless profiles and isolation', () => {
-  const readArgs = buildCoralArgs(context('read'), config, '/job/coral-result.json')
+test('Coral arguments select deterministic headless profiles and isolation', () =>
+{
+  const readArgs = buildCoralArgs(
+    context('read'),
+    config,
+    '/job/coral-result.json'
+  )
   assert.deepEqual(readArgs.slice(0, 7), [
     'exec',
     '--cwd',
@@ -55,32 +61,38 @@ test('Coral arguments select deterministic headless profiles and isolation', () 
   assert.deepEqual(
     readArgs.slice(
       readArgs.indexOf('--permission-profile'),
-      readArgs.indexOf('--permission-profile') + 2,
+      readArgs.indexOf('--permission-profile') + 2
     ),
-    ['--permission-profile', 'read-only'],
+    ['--permission-profile', 'read-only']
   )
   assert.ok(readArgs.includes('--ephemeral'))
   assert.ok(readArgs.includes('--no-mcp'))
   assert.equal(readArgs.at(-1), '--no-mcp')
 
-  const editArgs = buildCoralArgs(context('edit'), config, '/job/coral-result.json')
+  const editArgs = buildCoralArgs(
+    context('edit'),
+    config,
+    '/job/coral-result.json'
+  )
   assert.deepEqual(
     editArgs.slice(
       editArgs.indexOf('--permission-profile'),
-      editArgs.indexOf('--permission-profile') + 2,
+      editArgs.indexOf('--permission-profile') + 2
     ),
-    ['--permission-profile', 'workspace-write'],
+    ['--permission-profile', 'workspace-write']
   )
 })
 
-test('Coral native results and unsupported controls fail closed', () => {
+test('Coral native results and unsupported controls fail closed', () =>
+{
   assert.deepEqual(
     parseCoralExecResult({
       version: 1,
       run_id: 'run-1',
       status: 'completed',
       model: 'local-test-model',
-      response: '{"summary":"done","assumptions":[],"risks":[],"follow_ups":[]}',
+      response:
+        '{"summary":"done","assumptions":[],"risks":[],"follow_ups":[]}',
       usage: {},
     }),
     {
@@ -88,8 +100,9 @@ test('Coral native results and unsupported controls fail closed', () => {
       run_id: 'run-1',
       status: 'completed',
       model: 'local-test-model',
-      response: '{"summary":"done","assumptions":[],"risks":[],"follow_ups":[]}',
-    },
+      response:
+        '{"summary":"done","assumptions":[],"risks":[],"follow_ups":[]}',
+    }
   )
   assert.throws(
     () =>
@@ -101,7 +114,7 @@ test('Coral native results and unsupported controls fail closed', () => {
         allowed_paths: [],
         effort: 'low',
       }),
-    /does not support the broker effort override/u,
+    /does not support the broker effort override/u
   )
   assert.throws(
     () =>
@@ -113,6 +126,6 @@ test('Coral native results and unsupported controls fail closed', () => {
         allowed_paths: [],
         allow_nested_agents: true,
       }),
-    /do not support nested agents/u,
+    /do not support nested agents/u
   )
 })

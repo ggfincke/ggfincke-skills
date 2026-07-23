@@ -9,7 +9,8 @@ import type { Writable } from 'node:stream'
 import { finished } from 'node:stream/promises'
 import { preparePrivateFile, PRIVATE_FILE_MODE } from './artifact.js'
 
-export interface ProcessRunOptions {
+export interface ProcessRunOptions
+{
   command: string
   args: string[]
   cwd: string
@@ -23,7 +24,8 @@ export interface ProcessRunOptions {
   on_process_started?: (pid: number) => void | Promise<void>
 }
 
-export interface ProcessRunResult {
+export interface ProcessRunResult
+{
   exit_code: number | null
   signal: NodeJS.Signals | null
   timed_out: boolean
@@ -39,50 +41,68 @@ const PROCESS_START_WRAPPER =
 async function resolveExecutable(
   command: string,
   cwd: string,
-  environment: NodeJS.ProcessEnv,
-): Promise<string> {
+  environment: NodeJS.ProcessEnv
+): Promise<string>
+{
   const candidates = command.includes('/')
     ? [path.resolve(cwd, command)]
     : (environment.PATH ?? '/usr/bin:/bin')
         .split(path.delimiter)
-        .map((directory) => path.resolve(directory === '' ? cwd : directory, command))
+        .map((directory) =>
+          path.resolve(directory === '' ? cwd : directory, command)
+        )
   let lastError: unknown
-  for (const candidate of candidates) {
-    try {
+  for (const candidate of candidates)
+  {
+    try
+    {
       await access(candidate, fsConstants.X_OK)
       return candidate
-    } catch (error) {
+    }
+    catch (error)
+    {
       lastError = error
     }
   }
   throw lastError
 }
 
-async function releaseProcessGate(gate: Writable): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
+async function releaseProcessGate(gate: Writable): Promise<void>
+{
+  await new Promise<void>((resolve, reject) =>
+  {
     const rejectOnError = (error: Error): void => reject(error)
     gate.once('error', rejectOnError)
-    gate.end('start\n', () => {
+    gate.end('start\n', () =>
+    {
       gate.off('error', rejectOnError)
       resolve()
     })
   })
 }
 
-function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
+function killProcessGroup(pid: number, signal: NodeJS.Signals): void
+{
+  try
+  {
     process.kill(-pid, signal)
-  } catch (error) {
+  }
+  catch (error)
+  {
     const code = (error as NodeJS.ErrnoException).code
     if (code !== 'ESRCH') throw error
   }
 }
 
-function processGroupExists(pid: number): boolean {
-  try {
+export function processGroupExists(pid: number): boolean
+{
+  try
+  {
     process.kill(-pid, 0)
     return true
-  } catch (error) {
+  }
+  catch (error)
+  {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ESRCH') return false
     if (code === 'EPERM') return true
@@ -90,9 +110,14 @@ function processGroupExists(pid: number): boolean {
   }
 }
 
-async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
+async function waitForProcessGroupExit(
+  pid: number,
+  timeoutMs: number
+): Promise<boolean>
+{
   const deadline = Date.now() + timeoutMs
-  while (processGroupExists(pid)) {
+  while (processGroupExists(pid))
+  {
     const remaining = deadline - Date.now()
     if (remaining <= 0) return false
     await new Promise((resolve) => setTimeout(resolve, Math.min(50, remaining)))
@@ -100,21 +125,31 @@ async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<
   return true
 }
 
-export async function terminateProcessGroup(pid: number): Promise<void> {
-  if (!Number.isSafeInteger(pid) || pid <= 1) {
+export async function terminateProcessGroup(pid: number): Promise<void>
+{
+  if (!Number.isSafeInteger(pid) || pid <= 1)
+  {
     throw new Error(`invalid persisted process group id: ${pid}`)
   }
   killProcessGroup(pid, 'SIGTERM')
   if (await waitForProcessGroupExit(pid, TERMINATION_GRACE_MS)) return
   killProcessGroup(pid, 'SIGKILL')
-  if (!(await waitForProcessGroupExit(pid, TERMINATION_GRACE_MS))) {
+  if (!(await waitForProcessGroupExit(pid, TERMINATION_GRACE_MS)))
+  {
     throw new Error(`process group ${pid} survived SIGKILL`)
   }
 }
 
-export async function runProcess(options: ProcessRunOptions): Promise<ProcessRunResult> {
+export async function runProcess(
+  options: ProcessRunOptions
+): Promise<ProcessRunResult>
+{
   const environment = options.env ?? process.env
-  const executable = await resolveExecutable(options.command, options.cwd, environment)
+  const executable = await resolveExecutable(
+    options.command,
+    options.cwd,
+    environment
+  )
   await Promise.all([
     preparePrivateFile(options.stdout_path),
     preparePrivateFile(options.stderr_path),
@@ -133,19 +168,24 @@ export async function runProcess(options: ProcessRunOptions): Promise<ProcessRun
   let timedOut = false
   let stdoutBuffer = ''
 
-  return await new Promise<ProcessRunResult>((resolve, reject) => {
-    const child = spawn('/bin/sh', [
-      '-c',
-      PROCESS_START_WRAPPER,
-      'worker-broker-process',
-      executable,
-      ...options.args,
-    ], {
-      cwd: options.cwd,
-      env: environment,
-      detached: true,
-      stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
-    })
+  return await new Promise<ProcessRunResult>((resolve, reject) =>
+  {
+    const child = spawn(
+      '/bin/sh',
+      [
+        '-c',
+        PROCESS_START_WRAPPER,
+        'worker-broker-process',
+        executable,
+        ...options.args,
+      ],
+      {
+        cwd: options.cwd,
+        env: environment,
+        detached: true,
+        stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+      }
+    )
     const pid = child.pid
     const processGate = child.stdio[3] as Writable
     let forceKillTimer: NodeJS.Timeout | undefined
@@ -156,31 +196,41 @@ export async function runProcess(options: ProcessRunOptions): Promise<ProcessRun
     let processStarted = Promise.resolve()
     let settled = false
 
-    const cleanup = (): void => {
+    const cleanup = (): void =>
+    {
       clearTimeout(timeoutTimer)
       clearTimeout(forceKillTimer)
       options.signal?.removeEventListener('abort', abortHandler)
     }
 
-    const closeArtifacts = (): void => {
+    const closeArtifacts = (): void =>
+    {
       stdout.end()
       stderr.end()
     }
 
-    const terminate = (): void => {
+    const terminate = (): void =>
+    {
       if (pid === undefined) return
       killProcessGroup(pid, 'SIGTERM')
-      forceKillTimer ??= setTimeout(() => killProcessGroup(pid, 'SIGKILL'), TERMINATION_GRACE_MS)
+      forceKillTimer ??= setTimeout(
+        () => killProcessGroup(pid, 'SIGKILL'),
+        TERMINATION_GRACE_MS
+      )
       forceKillTimer.unref()
     }
     const abortHandler = (): void => terminate()
-    const artifactsFinished = Promise.all(artifactStreams).catch((error: unknown) => {
-      artifactError = error
-      terminate()
-      child.stdout.resume()
-    })
+    const artifactsFinished = Promise.all(artifactStreams).catch(
+      (error: unknown) =>
+      {
+        artifactError = error
+        terminate()
+        child.stdout.resume()
+      }
+    )
 
-    const settle = async (result: ProcessRunResult): Promise<void> => {
+    const settle = async (result: ProcessRunResult): Promise<void> =>
+    {
       if (settled) return
       settled = true
       cleanup()
@@ -192,35 +242,45 @@ export async function runProcess(options: ProcessRunOptions): Promise<ProcessRun
       else resolve(result)
     }
 
-    if (pid !== undefined) {
+    if (pid !== undefined)
+    {
       processStarted = Promise.resolve()
         .then(async () => await options.on_process_started?.(pid))
-        .then(async () => {
-          if (options.signal?.aborted || timedOut) {
+        .then(async () =>
+        {
+          if (options.signal?.aborted || timedOut)
+          {
             processGate.destroy()
             return
           }
           await releaseProcessGate(processGate)
         })
-        .catch((error: unknown) => {
+        .catch((error: unknown) =>
+        {
           processStartError = error
           terminate()
         })
-    } else {
+    }
+    else
+    {
       processGate.destroy()
     }
     if (options.signal?.aborted) terminate()
     options.signal?.addEventListener('abort', abortHandler, { once: true })
-    if (options.timeout_ms !== undefined) {
-      timeoutTimer = setTimeout(() => {
+    if (options.timeout_ms !== undefined)
+    {
+      timeoutTimer = setTimeout(() =>
+      {
         timedOut = true
         terminate()
       }, options.timeout_ms)
       timeoutTimer.unref()
     }
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      if (!stdout.write(chunk)) {
+    child.stdout.on('data', (chunk: Buffer) =>
+    {
+      if (!stdout.write(chunk))
+      {
         child.stdout.pause()
         stdout.once('drain', () => child.stdout.resume())
       }
@@ -232,17 +292,25 @@ export async function runProcess(options: ProcessRunOptions): Promise<ProcessRun
       for (const line of lines) options.on_stdout_line(line)
     })
     child.stderr.pipe(stderr)
-    child.stdin.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code !== 'EPIPE' && error.code !== 'ERR_STREAM_DESTROYED' && !settled) {
+    child.stdin.on('error', (error: NodeJS.ErrnoException) =>
+    {
+      if (
+        error.code !== 'EPIPE' &&
+        error.code !== 'ERR_STREAM_DESTROYED' &&
+        !settled
+      )
+      {
         executionError = error
         terminate()
       }
     })
 
-    child.once('error', (error) => {
+    child.once('error', (error) =>
+    {
       executionError = error
     })
-    child.once('close', (exitCode, signal) => {
+    child.once('close', (exitCode, signal) =>
+    {
       if (settled) return
       if (stdoutBuffer !== '') options.on_stdout_line?.(stdoutBuffer)
       void settle({
@@ -262,9 +330,11 @@ export async function runCaptured(
   command: string,
   args: string[],
   cwd: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<string> {
-  return await new Promise<string>((resolve, reject) => {
+  env: NodeJS.ProcessEnv = process.env
+): Promise<string>
+{
+  return await new Promise<string>((resolve, reject) =>
+  {
     const child = spawn(command, args, {
       cwd,
       env,
@@ -272,20 +342,24 @@ export async function runCaptured(
     })
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout.on('data', (chunk: Buffer) =>
+    {
       stdout += chunk.toString('utf8')
     })
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr.on('data', (chunk: Buffer) =>
+    {
       stderr += chunk.toString('utf8')
     })
     child.once('error', reject)
-    child.once('close', (exitCode, signal) => {
+    child.once('close', (exitCode, signal) =>
+    {
       if (exitCode === 0) resolve(stdout)
-      else {
+      else
+      {
         reject(
           new Error(
-            `${command} ${args.join(' ')} failed (${signal ?? exitCode ?? 'unknown'}): ${stderr.trim()}`,
-          ),
+            `${command} ${args.join(' ')} failed (${signal ?? exitCode ?? 'unknown'}): ${stderr.trim()}`
+          )
         )
       }
     })

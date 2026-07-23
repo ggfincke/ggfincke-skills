@@ -15,22 +15,24 @@ COMMENT_STYLE_CHECKER = REPO_ROOT / "skills" / "comment-style" / "assets" / "che
 
 
 def load_module(name: str, path: Path) -> ModuleType:
-    # import a script by file path; register in sys.modules so dataclass &
-    # annotation resolution works for files whose names are not importable
-    if str(SCRIPTS_DIR) not in sys.path:
-        sys.path.insert(0, str(SCRIPTS_DIR))
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+	# import a script by file path; register in sys.modules so dataclass &
+	# annotation resolution works for files whose names are not importable
+	if str(SCRIPTS_DIR) not in sys.path:
+		sys.path.insert(0, str(SCRIPTS_DIR))
+	spec = importlib.util.spec_from_file_location(name, path)
+	assert spec and spec.loader
+	module = importlib.util.module_from_spec(spec)
+	sys.modules[name] = module
+	spec.loader.exec_module(module)
+	return module
 
 
-def run_script(path: Path, args: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(path), *args],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+def run_script(
+	path: Path, args: list[str], env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+	return subprocess.run(
+		[sys.executable, str(path), *args],
+		capture_output=True,
+		text=True,
+		env=env,
+	)

@@ -63,9 +63,10 @@ Do not push, publish, or open pull requests unless the user separately authorize
 
 ## Commit discipline
 
-Never leave orchestration commits behind. The broker requires a clean checkout and
-sequenced waves need prior work in the base commit, so temporary integration commits
-during a run are acceptable — but once the final wave is integrated and validated,
-soft-reset them (`git reset <pre-orchestration-base>`) so the user reviews one dirty
-working-tree diff. Commit permanently only when the user explicitly asks, and then
-propose logically-grouped commits per the working-conventions skill.
+Never leave orchestration commits behind. Temporary integration commits during a
+run are for sequenced waves that must share prior integrated work in the next
+base — not because the broker demands a clean checkout. Once the final wave is
+integrated and validated, soft-reset them (`git reset <pre-orchestration-base>`)
+so the user reviews one dirty working-tree diff. Commit permanently only when the
+user explicitly asks, and then propose logically-grouped commits per the
+working-conventions skill.

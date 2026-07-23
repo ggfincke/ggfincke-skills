@@ -1,0 +1,17 @@
+**/node_modules/**
+**/dist/**
+package-lock.json
+**/package-lock.json
+
+# skill / agent / workflow / docs markdown stays hand-authored
+skills/**/*.md
+agents/
+prompts/
+workflows/
+docs/
+dev-docs/
+templates/
+AGENTS.md
+CLAUDE.md
+README.md
+*.md

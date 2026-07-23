@@ -17,24 +17,24 @@ Check the repo in for a `CLAUDE.md` -> `See AGENTS.md` one-liner so both agents 
 
 ## 2. Comment-style enforcers
 
-Wire the matching linter for the repo's languages. The `comment-style` skill carries per-language enforcer configs under its `assets/`:
-- TypeScript/JS -> the ESLint rules in the skill's `assets/eslint-rules`.
-- Python -> Ruff.
+Wire the matching linter for the repo's languages. The `comment-style` skill carries per-language enforcer configs under its `assets/`, plus formatting and install recipes in `references/formatting.md` and `references/wiring-recipe.md`:
+- TypeScript/JS -> the ESLint rules in the skill's `assets/eslint-rules`, plus Prettier/Allman from `references/formatting.md`.
+- Python -> Ruff + `assets/check_comment_style.py` (optional wrapper: `assets/check-python-style.sh`).
 - Swift -> SwiftFormat (the skill's `assets/swift`).
 - Any language -> the skill's portable `assets/check_comment_style.py` as a fallback enforcer.
 
-The comment-style rules already ship globally via the always-on block; this step only adds the repo's lint-config enforcement so violations fail locally + in CI.
+The comment-style rules already ship globally via the always-on block; this step only adds the repo's lint-config enforcement so violations fail locally + in CI. Follow `wiring-recipe.md` for scripts, lint-staged, and CI shape.
 
 ## 3. Landing gate + pre-commit hook
 
 The gate bundles validation + tests behind one command; the hook runs it pre-commit. In this repo (confirm against the target repo's Makefile before copying):
 
 ```sh
-make check          # validate + test - the full gate
-make install-hooks  # route git hooks at scripts/hooks (validate + tests run pre-commit)
+make check          # validate + test + broker-check + format-check + format-python-check
+make install-hooks  # route git hooks at scripts/hooks (validate + tests + lint-staged)
 ```
 
-For a new repo without a Makefile, give it a `check` target (or `npm run check` / `just check`) that runs the validator + the test suite, and a pre-commit hook that runs those same checks. Note: this repo's hook calls `validate-skills.py` then the unittest suite directly, not `make check` - keep the hook and the gate running the same checks either way.
+For a new repo without a Makefile, give it a `check` target (or `npm run check` / `just check`) that runs the validator + the test suite + format gates, and a pre-commit hook that runs validate/tests plus lint-staged (mutating format on staged files). Note: this repo's hook does **not** run full `make check` (broker-check stays for CI / `make check`).
 
 ## 4. Python repos
 

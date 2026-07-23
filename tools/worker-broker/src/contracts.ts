@@ -4,29 +4,21 @@
 export type ProviderName = 'codex' | 'cursor' | 'coral'
 export type WorkerMode = 'read' | 'edit'
 export type WorkerStatus =
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'rejected'
-  | 'cancelled'
+  'queued' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
 
 export type ReasoningEffort =
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max'
-  | 'ultra'
+  'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
-export interface VerificationCommandInput {
+export interface VerificationCommandInput
+{
   command: string
   timeout_seconds?: number
 }
 
 export type VerificationInput = string | VerificationCommandInput
 
-export interface StartWorkerRequest {
+export interface StartWorkerRequest
+{
   provider: ProviderName
   mode: WorkerMode
   repo: string
@@ -40,12 +32,14 @@ export interface StartWorkerRequest {
   allow_nested_agents?: boolean
 }
 
-export interface NormalizedVerificationCommand {
+export interface NormalizedVerificationCommand
+{
   command: string
   timeout_seconds: number
 }
 
-export interface NormalizedWorkerRequest {
+export interface NormalizedWorkerRequest
+{
   provider: ProviderName
   mode: WorkerMode
   repo: string
@@ -59,14 +53,16 @@ export interface NormalizedWorkerRequest {
   allow_nested_agents: boolean
 }
 
-export interface ModelWorkerResult {
+export interface ModelWorkerResult
+{
   summary: string
   assumptions: string[]
   risks: string[]
   follow_ups: string[]
 }
 
-export interface ProviderRunContext {
+export interface ProviderRunContext
+{
   job_id: string
   request: NormalizedWorkerRequest
   worktree: string
@@ -79,31 +75,36 @@ export interface ProviderRunContext {
   on_process_started: (pid: number) => void | Promise<void>
 }
 
-export interface ProviderOutcome {
+export interface ProviderOutcome
+{
   exit_code: number | null
   signal: NodeJS.Signals | null
   worker_session_id?: string
   model_result?: ModelWorkerResult
 }
 
-export interface WorkerProvider {
+export interface WorkerProvider
+{
   readonly name: ProviderName
   run(context: ProviderRunContext): Promise<ProviderOutcome>
 }
 
-export interface ChangedPath {
+export interface ChangedPath
+{
   status: string
   paths: string[]
 }
 
-export interface GitSnapshot {
+export interface GitSnapshot
+{
   head_sha: string
   changes: ChangedPath[]
   changed_files: string[]
   patch_path: string
 }
 
-export interface VerificationResult {
+export interface VerificationResult
+{
   command: string
   exit_code: number | null
   signal: NodeJS.Signals | null
@@ -113,7 +114,8 @@ export interface VerificationResult {
   elapsed_ms: number
 }
 
-export interface WorkerResult {
+export interface WorkerResult
+{
   job_id: string
   status: WorkerStatus
   provider: ProviderName
@@ -146,7 +148,8 @@ export interface WorkerResult {
   elapsed_ms?: number
 }
 
-export interface WorkerJob {
+export interface WorkerJob
+{
   job_id: string
   status: WorkerStatus
   request: NormalizedWorkerRequest
@@ -160,7 +163,8 @@ export interface WorkerJob {
   result?: WorkerResult
 }
 
-export interface BrokerConfig {
+export interface BrokerConfig
+{
   state_dir: string
   codex_binary: string
   cursor_binary: string

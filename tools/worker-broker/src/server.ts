@@ -11,7 +11,8 @@ import { CodexProvider } from './providers/codex.js'
 import { CoralProvider } from './providers/coral.js'
 import { CursorProvider } from './providers/cursor.js'
 
-async function main(): Promise<void> {
+async function main(): Promise<void>
+{
   const config = defaultBrokerConfig()
   const manager = new JobManager(config, [
     new CodexProvider(config),
@@ -23,8 +24,10 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport()
   let closing: Promise<void> | undefined
 
-  const close = (): Promise<void> => {
-    closing ??= (async () => {
+  const close = (): Promise<void> =>
+  {
+    closing ??= (async () =>
+    {
       await manager.shutdown()
       await server.close()
     })()
@@ -37,7 +40,10 @@ async function main(): Promise<void> {
   await server.connect(transport)
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+main().catch((error: unknown) =>
+{
+  process.stderr.write(
+    `${error instanceof Error ? error.message : String(error)}\n`
+  )
   process.exitCode = 1
 })

@@ -35,3 +35,4 @@ python3 tools/check_comment_style.py --fix --python --root . --python-root apps/
 - `--root` sets the repo root used for header paths (defaults to the git toplevel, else cwd).
 - `--python-root` is repeatable and defaults to the repo root. `migrations/`, `.venv/`, `__pycache__/` are skipped.
 - Pair with Ruff for formatting (`ruff format`, `ruff check --fix`). Optionally enable `D400` and `D403` so Ruff also checks sentence style on the class docstrings that remain allowed, then run both tools from the repo's format/check wrappers.
+- Optional orchestrator: copy `assets/check-python-style.sh` next to the checker and customize `UV_PROJECT`, `RUFF_CONFIG`, `CHECKER`, and `RUFF_TARGETS` (see `wiring-recipe.md`).

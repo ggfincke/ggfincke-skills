@@ -8,10 +8,14 @@ import path from 'node:path'
 import test from 'node:test'
 import { runProcess } from '../src/process-runner.js'
 
-test('abort terminates a running process group promptly', async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'worker-broker-process-'))
+test('abort terminates a running process group promptly', async () =>
+{
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'worker-broker-process-')
+  )
   const controller = new AbortController()
-  try {
+  try
+  {
     const running = runProcess({
       command: '/bin/zsh',
       args: ['-lc', 'sleep 30'],
@@ -24,14 +28,20 @@ test('abort terminates a running process group promptly', async () => {
     const result = await running
     assert.ok(result.elapsed_ms < 5_000)
     assert.equal(result.signal, 'SIGTERM')
-  } finally {
+  }
+  finally
+  {
     await rm(directory, { recursive: true, force: true })
   }
 })
 
-test('a missing executable rejects cleanly', async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'worker-broker-process-'))
-  try {
+test('a missing executable rejects cleanly', async () =>
+{
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'worker-broker-process-')
+  )
+  try
+  {
     await assert.rejects(
       runProcess({
         command: path.join(directory, 'missing-binary'),
@@ -40,9 +50,11 @@ test('a missing executable rejects cleanly', async () => {
         stdout_path: path.join(directory, 'stdout.log'),
         stderr_path: path.join(directory, 'stderr.log'),
       }),
-      /ENOENT/u,
+      /ENOENT/u
     )
-  } finally {
+  }
+  finally
+  {
     await rm(directory, { recursive: true, force: true })
   }
 })

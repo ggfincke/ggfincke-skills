@@ -2,7 +2,7 @@
 // exercise rejection, serialized overlap, & cancellation through the real job lifecycle
 
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -26,41 +26,51 @@ const SUCCESS: ProviderOutcome = {
   },
 }
 
-class OutOfScopeProvider implements WorkerProvider {
+class OutOfScopeProvider implements WorkerProvider
+{
   readonly name = 'codex' as const
 
-  async run(context: ProviderRunContext): Promise<ProviderOutcome> {
+  async run(context: ProviderRunContext): Promise<ProviderOutcome>
+  {
     await writeFile(path.join(context.worktree, 'outside.txt'), 'not allowed\n')
     return SUCCESS
   }
 }
 
-class ControlledProvider implements WorkerProvider {
+class ControlledProvider implements WorkerProvider
+{
   readonly name = 'codex' as const
   readonly started: string[] = []
   private readonly releases = new Map<string, () => void>()
 
-  async run(context: ProviderRunContext): Promise<ProviderOutcome> {
+  async run(context: ProviderRunContext): Promise<ProviderOutcome>
+  {
     this.started.push(context.job_id)
-    return await new Promise<ProviderOutcome>((resolve) => {
+    return await new Promise<ProviderOutcome>((resolve) =>
+    {
       const finish = (): void => resolve(SUCCESS)
       this.releases.set(context.job_id, finish)
       context.signal.addEventListener(
         'abort',
         () => resolve({ exit_code: null, signal: 'SIGTERM' }),
-        { once: true },
+        { once: true }
       )
     })
   }
 
-  release(jobId: string): void {
+  release(jobId: string): void
+  {
     const release = this.releases.get(jobId)
     if (release === undefined) throw new Error(`job has not started: ${jobId}`)
     release()
   }
 }
 
-async function fixtureConfig(): Promise<{ config: BrokerConfig; stateDir: string }> {
+async function fixtureConfig(): Promise<{
+  config: BrokerConfig
+  stateDir: string
+}>
+{
   const stateDir = await mkdtemp(path.join(os.tmpdir(), 'worker-broker-state-'))
   return {
     config: {
@@ -73,10 +83,12 @@ async function fixtureConfig(): Promise<{ config: BrokerConfig; stateDir: string
   }
 }
 
-test('job manager rejects final changes outside the assignment', async () => {
+test('job manager rejects final changes outside the assignment', async () =>
+{
   const repo = await initializeTestRepo()
   const { config, stateDir } = await fixtureConfig()
-  try {
+  try
+  {
     const manager = new JobManager(config, [new OutOfScopeProvider()])
     const started = await manager.start({
       provider: 'codex',
@@ -89,16 +101,20 @@ test('job manager rejects final changes outside the assignment', async () => {
     assert.equal(finished.status, 'rejected')
     assert.deepEqual(finished.result?.scope_violations, ['outside.txt'])
     assert.ok(finished.result?.patch_path)
-  } finally {
+  }
+  finally
+  {
     await rm(repo, { recursive: true, force: true })
     await rm(stateDir, { recursive: true, force: true })
   }
 })
 
-test('verification mutations are included in final scope enforcement', async () => {
+test('verification mutations are included in final scope enforcement', async () =>
+{
   const repo = await initializeTestRepo()
   const { config, stateDir } = await fixtureConfig()
-  try {
+  try
+  {
     const manager = new JobManager(config, [
       {
         name: 'codex',
@@ -118,17 +134,21 @@ test('verification mutations are included in final scope enforcement', async () 
     assert.deepEqual(finished.result?.scope_violations, ['outside.txt'])
     assert.deepEqual(finished.result?.changed_files, ['outside.txt'])
     assert.equal(finished.result?.verification[0]?.exit_code, 0)
-  } finally {
+  }
+  finally
+  {
     await rm(repo, { recursive: true, force: true })
     await rm(stateDir, { recursive: true, force: true })
   }
 })
 
-test('overlapping edit jobs serialize and a queued job cancels without starting', async () => {
+test('overlapping edit jobs serialize and a queued job cancels without starting', async () =>
+{
   const repo = await initializeTestRepo()
   const { config, stateDir } = await fixtureConfig()
   const provider = new ControlledProvider()
-  try {
+  try
+  {
     const manager = new JobManager(config, [provider])
     const first = await manager.start({
       provider: 'codex',
@@ -151,19 +171,26 @@ test('overlapping edit jobs serialize and a queued job cancels without starting'
     const cancelled = await manager.cancel(second.job_id)
     assert.equal(cancelled.status, 'cancelled')
     provider.release(first.job_id)
-    assert.equal((await manager.waitForTerminal(first.job_id)).status, 'completed')
+    assert.equal(
+      (await manager.waitForTerminal(first.job_id)).status,
+      'completed'
+    )
     assert.deepEqual(provider.started, [first.job_id])
-  } finally {
+  }
+  finally
+  {
     await rm(repo, { recursive: true, force: true })
     await rm(stateDir, { recursive: true, force: true })
   }
 })
 
-test('a running job reaches cancelled after its provider observes abort', async () => {
+test('a running job reaches cancelled after its provider observes abort', async () =>
+{
   const repo = await initializeTestRepo()
   const { config, stateDir } = await fixtureConfig()
   const provider = new ControlledProvider()
-  try {
+  try
+  {
     const manager = new JobManager(config, [provider])
     const started = await manager.start({
       provider: 'codex',
@@ -177,7 +204,45 @@ test('a running job reaches cancelled after its provider observes abort', async 
     const finished = await manager.waitForTerminal(started.job_id)
     assert.equal(finished.status, 'cancelled')
     assert.equal(finished.result?.process_signal, 'SIGTERM')
-  } finally {
+  }
+  finally
+  {
+    await rm(repo, { recursive: true, force: true })
+    await rm(stateDir, { recursive: true, force: true })
+  }
+})
+
+test('dirty parent checkout does not block start and stays out of the worktree', async () =>
+{
+  const repo = await initializeTestRepo()
+  const { config, stateDir } = await fixtureConfig()
+  const dirtyName = 'parent-only-dirty.txt'
+  try
+  {
+    await writeFile(path.join(repo, dirtyName), 'parent wip\n')
+    const manager = new JobManager(config, [
+      {
+        name: 'codex',
+        run: async () => SUCCESS,
+      },
+    ])
+    const started = await manager.start({
+      provider: 'codex',
+      mode: 'edit',
+      repo,
+      task: 'start despite parent dirt',
+      allowed_paths: ['src'],
+    })
+    assert.ok(started.job_id)
+    const finished = await manager.waitForTerminal(started.job_id)
+    assert.equal(finished.status, 'completed')
+    const worktree = finished.worktree
+    assert.ok(worktree)
+    await access(path.join(worktree, 'README.md'))
+    await assert.rejects(access(path.join(worktree, dirtyName)))
+  }
+  finally
+  {
     await rm(repo, { recursive: true, force: true })
     await rm(stateDir, { recursive: true, force: true })
   }

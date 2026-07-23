@@ -8,27 +8,34 @@ import { secureDirectory, writePrivateFile } from './artifact.js'
 import type { ChangedPath, GitSnapshot, WorkerMode } from './contracts.js'
 import { runCaptured } from './process-runner.js'
 
-async function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = process.env): Promise<string> {
+async function git(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env
+): Promise<string>
+{
   return await runCaptured('git', args, cwd, env)
 }
 
-export async function resolveRepository(repo: string): Promise<string> {
-  if (!path.isAbsolute(repo)) throw new Error(`repo must be an absolute path: ${repo}`)
+export async function resolveRepository(repo: string): Promise<string>
+{
+  if (!path.isAbsolute(repo))
+    throw new Error(`repo must be an absolute path: ${repo}`)
   return (await git(repo, ['rev-parse', '--show-toplevel'])).trim()
 }
 
-export async function assertCleanRepository(repo: string): Promise<void> {
-  const status = await git(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
-  if (status !== '') {
-    throw new Error(`source repository must be clean for v1 worker jobs: ${repo}`)
-  }
+export async function resolveBaseSha(
+  repo: string,
+  baseRef: string
+): Promise<string>
+{
+  return (
+    await git(repo, ['rev-parse', '--verify', `${baseRef}^{commit}`])
+  ).trim()
 }
 
-export async function resolveBaseSha(repo: string, baseRef: string): Promise<string> {
-  return (await git(repo, ['rev-parse', '--verify', `${baseRef}^{commit}`])).trim()
-}
-
-export interface CreatedWorktree {
+export interface CreatedWorktree
+{
   path: string
   branch?: string
 }
@@ -38,11 +45,13 @@ export async function createWorktree(
   worktreePath: string,
   baseSha: string,
   mode: WorkerMode,
-  jobId: string,
-): Promise<CreatedWorktree> {
+  jobId: string
+): Promise<CreatedWorktree>
+{
   await secureDirectory(path.dirname(worktreePath))
   await secureDirectory(worktreePath)
-  if (mode === 'read') {
+  if (mode === 'read')
+  {
     await git(repo, ['worktree', 'add', '--detach', worktreePath, baseSha])
     return { path: worktreePath }
   }
@@ -52,17 +61,20 @@ export async function createWorktree(
   return { path: worktreePath, branch }
 }
 
-function parseNameStatus(output: string): ChangedPath[] {
+function parseNameStatus(output: string): ChangedPath[]
+{
   const tokens = output.split('\0')
   if (tokens.at(-1) === '') tokens.pop()
 
   const changes: ChangedPath[] = []
-  for (let index = 0; index < tokens.length; ) {
+  for (let index = 0; index < tokens.length;)
+  {
     const status = tokens[index++]
     if (status === undefined || status === '') break
     const pathCount = status.startsWith('R') || status.startsWith('C') ? 2 : 1
     const paths = tokens.slice(index, index + pathCount)
-    if (paths.length !== pathCount) {
+    if (paths.length !== pathCount)
+    {
       throw new Error(`unexpected git --name-status output after ${status}`)
     }
     changes.push({ status, paths })
@@ -74,22 +86,47 @@ function parseNameStatus(output: string): ChangedPath[] {
 export async function snapshotWorktree(
   worktree: string,
   baseSha: string,
-  patchPath: string,
-): Promise<GitSnapshot> {
-  const tempDirectory = await mkdtemp(path.join(os.tmpdir(), 'worker-broker-index-'))
+  patchPath: string
+): Promise<GitSnapshot>
+{
+  const tempDirectory = await mkdtemp(
+    path.join(os.tmpdir(), 'worker-broker-index-')
+  )
   const indexPath = path.join(tempDirectory, 'index')
   const env = { ...process.env, GIT_INDEX_FILE: indexPath }
 
-  try {
+  try
+  {
     await git(worktree, ['read-tree', baseSha], env)
     await git(worktree, ['add', '-A', '--', '.'], env)
     const [patch, nameStatus, headSha] = await Promise.all([
       git(
         worktree,
-        ['diff', '--cached', '--binary', '--full-index', '--no-ext-diff', '--find-renames', baseSha, '--'],
-        env,
+        [
+          'diff',
+          '--cached',
+          '--binary',
+          '--full-index',
+          '--no-ext-diff',
+          '--find-renames',
+          baseSha,
+          '--',
+        ],
+        env
       ),
-      git(worktree, ['diff', '--cached', '--name-status', '-z', '--find-renames', baseSha, '--'], env),
+      git(
+        worktree,
+        [
+          'diff',
+          '--cached',
+          '--name-status',
+          '-z',
+          '--find-renames',
+          baseSha,
+          '--',
+        ],
+        env
+      ),
       git(worktree, ['rev-parse', 'HEAD']),
     ])
     await writePrivateFile(patchPath, patch)
@@ -98,10 +135,14 @@ export async function snapshotWorktree(
     return {
       head_sha: headSha.trim(),
       changes,
-      changed_files: [...new Set(changes.flatMap((change) => change.paths))].sort(),
+      changed_files: [
+        ...new Set(changes.flatMap((change) => change.paths)),
+      ].sort(),
       patch_path: patchPath,
     }
-  } finally {
+  }
+  finally
+  {
     await rm(tempDirectory, { recursive: true, force: true })
   }
 }

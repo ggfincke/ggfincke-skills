@@ -8,13 +8,17 @@ import test from 'node:test'
 import { snapshotWorktree } from '../src/git-worktree.js'
 import { git, initializeTestRepo } from './helpers.js'
 
-test('snapshot captures rename, deletion, untracked, binary, and mode changes', async () => {
+test('snapshot captures rename, deletion, untracked, binary, and mode changes', async () =>
+{
   const repo = await initializeTestRepo()
-  try {
+  try
+  {
     await writeFile(path.join(repo, 'old.txt'), 'same content\n')
     await writeFile(path.join(repo, 'deleted.txt'), 'remove me\n')
     await writeFile(path.join(repo, 'binary.bin'), Buffer.from([0, 1, 2]))
-    await writeFile(path.join(repo, 'script.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o644 })
+    await writeFile(path.join(repo, 'script.sh'), '#!/bin/sh\nexit 0\n', {
+      mode: 0o644,
+    })
     await git(repo, 'add', '.')
     await git(repo, 'commit', '-qm', 'add files')
     const baseSha = (await git(repo, 'rev-parse', 'HEAD')).trim()
@@ -42,8 +46,13 @@ test('snapshot captures rename, deletion, untracked, binary, and mode changes', 
     assert.match(patch, /new file mode 100644/u)
     assert.match(patch, /old mode 100644/u)
     assert.match(patch, /new mode 100755/u)
-    assert.deepEqual(await readFile(path.join(repo, '.git', 'index')), indexBefore)
-  } finally {
+    assert.deepEqual(
+      await readFile(path.join(repo, '.git', 'index')),
+      indexBefore
+    )
+  }
+  finally
+  {
     await rm(repo, { recursive: true, force: true })
   }
 })

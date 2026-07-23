@@ -51,14 +51,26 @@ Do not duplicate a block doc and a plain comment that say the same thing. Put co
 - Docstring/TSDoc/`///` on every function or export; “public API docstring theater”.
 - Legacy labels such as `NOTE:`, `HACK:`, `FIXME:`, or `FOOTGUN:` when a plain comment or canonical tag expresses the real meaning.
 
+## Expanded references
+
+Load these when you need more than the core rules:
+
+- `references/house-guide.md` — full house guide (headers, banners, tags, Cartographer, anti-patterns)
+- `references/formatting.md` — Prettier/Allman + Ruff formatting conventions and change hygiene
+- `references/wiring-recipe.md` — how to install enforcers, npm scripts, lint-staged, and CI in a target repo
+- `references/typescript.md` / `python.md` / `swift.md` — per-language specifics
+
+**Status in this repository (ggfincke-skills):** **adopted** — root Prettier/ESLint, Python Ruff + comment checker, `make check` format gates, pre-commit lint-staged, and CI format jobs are wired. Skill `assets/` remain copyable for other repos (destination-path headers exempt from `file-header` here).
+
 ## Applying in a repo
 
 Principles stay the same; pick the matching language guide and copy its enforcer from `assets/`:
 
 - TypeScript -> `references/typescript.md`, `assets/eslint-rules/`
-- Python -> `references/python.md`, `assets/check_comment_style.py`
+- Python -> `references/python.md`, `assets/check_comment_style.py`, optional `assets/check-python-style.sh` (Ruff + comment checker wrapper)
 - Swift -> `references/swift.md`, `assets/check_comment_style.py` + `assets/swift/`
+- Formatting (TS/JS) -> `references/formatting.md` + `references/wiring-recipe.md`
 
 `assets/` holds the actual enforcers to copy into a target repo. They are project-by-project wiring, not run by this skill.
 
-Because they ship, their own headers name the destination path rather than their path in this repo - `# tools/check_comment_style.py` and `// eslint-rules/index.js`, which is where each lands once copied. A checker run over this repo will flag those two; that is the exception above, not a violation. Update the header if you change where an asset is meant to land.
+Because they ship, their own headers name the destination path rather than their path in this repo - `# tools/check_comment_style.py`, `# scripts/checks/check-python-style.sh`, and `// eslint-rules/index.js`, which is where each lands once copied. A checker run over this repo will flag those; that is the exception above, not a violation. Update the header if you change where an asset is meant to land.
