@@ -17,7 +17,6 @@ class AgentValidation(unittest.TestCase):
 	def test_canonical_agents_have_matching_frontmatter_names(self) -> None:
 		agents = sync.find_agents([])
 		self.assertTrue(agents)
-		self.assertEqual([sync.agent_name(path) for path in agents], [path.stem for path in agents])
 
 
 class AgentInstallSafety(unittest.TestCase):

@@ -8,8 +8,6 @@ import {
   resolveRepoRelative,
 } from './rule-context.js'
 
-const descriptionText = (comment) => comment.value.trim()
-
 const isTaggedDescription = (description) =>
   /^(?:[*!?](?:\s|$)|todo(?:\([^)]*\))?:?\s)/i.test(description)
 
@@ -130,7 +128,7 @@ const rule = {
           return
         }
 
-        const description = descriptionText(secondComment)
+        const description = secondComment.value.trim()
         if (!/^[a-z0-9]/.test(description))
         {
           const fix = /^[A-Z]/.test(description)

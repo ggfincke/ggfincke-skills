@@ -4,8 +4,8 @@
 # renders what each cover surface actually shows at a given coverZoom, mirroring
 # packages/contracts/lib/coverMedia.ts::zoomedFrameForSurface, so you can pick coverZoom
 # per template BEFORE install and confirm the crop is right on every viewport.
-# writes surface-sim/surfaces-N.jpg contact sheets and prints any surface that crops
-# too hard (<62% source width) or letterboxes too much (>30% matte).
+# writes surface-sim/surfaces-N.jpg contact sheets and prints any surface that exceeds
+# the configured source-width or matte limits.
 #
 # run through the seed venv:
 #   uv run --project scripts/seed_pipeline python <this> examples/gaming/street-fighter-6/_cover.jpg
@@ -20,6 +20,8 @@ from PIL import Image, ImageDraw
 SURFACES = {"browseHero": 16 / 9, "detailHero": 4 / 3, "card": 16 / 10}
 MATTE = (13, 13, 13)
 OUT_W = 520
+MIN_SOURCE_WIDTH = 0.62
+MAX_MATTE = 0.30
 
 
 # mirrors zoomedFrameForSurface; zoom>1 zooms OUT past cover-fit -> letterbox w/ --t-media-matte
@@ -110,7 +112,7 @@ def main() -> None:
 				x = 240 + PAD + c * (OUT_W + PAD)
 				sh_im.paste(render(img, sa, z), (x, y))
 				s = st[sname]
-				warn = s["srcWidthShown"] < 0.62 or s["matteFrac"] > 0.30
+				warn = s["srcWidthShown"] < MIN_SOURCE_WIDTH or s["matteFrac"] > MAX_MATTE
 				dr.text(
 					(x, y + round(OUT_W / sa) + 6),
 					f"{sname}  w{s['srcWidthShown'] * 100:.0f}% h{s['srcHeightShown'] * 100:.0f}% matte{s['matteFrac'] * 100:.0f}%",
@@ -124,14 +126,17 @@ def main() -> None:
 	flagged = False
 	for slug, img, z, st in rows:
 		for sname, s in st.items():
-			if s["srcWidthShown"] < 0.62 or s["matteFrac"] > 0.30:
+			if s["srcWidthShown"] < MIN_SOURCE_WIDTH or s["matteFrac"] > MAX_MATTE:
 				flagged = True
 				print(
 					f"  {slug:24} {sname:11} shows {s['srcWidthShown'] * 100:.0f}% width, "
 					f"{s['matteFrac'] * 100:.0f}% matte  (zoom={z})"
 				)
 	if not flagged:
-		print("  none - every surface keeps >=62% width and <=30% matte at the given zoom")
+		print(
+			f"  none - every surface keeps >={MIN_SOURCE_WIDTH:.0%} width "
+			f"and <={MAX_MATTE:.0%} matte at the given zoom"
+		)
 
 
 if __name__ == "__main__":

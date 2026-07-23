@@ -10,7 +10,6 @@ from pathlib import Path
 
 # per-skill source markers in SKILL.md
 START_RE = re.compile(r"<!--\s*always-on:start[^>]*-->")
-END_RE = re.compile(r"<!--\s*always-on:end\s*-->")
 TITLE_RE = re.compile(r'title\s*=\s*"(?P<title>[^"]+)"')
 # single pass over both marker kinds, in document order, for the ordered parser
 MARKER_RE = re.compile(r"<!--\s*always-on:(?P<kind>start|end)\b(?P<attrs>[^>]*?)-->")
@@ -84,7 +83,7 @@ def parse_blocks(text: str) -> tuple[list[tuple[str, str]], list[str]]:
 				block_errors.append(
 					f"always-on block contains the generated-region {label} delimiter"
 				)
-		if START_RE.search(content) or END_RE.search(content):
+		if START_RE.search(content):
 			block_errors.append("always-on block content contains a nested always-on marker")
 
 		errors.extend(block_errors)

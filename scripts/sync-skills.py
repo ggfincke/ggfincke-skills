@@ -15,7 +15,7 @@ import always_on
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
 PROJECTS_DIR = ROOT / "projects"
-GLOBAL_AGENTS = ("codex", "agents", "claude")
+GLOBAL_AGENTS = tuple(always_on.AGENT_INSTRUCTION)
 DEFAULT_GLOBAL_SKILL_TARGETS = ("agents", "claude")
 # dropped into every copied skill so --prune can tell our copies from hand-placed dirs
 SYNC_MARKER = ".ggfincke-skills-sync"
@@ -158,7 +158,7 @@ def is_managed_install(entry: Path, base_dir: Path) -> bool:
 	return source is not None and is_within(source, base_dir)
 
 
-def prune_skip_reason(entry: Path, base_dir: Path) -> str | None:
+def prune_skip_reason(entry: Path) -> str | None:
 	# why a skill-shaped directory --prune was asked about got left alone; None
 	# when the entry is not skill-shaped & so not worth reporting
 	if entry.is_symlink() or not entry.is_dir() or not (entry / "SKILL.md").is_file():
@@ -186,7 +186,7 @@ def prune_target(
 		if not is_managed_install(entry, base_dir):
 			# silence here reads as "nothing to prune", which is the opposite of
 			# what happened; name what was skipped so the user can act on it
-			reason = prune_skip_reason(entry, base_dir)
+			reason = prune_skip_reason(entry)
 			if reason:
 				skipped.append(f"{entry.name} ({reason})")
 				unmarked = unmarked or "no sync marker" in reason
