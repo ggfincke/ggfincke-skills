@@ -17,7 +17,7 @@ test('abort terminates a running process group promptly', async () =>
   try
   {
     const running = runProcess({
-      command: '/bin/zsh',
+      command: '/bin/sh',
       args: ['-lc', 'sleep 30'],
       cwd: directory,
       stdout_path: path.join(directory, 'stdout.log'),

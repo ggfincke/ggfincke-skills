@@ -495,7 +495,7 @@ export class JobManager
         `verification-${index + 1}.stderr.log`
       )
       const result = await runProcess({
-        command: '/bin/zsh',
+        command: '/bin/sh',
         args: ['-lc', verification.command],
         cwd: job.worktree,
         stdout_path: stdoutPath,
