@@ -28,7 +28,7 @@ Coral headless workers reject nested-agent requests and use deterministic read-o
 
 Edit jobs require at least one allowed path. Prefixes are literal, not globs: use `src/auth`, not `src/auth/**`. The broker rejects absolute paths, traversal, Git metadata, and glob characters.
 
-Version 1 requires a clean source checkout. Commit or otherwise reconcile parent changes before starting a job; do not ask the broker to guess which dirty state belongs in the assignment.
+Parent dirt does not block `start_worker`. Worktrees are created from the resolved `base_sha` only; uncommitted parent changes are not copied in. Broker evidence remains final-worktree vs `base_sha`. The lead owns integrating worker patches onto whatever the parent tree has become, including merge conflicts.
 
 ### `list_workers`
 
