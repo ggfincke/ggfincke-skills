@@ -7,6 +7,7 @@ Personal AI coding skills, prompts, and workflows for working with local codebas
 This repo is the source of truth. Skills live here in a portable format, then get installed into the directories each agent discovers.
 
 - `skills/`: installable Agent Skills, one folder per skill.
+- `agents/`: canonical personal Claude custom-agent definitions.
 - `projects/<repo>/`: project-only skills installed into a single repo, never synced globally.
 - `tools/worker-broker/`: local stdio MCP broker for isolated native-harness workers.
 - `prompts/`: reusable prompts that are not ready to become skills yet.
@@ -14,6 +15,7 @@ This repo is the source of truth. Skills live here in a portable format, then ge
 - `templates/skill/`: starter structure for a new portable skill.
 - `scripts/validate-skills.py`: validates local skill folders.
 - `scripts/sync-skills.py`: copies or symlinks skills into the shared Agents root, Claude Code, or a target project, and emits always-on rules into each agent's global instruction file.
+- `scripts/sync-agents.py`: copies or symlinks canonical Claude custom agents into `~/.claude/agents`.
 - `scripts/always_on.py`: shared helper that extracts skills' always-on blocks and manages the generated region.
 - `scripts/hooks/`: git hooks; `pre-commit` runs validation + tests before each commit.
 - `tests/`: regression tests for the sync, always-on parser, and comment-style checker.
@@ -58,6 +60,12 @@ Install all skills into the personal Agents and Claude locations by symlink for 
 python3 scripts/sync-skills.py --target all --mode link
 ```
 
+Install canonical Claude custom agents separately:
+
+```bash
+python3 scripts/sync-agents.py --mode link
+```
+
 The worker broker is a Node 24+ package. Install, build, and register its stdio server with Claude Code:
 
 ```bash
@@ -70,6 +78,14 @@ claude mcp add --transport stdio --scope user worker-broker \
 The broker exposes native Codex, Cursor, and Coral workers. Override their executable paths or defaults with `WORKER_BROKER_CODEX_BINARY`, `WORKER_BROKER_CODEX_MODEL`, `WORKER_BROKER_CURSOR_BINARY`, `WORKER_BROKER_CURSOR_MODEL`, `WORKER_BROKER_CORAL_BINARY`, `WORKER_BROKER_CORAL_MODEL`, and `WORKER_BROKER_CORAL_HOST`. Cursor effort belongs in the Cursor model identifier rather than the broker's generic `effort` field. Coral rejects generic effort and nested-agent overrides.
 
 Claude Code is the orchestration UI. Worker jobs remain isolated broker records surfaced through MCP tool output and job artifacts; they do not appear as native Claude Code child conversations. T3 is not part of this setup.
+
+Launch the model-inheriting orchestrator after the `orchestrate` skill and `fable-orchestrator` agent are synced. The agent name is a workflow name and does not select Fable: `--model` chooses the Claude Code parent model. For example, start the lower-cost Haiku parent used for acceptance:
+
+```bash
+claude --model haiku --agent fable-orchestrator
+```
+
+The parent plans and integrates the change in the interactive Claude Code session. It starts native Codex, Cursor, or Coral jobs through `worker-broker`, follows their status with `list_workers` or `get_worker_status`, and retrieves terminal evidence with `get_worker_result`. The broker creates the isolated worktrees and owns lifecycle, scope validation, verification, and final patch capture.
 
 Install a specific skill into one Claude Code project:
 

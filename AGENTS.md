@@ -1,12 +1,13 @@
 # Repository Instructions
 
 - Treat `skills/` as the canonical source of truth for installable skills.
+- Treat `agents/` as the canonical source of truth for personal Claude custom agents. Edit here and run `scripts/sync-agents.py`; never edit the installed files under `~/.claude/agents` directly.
 - Keep the worker broker source under `tools/worker-broker/`. Build `dist/` from source and run `npm --prefix tools/worker-broker run check`; never edit generated `dist/` files.
 - Keep skill frontmatter portable by default: use only `name` and `description` unless an agent-specific overlay is intentionally introduced.
 - Do not edit installed copies under `~/.agents/skills`, `~/.claude/skills`, or project `.claude/skills` directly. Edit this repo and run `scripts/sync-skills.py`.
 - Put detailed material in a skill's `references/`, deterministic helpers in `scripts/`, and reusable output resources in `assets/`.
 - Do not add `README.md` files inside individual skill folders. Keep instructions in `SKILL.md` and referenced files.
-- Run `python3 scripts/validate-skills.py` (or `make check`) before syncing or committing skill or broker changes. Validation is strict by default: frontmatter beyond `name`/`description` fails unless you pass `--lenient-frontmatter`. `make install-hooks` runs the full gate as a pre-commit hook, and CI runs it on every push/PR.
+- Run `python3 scripts/validate-skills.py` (or `make check`) before syncing or committing skill, agent, or broker changes. Validation is strict by default: frontmatter beyond `name`/`description` fails unless you pass `--lenient-frontmatter`. `make install-hooks` runs the full gate as a pre-commit hook, and CI runs it on every push/PR.
 
 ## Portable vs project skills
 

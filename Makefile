@@ -7,7 +7,7 @@ HOOKS_DIR := scripts/hooks
 BROKER     := tools/worker-broker
 
 .DEFAULT_GOAL := help
-.PHONY: help validate test broker-check check sync sync-force sync-copy sync-copy-force sync-project sync-project-repo install-hooks uninstall-hooks clean
+.PHONY: help validate test broker-check check sync sync-force sync-copy sync-copy-force sync-agents sync-agents-force sync-project sync-project-repo install-hooks uninstall-hooks clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -35,6 +35,12 @@ sync-copy: check ## Copy all skills as stable snapshots
 
 sync-copy-force: check ## Copy all skills as stable snapshots, replacing existing installs
 	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode copy --force
+
+sync-agents: check ## Symlink Claude custom agents into the personal agent root
+	$(PYTHON) $(SCRIPTS)/sync-agents.py --mode link
+
+sync-agents-force: check ## Replace Claude custom agents with canonical symlinks
+	$(PYTHON) $(SCRIPTS)/sync-agents.py --mode link --force
 
 sync-project: check ## Install portable skills into a project's .claude/skills (PROJECT=/path)
 	@test -n "$(PROJECT)" || { echo "set PROJECT=/path/to/repo"; exit 1; }
