@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
 # scripts/hooks/pre-commit
-# validate skills & run script regression tests before commits
+# validate skills, run regression tests, & lint-staged format fixes
 set -e
 
 repo_root=$(git rev-parse --show-toplevel)
 python3 "$repo_root/scripts/validate-skills.py"
 python3 -m unittest discover -s "$repo_root/tests" -p 'test_*.py'
+cd "$repo_root"
+npx lint-staged

@@ -1,0 +1,28 @@
+{
+  "name": "ggfincke-skills",
+  "private": true,
+  "description": "Root tooling for Prettier/ESLint format + comment-style gates",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "lint:python": "bash scripts/checks/check-python-style.sh --lint",
+    "lint:all": "npm run lint && npm run lint:python",
+    "format": "prettier --write \"**/*.{js,mjs,cjs,ts,tsx}\" && npm run lint:fix",
+    "format:check": "prettier --check \"**/*.{js,mjs,cjs,ts,tsx}\" && npm run lint",
+    "format:python": "bash scripts/checks/check-python-style.sh --format",
+    "format:python:check": "bash scripts/checks/check-python-style.sh --format-check",
+    "format:all": "npm run format && npm run format:python",
+    "format:all:check": "npm run format:check && npm run format:python:check"
+  },
+  "devDependencies": {
+    "eslint": "9.39.5",
+    "lint-staged": "16.4.0",
+    "prettier": "3.9.6",
+    "prettier-plugin-brace-style": "0.9.0",
+    "typescript-eslint": "8.65.0"
+  }
+}

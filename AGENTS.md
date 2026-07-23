@@ -7,7 +7,14 @@
 - Do not edit installed copies under `~/.agents/skills`, `~/.claude/skills`, or project `.claude/skills` directly. Edit this repo and run `scripts/sync-skills.py`.
 - Put detailed material in a skill's `references/`, deterministic helpers in `scripts/`, and reusable output resources in `assets/`.
 - Do not add `README.md` files inside individual skill folders. Keep instructions in `SKILL.md` and referenced files.
-- Run `python3 scripts/validate-skills.py` (or `make check`) before syncing or committing skill, agent, or broker changes. Validation is strict by default: frontmatter beyond `name`/`description` fails unless you pass `--lenient-frontmatter`. `make install-hooks` runs the full gate as a pre-commit hook, and CI runs it on every push/PR.
+- Run `python3 scripts/validate-skills.py` (or `make check`) before syncing or committing skill, agent, or broker changes. Validation is strict by default: frontmatter beyond `name`/`description` fails unless you pass `--lenient-frontmatter`. `make install-hooks` runs validate + tests + lint-staged as a pre-commit hook (not full `make check` / broker-check). CI runs the full gate on every push/PR.
+
+## Format + comment style
+
+- Owned TypeScript/JavaScript uses Allman braces, no semis, single quotes (Prettier + `prettier-plugin-brace-style`). See `skills/comment-style/references/formatting.md`.
+- Comment style (headers, plain comments, tags) is enforced by ESLint rules imported from `skills/comment-style/assets/eslint-rules/` and by the Python checker under that skill's `assets/`. Expanded guide: `skills/comment-style/references/house-guide.md`.
+- `make check` includes non-mutating `format-check` (Prettier + ESLint) and `format-python-check` (Ruff + comment checker). Mutating fixes: `make format` / `make format-python` (or `npm run format:all`).
+- Pre-commit keeps validate + unittest and adds `npx lint-staged` for staged `*.{js,mjs,ts,tsx}` and `*.py`. It does **not** run broker-check; use `make check` or CI for that.
 
 ## Portable vs project skills
 

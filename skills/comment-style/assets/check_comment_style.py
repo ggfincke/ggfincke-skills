@@ -195,9 +195,7 @@ def docstring_violations(path: Path, tree: ast.Module) -> list[Violation]:
 			if isinstance(node, ast.Module):
 				message = "module docstrings are replaced by the two-line file header"
 			elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-				message = (
-					"docstrings are for classes; use a plain comment above ordinary functions"
-				)
+				message = "docstrings are for classes; use a plain comment above ordinary functions"
 			elif test_file:
 				message = "test files use plain comments, not docstrings"
 			else:
@@ -208,9 +206,7 @@ def docstring_violations(path: Path, tree: ast.Module) -> list[Violation]:
 		summary = docstring_summary(expr)
 		if not summary or not re.match(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])", summary):
 			violations.append(
-				Violation(
-					path, expr.lineno, "class docstrings start with a capitalized sentence"
-				)
+				Violation(path, expr.lineno, "class docstrings start with a capitalized sentence")
 			)
 		if summary and not re.search(r"\.(?:[`'\"\])}]*)$", summary):
 			violations.append(
@@ -410,7 +406,10 @@ def scan_swift_line(line: str, pending: str | None = None) -> tuple[int, str | N
 				# an opening `"""` must be followed by a newline, so anything trailing on the line
 				# means this was a single-line raw string whose content merely starts w/ a quote,
 				# e.g. `#"""#` -- treating that as an opener leaves a literal that never closes
-				if line.startswith(f'{hashes}"""', index) and not line[index + len(hashes) + 3 :].strip():
+				if (
+					line.startswith(f'{hashes}"""', index)
+					and not line[index + len(hashes) + 3 :].strip()
+				):
 					return -1, f'"""{hashes}'
 				close = line.find(f'"{hashes}', index + len(hashes) + 1)
 				# only the `"""` form spans lines, so an unterminated single-line raw string is
@@ -561,9 +560,7 @@ def swift_doc_violations(
 		summary = " ".join(paragraph)
 		if not summary or not re.match(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])", summary):
 			violations.append(
-				Violation(
-					path, start + 1, "block documentation starts with a capitalized sentence"
-				)
+				Violation(path, start + 1, "block documentation starts with a capitalized sentence")
 			)
 		if summary and not re.search(r"\.(?:[`'\"\])}]*)$", summary):
 			violations.append(

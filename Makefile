@@ -7,11 +7,11 @@ HOOKS_DIR := scripts/hooks
 BROKER     := tools/worker-broker
 
 .DEFAULT_GOAL := help
-.PHONY: help validate test broker-check check sync sync-force sync-copy sync-copy-force sync-agents sync-agents-force sync-project sync-project-repo install-hooks uninstall-hooks clean
+.PHONY: help validate test broker-check format format-check format-python format-python-check check sync sync-force sync-copy sync-copy-force sync-agents sync-agents-force sync-project sync-project-repo install-hooks uninstall-hooks clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-17s\033[0m %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 validate: ## Validate all canonical skills (strict frontmatter)
 	$(PYTHON) $(SCRIPTS)/validate-skills.py
@@ -22,7 +22,19 @@ test: ## Run the sync/parser/checker regression tests
 broker-check: ## Typecheck, build, & test the worker broker
 	npm --prefix $(BROKER) run check
 
-check: validate test broker-check ## Run validation + tests (the full gate)
+format: ## Mutating Prettier + ESLint fix on owned TS/JS
+	npm run format
+
+format-check: ## Non-mutating Prettier + ESLint (comment-style) check
+	npm run format:check
+
+format-python: ## Mutating Ruff + Python comment-style fix
+	npm run format:python
+
+format-python-check: ## Non-mutating Ruff + Python comment-style check
+	npm run format:python:check
+
+check: validate test broker-check format-check format-python-check ## Full gate: validate, tests, broker, format
 
 sync: check ## Symlink all skills into canonical Codex/agents + Claude roots
 	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode link
@@ -51,7 +63,7 @@ sync-project-repo: check ## Install projects/REPO skills into that repo's .agent
 	@test -n "$(PROJECT)" || { echo "set PROJECT=/path/to/repo"; exit 1; }
 	$(PYTHON) $(SCRIPTS)/sync-skills.py --project-repo "$(REPO)" --project "$(PROJECT)" --mode link
 
-install-hooks: ## Route git hooks at scripts/hooks (validate runs pre-commit)
+install-hooks: ## Route git hooks at scripts/hooks (validate + tests + lint-staged)
 	git config core.hooksPath $(HOOKS_DIR)
 	@echo "git hooks -> $(HOOKS_DIR)"
 

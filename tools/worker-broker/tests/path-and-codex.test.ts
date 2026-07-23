@@ -11,11 +11,15 @@ import {
 } from '../src/path-scope.js'
 import { buildCodexArgs } from '../src/providers/codex.js'
 
-test('path prefixes normalize, collapse children, and reject drift', () => {
-  assert.deepEqual(normalizeAllowedPaths(['src/auth/session.ts', 'src/auth']), ['src/auth'])
-  assert.deepEqual(scopeViolations(['src/auth/a.ts', 'README.md'], ['src/auth']), [
-    'README.md',
+test('path prefixes normalize, collapse children, and reject drift', () =>
+{
+  assert.deepEqual(normalizeAllowedPaths(['src/auth/session.ts', 'src/auth']), [
+    'src/auth',
   ])
+  assert.deepEqual(
+    scopeViolations(['src/auth/a.ts', 'README.md'], ['src/auth']),
+    ['README.md']
+  )
   assert.equal(scopesOverlap(['src/auth'], ['src/auth/session.ts']), true)
   assert.equal(scopesOverlap(['src/auth'], ['src/catalog']), false)
   assert.throws(() => normalizeAllowedPaths(['src/**']), /glob characters/u)
@@ -23,7 +27,8 @@ test('path prefixes normalize, collapse children, and reject drift', () => {
   assert.throws(() => normalizeAllowedPaths(['.git/config']), /Git metadata/u)
 })
 
-test('Codex arguments enforce the requested sandbox and nested-agent policy', () => {
+test('Codex arguments enforce the requested sandbox and nested-agent policy', () =>
+{
   const context: ProviderRunContext = {
     job_id: 'job-1',
     request: {
@@ -66,13 +71,13 @@ test('Codex arguments enforce the requested sandbox and nested-agent policy', ()
     '--ephemeral',
   ])
   assert.ok(args.includes('--ignore-user-config'))
-  assert.deepEqual(args.slice(args.indexOf('--disable'), args.indexOf('--disable') + 2), [
-    '--disable',
-    'multi_agent',
-  ])
-  assert.deepEqual(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2), [
-    '--model',
-    'gpt-test',
-  ])
+  assert.deepEqual(
+    args.slice(args.indexOf('--disable'), args.indexOf('--disable') + 2),
+    ['--disable', 'multi_agent']
+  )
+  assert.deepEqual(
+    args.slice(args.indexOf('--model'), args.indexOf('--model') + 2),
+    ['--model', 'gpt-test']
+  )
   assert.equal(args.at(-1), '-')
 })

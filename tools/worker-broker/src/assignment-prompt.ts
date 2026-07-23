@@ -3,7 +3,8 @@
 
 import type { ProviderRunContext } from './contracts.js'
 
-export function assignmentPrompt(context: ProviderRunContext): string {
+export function assignmentPrompt(context: ProviderRunContext): string
+{
   const { request } = context
   return `You are a delegated worker, not the project lead.
 
