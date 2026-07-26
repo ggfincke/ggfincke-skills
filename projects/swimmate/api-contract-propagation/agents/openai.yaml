@@ -1,0 +1,4 @@
+interface:
+  display_name: "API Contract Propagation"
+  short_description: "Keep Django and Swift API contracts aligned"
+  default_prompt: "Use $api-contract-propagation to carry this SwimMate API change through the backend and iOS client."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Setting Propagation"
+  short_description: "Propagate MDX Preview settings across every owner"
+  default_prompt: "Use $setting-propagation to add or change an MDX Preview setting without contract drift."

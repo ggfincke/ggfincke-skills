@@ -1,0 +1,4 @@
+interface:
+  display_name: "Artifact Contract Propagation"
+  short_description: "Evolve Cartographer artifacts without contract drift"
+  default_prompt: "Use $artifact-contract-propagation to evolve this Cartographer artifact contract across all consumers."

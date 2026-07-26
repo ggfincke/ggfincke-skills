@@ -1,0 +1,4 @@
+interface:
+  display_name: "FF7 Promotion Gate"
+  short_description: "Prove FF7 C promotions with the clean SHA gate"
+  default_prompt: "Use $promotion-gate to verify and land the next genuine C promotion."

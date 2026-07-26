@@ -1,0 +1,4 @@
+interface:
+  display_name: "Certified Edit Workflow"
+  short_description: "Run replayable, evidence-backed Scratch edits"
+  default_prompt: "Use $certified-edit-workflow to inspect or edit this Scratch project with retained replay evidence."
