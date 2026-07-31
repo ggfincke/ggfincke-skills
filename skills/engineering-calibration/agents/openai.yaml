@@ -1,0 +1,4 @@
+interface:
+  display_name: "Engineering Calibration"
+  short_description: "Right-size plans, diffs, and codebase design"
+  default_prompt: "Use $engineering-calibration to review this plan, diff, or codebase for underengineering, justified complexity, and overengineering before any edits."

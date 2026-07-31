@@ -11,7 +11,7 @@ The key move is the second paragraph: it raises *depth* (how hard you think, how
 ```
 ultrathink. Be extremely thorough and comprehensive on this - do not cut corners and do not stop at the first plausible answer. Trace it end to end, verify claims against the live code rather than assuming, consider the cases I didn't name, and surface explicitly what you're unsure about or couldn't verify.
 
-This dials up depth, not scope. It does NOT override my standing rules: still discuss the approach and get my go-ahead before changing files, still major/important tests only (never exhaustive coverage), still keep edits scoped to what we agreed, and still no co-authored commits. Be exhaustive in the analysis; stay disciplined in what you actually do.
+This dials up depth, not scope. It does NOT override my standing rules: still discuss the approach and get my go-ahead before changing files, still major/important tests only (never exhaustive coverage), and still keep edits scoped to what we agreed. Be exhaustive in the analysis; stay disciplined in what you actually do.
 ```
 
 ## Variants

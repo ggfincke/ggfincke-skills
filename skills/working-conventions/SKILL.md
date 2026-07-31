@@ -27,7 +27,7 @@ The recurring failure this fixes: a many-concern working tree committed as one m
 - For a single-concern change, just commit it; this is for multi-concern trees.
 <!-- always-on:end -->
 
-This matches the discuss-first style: propose the file-groups and messages, get the go-ahead, then commit. Co-author trailers on commits are handled deterministically by a git/commit hook, not by a rule here - do not rely on remembering to omit them.
+This matches the discuss-first style: propose the file-groups and messages, get the go-ahead, then commit.
 
 ## Notes
 
