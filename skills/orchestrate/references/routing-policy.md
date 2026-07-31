@@ -6,7 +6,7 @@ Choose providers at the work-package level. Do not route individual file reads o
 
 Use only providers exposed by `start_worker` in the live MCP tool schema. Codex, Cursor, and Coral are available.
 
-Keep model identifiers in broker configuration or explicit assignments. Do not hardcode account-dependent model names in this skill.
+Keep model identifiers in broker configuration, `~/.config/worker-broker/profiles.json` stage bindings, or explicit assignments. Do not hardcode account-dependent model names in this skill. Stage-level bindings and the approval gate are defined in [model-plan.md](model-plan.md).
 
 - Prefer Codex for general implementation and repository-native coding work.
 - Prefer Cursor for independent review, frontend work, repositories with material `.cursor` rules, or deliberate harness diversity.
@@ -30,10 +30,11 @@ Keep work in the lead session when it determines architecture, spans inseparable
 
 - Run read-only packages concurrently when they use a stable base commit.
 - Run non-overlapping edit packages concurrently when their interfaces are already fixed.
-- Run overlapping or ambiguous edit scopes sequentially.
+- Use `depends_on` when one package requires another worker's successful completion.
+- Submit conflicting edit packages in intended order; the broker starts them FIFO.
 - Cancel superseded packages instead of letting them finish against stale assumptions.
 
-The broker conservatively queues literal prefix overlaps. The lead still owns semantic overlap that path prefixes cannot express, such as two packages changing opposite sides of one API contract.
+The broker conservatively queues literal prefix overlaps. The lead still owns semantic overlap that path prefixes cannot express, such as two packages changing opposite sides of one API contract, and must sequence it with `depends_on`.
 
 ## Prompt shape
 

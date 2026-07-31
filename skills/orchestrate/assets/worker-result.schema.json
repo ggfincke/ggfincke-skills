@@ -9,6 +9,9 @@
       "enum": ["completed", "failed", "rejected", "cancelled"]
     },
     "provider": { "type": "string" },
+    "model": { "type": ["string", "null"] },
+    "effort": { "type": ["string", "null"] },
+    "effective_model": { "type": "string" },
     "mode": { "enum": ["read", "edit"] },
     "repo": { "type": "string" },
     "base_ref": { "type": "string" },
@@ -94,6 +97,8 @@
     "job_id",
     "status",
     "provider",
+    "model",
+    "effort",
     "mode",
     "repo",
     "base_ref",

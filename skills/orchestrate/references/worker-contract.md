@@ -22,6 +22,7 @@ Optional inputs:
 - `acceptance_criteria`: observable conditions the result must satisfy;
 - `verification_commands`: trusted shell commands, optionally with `timeout_seconds`;
 - `model` and `effort`: provider-specific overrides; Cursor encodes effort in `model` and rejects the generic `effort` field;
+- `depends_on`: job IDs that must complete successfully before launch; any unsuccessful dependency rejects the dependent;
 - `allow_nested_agents`: default `false` and mechanically disabled where the provider supports it.
 
 Coral headless workers reject nested-agent requests and use deterministic read-only or workspace-write tool catalogs. The workspace-write catalog includes shell execution but excludes Coral's task subagent and direct Git mutation tools; broker scope evidence remains authoritative.
@@ -32,7 +33,11 @@ Parent dirt does not block `start_worker`. Worktrees are created from the resolv
 
 ### `list_workers`
 
-Return the compact persisted job inventory. Optionally filter by lifecycle status. Use this as the normal dashboard instead of polling every worker individually.
+Return the compact persisted job inventory. Optionally filter by lifecycle status, `run`, or `workflow`.
+
+### `get_run_status`
+
+Input: `{ run }`. Return totals by status and per-stage rollups for a run. Use this for dashboards.
 
 ### `get_worker_status`
 
@@ -41,6 +46,14 @@ Return current lifecycle and assignment metadata for one job. Use it when one wo
 ### `get_worker_result`
 
 Return the terminal broker result. Calling it before the job finishes returns an error rather than partial evidence.
+
+### `wait_for_workers`
+
+Input: `{ run? | job_ids?, timeout_seconds? }`. Target a run or explicit job IDs. `timeout_seconds` defaults to 60 and has a maximum of 300. Block until all targeted jobs are terminal or the timeout expires; return `timed_out`, `pending_job_ids`, and terminal summaries.
+
+### `get_worker_artifact`
+
+Input: `{ job_id, artifact, max_bytes, tail }`, where `artifact` is `prompt|events|stderr|patch|model_result|verification`. Return a bounded content read. Use this instead of shell reads of broker artifact paths.
 
 ### `cancel_worker`
 
@@ -57,6 +70,8 @@ Cancel queued work immediately or request process-group termination for running 
 
 Only `completed` is a successful implementation result. A read-only research job may complete with an empty patch.
 
+Queued jobs survive broker restart. Conflicting edit jobs start FIFO.
+
 ## Evidence boundary
 
 The broker calculates Git changes from the final worktree through a temporary index based on `base_sha`. This captures committed and uncommitted tracked changes, untracked files, deletions, renames, binary changes, and mode changes without altering either repository index.
@@ -64,3 +79,5 @@ The broker calculates Git changes from the final worktree through a temporary in
 Scope is checked once after provider execution and again after verification commands. This detects final Git-visible scope drift; it is not hostile-worker containment and does not prove a worker never touched and reverted another file.
 
 Model prose is advisory. Git data, command exit codes, timeouts, and broker status are authoritative.
+
+Terminal results echo the requested `model` and `effort`, plus `effective_model` when the provider reports it.
