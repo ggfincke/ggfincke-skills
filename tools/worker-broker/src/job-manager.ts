@@ -82,14 +82,15 @@ export class JobManager
   {
     this.initialization ??= this.initializeOnce()
     await this.initialization
+    void this.schedule()
   }
 
   private async initializeOnce(): Promise<void>
   {
     await this.store.initialize()
-    const interrupted = (await this.store.list()).filter(
-      (job) => !TERMINAL_STATUSES.has(job.status)
-    )
+    const interrupted = (await this.store.list())
+      .filter((job) => !TERMINAL_STATUSES.has(job.status))
+      .sort((left, right) => left.created_at.localeCompare(right.created_at))
     const reconciliations = await Promise.allSettled(
       interrupted.map(async (job) => await this.reconcileInterrupted(job))
     )
@@ -117,6 +118,7 @@ export class JobManager
       return
     }
     this.jobs.set(job.job_id, job)
+    if (job.status === 'queued' && job.process_id === undefined) return
     let cleanupError: unknown
     if (job.process_id !== undefined)
     {
@@ -150,6 +152,19 @@ export class JobManager
     await this.initialize()
     const normalized = normalizeRequest(request)
     normalized.repo = await resolveRepository(normalized.repo)
+    await Promise.all(
+      normalized.depends_on.map(async (jobId) =>
+      {
+        try
+        {
+          await this.get(jobId)
+        }
+        catch
+        {
+          throw new Error(`unknown dependency job: ${jobId}`)
+        }
+      })
+    )
     const baseSha = await resolveBaseSha(normalized.repo, normalized.base_ref)
     const jobId = createJobId(normalized.task)
     const job: WorkerJob = {
@@ -231,8 +246,28 @@ export class JobManager
     await Promise.all(waits)
   }
 
+  private earlierConflictingEditIsQueued(job: WorkerJob): boolean
+  {
+    if (job.request.mode !== 'edit') return false
+    for (const queued of this.jobs.values())
+    {
+      if (queued.job_id === job.job_id) break
+      if (
+        queued.status === 'queued' &&
+        queued.request.mode === 'edit' &&
+        queued.request.repo === job.request.repo &&
+        scopesOverlap(queued.request.allowed_paths, job.request.allowed_paths)
+      )
+      {
+        return true
+      }
+    }
+    return false
+  }
+
   private canRun(job: WorkerJob): boolean
   {
+    if (this.earlierConflictingEditIsQueued(job)) return false
     if (job.request.mode === 'read') return true
     for (const running of this.jobs.values())
     {
@@ -249,6 +284,20 @@ export class JobManager
     return true
   }
 
+  private async dependencyFailure(job: WorkerJob): Promise<string | undefined>
+  {
+    for (const jobId of job.request.depends_on ?? [])
+    {
+      const dependency = await this.get(jobId)
+      if (!TERMINAL_STATUSES.has(dependency.status)) return 'waiting'
+      if (dependency.status !== 'completed')
+      {
+        return `dependency ${jobId} ended ${dependency.status}`
+      }
+    }
+    return undefined
+  }
+
   private async schedule(): Promise<void>
   {
     if (this.scheduling || this.shuttingDown) return
@@ -257,7 +306,15 @@ export class JobManager
     {
       for (const job of this.jobs.values())
       {
-        if (job.status !== 'queued' || !this.canRun(job)) continue
+        if (job.status !== 'queued') continue
+        const dependency = await this.dependencyFailure(job)
+        if (dependency === 'waiting') continue
+        if (dependency !== undefined)
+        {
+          await this.finish(job, this.baseResult(job, 'rejected', dependency))
+          continue
+        }
+        if (!this.canRun(job)) continue
         job.status = 'running'
         job.started_at = new Date().toISOString()
         await this.store.write(job)
@@ -543,6 +600,12 @@ export class JobManager
       model_result_path: this.artifact(job, 'model-result.json'),
       created_at: job.created_at,
     }
+    if (job.request.stage !== undefined) result.stage = job.request.stage
+    if (job.request.workflow !== undefined)
+      result.workflow = job.request.workflow
+    if (job.request.run !== undefined) result.run = job.request.run
+    if (job.request.model !== undefined) result.model = job.request.model
+    if (job.request.effort !== undefined) result.effort = job.request.effort
     if (job.started_at !== undefined) result.started_at = job.started_at
     if (job.worktree !== undefined) result.worktree = job.worktree
     if (job.branch !== undefined) result.branch = job.branch
@@ -571,6 +634,8 @@ export class JobManager
     {
       result.process_exit_code = provider.exit_code
       result.process_signal = provider.signal
+      if (provider.effective_model !== undefined)
+        result.effective_model = provider.effective_model
       if (provider.worker_session_id !== undefined)
       {
         result.worker_session_id = provider.worker_session_id

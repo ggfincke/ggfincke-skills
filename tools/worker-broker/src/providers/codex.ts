@@ -64,6 +64,7 @@ export class CodexProvider implements WorkerProvider
     const prompt = assignmentPrompt(context)
     await writePrivateFile(context.prompt_path, prompt)
     let workerSessionId: string | undefined
+    let effectiveModel: string | undefined
     const processResult = await runProcess({
       command: this.config.codex_binary,
       args: buildCodexArgs(context, this.config),
@@ -85,6 +86,7 @@ export class CodexProvider implements WorkerProvider
           {
             workerSessionId = event.thread_id
           }
+          if (typeof event.model === 'string') effectiveModel = event.model
         }
         catch
         {
@@ -101,6 +103,7 @@ export class CodexProvider implements WorkerProvider
     }
     if (workerSessionId !== undefined)
       outcome.worker_session_id = workerSessionId
+    if (effectiveModel !== undefined) outcome.effective_model = effectiveModel
     if (processResult.exit_code === 0)
     {
       const modelResult = await readJson(context.model_result_path)

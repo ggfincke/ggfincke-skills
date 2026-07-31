@@ -42,6 +42,7 @@ test('Codex arguments enforce the requested sandbox and nested-agent policy', ()
       verification_commands: [],
       effort: 'high',
       allow_nested_agents: false,
+      depends_on: [],
     },
     worktree: '/worktree',
     job_dir: '/job',
@@ -57,6 +58,7 @@ test('Codex arguments enforce the requested sandbox and nested-agent policy', ()
     codex_binary: 'codex',
     cursor_binary: 'cursor-agent',
     coral_binary: 'coral',
+    claude_binary: 'claude',
     default_codex_model: 'gpt-test',
   }
   const args = buildCodexArgs(context, config)

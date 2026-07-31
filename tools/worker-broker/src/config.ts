@@ -27,6 +27,7 @@ export function defaultBrokerConfig(
     codex_binary: environment.WORKER_BROKER_CODEX_BINARY ?? 'codex',
     cursor_binary: environment.WORKER_BROKER_CURSOR_BINARY ?? 'cursor-agent',
     coral_binary: environment.WORKER_BROKER_CORAL_BINARY ?? 'coral',
+    claude_binary: environment.WORKER_BROKER_CLAUDE_BINARY ?? 'claude',
   }
   if (environment.WORKER_BROKER_CODEX_MODEL !== undefined)
   {
@@ -39,6 +40,10 @@ export function defaultBrokerConfig(
   if (environment.WORKER_BROKER_CORAL_MODEL !== undefined)
   {
     config.default_coral_model = environment.WORKER_BROKER_CORAL_MODEL
+  }
+  if (environment.WORKER_BROKER_CLAUDE_MODEL !== undefined)
+  {
+    config.default_claude_model = environment.WORKER_BROKER_CLAUDE_MODEL
   }
   if (environment.WORKER_BROKER_CORAL_HOST !== undefined)
   {

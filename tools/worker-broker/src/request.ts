@@ -58,7 +58,8 @@ export function normalizeRequest(
   if (
     request.provider !== 'codex' &&
     request.provider !== 'cursor' &&
-    request.provider !== 'coral'
+    request.provider !== 'coral' &&
+    request.provider !== 'claude'
   )
   {
     throw new Error(`unsupported provider: ${request.provider}`)
@@ -102,10 +103,17 @@ export function normalizeRequest(
     verification_commands: (request.verification_commands ?? []).map(
       normalizeVerification
     ),
+    depends_on: normalizeStringList(request.depends_on, 'dependency job id'),
     allow_nested_agents: request.allow_nested_agents ?? false,
   }
   if (request.model !== undefined)
     normalized.model = requireNonEmpty(request.model, 'model')
   if (request.effort !== undefined) normalized.effort = request.effort
+  if (request.stage !== undefined)
+    normalized.stage = requireNonEmpty(request.stage, 'stage')
+  if (request.workflow !== undefined)
+    normalized.workflow = requireNonEmpty(request.workflow, 'workflow')
+  if (request.run !== undefined)
+    normalized.run = requireNonEmpty(request.run, 'run')
   return normalized
 }

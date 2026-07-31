@@ -1,7 +1,7 @@
 // tools/worker-broker/src/contracts.ts
 // define broker requests, lifecycle state, provider outcomes, & computed results
 
-type ProviderName = 'codex' | 'cursor' | 'coral'
+type ProviderName = 'codex' | 'cursor' | 'coral' | 'claude'
 export type WorkerMode = 'read' | 'edit'
 export type WorkerStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
@@ -28,6 +28,10 @@ export interface StartWorkerRequest
   verification_commands?: VerificationInput[]
   model?: string
   effort?: ReasoningEffort
+  stage?: string
+  workflow?: string
+  run?: string
+  depends_on?: string[]
   allow_nested_agents?: boolean
 }
 
@@ -49,6 +53,10 @@ export interface NormalizedWorkerRequest
   verification_commands: NormalizedVerificationCommand[]
   model?: string
   effort?: ReasoningEffort
+  stage?: string
+  workflow?: string
+  run?: string
+  depends_on: string[]
   allow_nested_agents: boolean
 }
 
@@ -80,6 +88,7 @@ export interface ProviderOutcome
   signal: NodeJS.Signals | null
   worker_session_id?: string
   model_result?: ModelWorkerResult
+  effective_model?: string
 }
 
 export interface WorkerProvider
@@ -122,6 +131,12 @@ export interface WorkerResult
   repo: string
   base_ref: string
   base_sha: string
+  stage?: string
+  workflow?: string
+  run?: string
+  model?: string
+  effort?: ReasoningEffort
+  effective_model?: string
   head_sha?: string
   worktree?: string
   branch?: string
@@ -168,8 +183,10 @@ export interface BrokerConfig
   codex_binary: string
   cursor_binary: string
   coral_binary: string
+  claude_binary: string
   default_codex_model?: string
   default_cursor_model?: string
   default_coral_model?: string
+  default_claude_model?: string
   coral_host?: string
 }

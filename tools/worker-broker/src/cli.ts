@@ -15,6 +15,7 @@ import { JobManager } from './job-manager.js'
 import { JobStore } from './job-store.js'
 import { readJson } from './json.js'
 import { CodexProvider } from './providers/codex.js'
+import { ClaudeProvider } from './providers/claude.js'
 import { CoralProvider } from './providers/coral.js'
 import { CursorProvider } from './providers/cursor.js'
 
@@ -97,6 +98,7 @@ async function runJob(
   )
   const manager = new JobManager(config, [
     new CodexProvider(config),
+    new ClaudeProvider(config),
     new CursorProvider(config),
     new CoralProvider(config),
   ])
