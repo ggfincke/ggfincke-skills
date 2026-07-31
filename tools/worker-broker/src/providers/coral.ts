@@ -147,6 +147,7 @@ export class CoralProvider implements WorkerProvider
       )
       outcome.model_result = modelResult
       outcome.worker_session_id = nativeResult.run_id
+      outcome.effective_model = nativeResult.model
     }
     return outcome
   }

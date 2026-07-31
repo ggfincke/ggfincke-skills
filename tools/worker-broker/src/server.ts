@@ -9,6 +9,7 @@ import { errorMessage } from './errors.js'
 import { JobManager } from './job-manager.js'
 import { createWorkerBrokerServer } from './mcp-server.js'
 import { CodexProvider } from './providers/codex.js'
+import { ClaudeProvider } from './providers/claude.js'
 import { CoralProvider } from './providers/coral.js'
 import { CursorProvider } from './providers/cursor.js'
 
@@ -17,6 +18,7 @@ async function main(): Promise<void>
   const config = defaultBrokerConfig()
   const manager = new JobManager(config, [
     new CodexProvider(config),
+    new ClaudeProvider(config),
     new CursorProvider(config),
     new CoralProvider(config),
   ])

@@ -25,6 +25,7 @@ function context(mode: 'read' | 'edit'): ProviderRunContext
       acceptance_criteria: [],
       verification_commands: [],
       allow_nested_agents: false,
+      depends_on: [],
     },
     worktree: '/worktree',
     job_dir: '/job',
@@ -42,6 +43,7 @@ const config: BrokerConfig = {
   codex_binary: 'codex',
   cursor_binary: 'cursor-agent',
   coral_binary: 'coral',
+  claude_binary: 'claude',
   default_cursor_model: 'cursor-test-model',
 }
 

@@ -1,5 +1,5 @@
-// tools/worker-broker/src/providers/cursor.ts
-// invoke Cursor CLI in its native sandbox & normalize observed stream events
+// tools/worker-broker/src/providers/claude.ts
+// invoke claude code headlessly & normalize its native stream events
 
 import { writePrivateFile } from '../artifact.js'
 import { assignmentPrompt } from '../assignment-prompt.js'
@@ -13,9 +13,15 @@ import { serializePrettyJson } from '../json.js'
 import { parseModelResultText } from '../model-result.js'
 import { runProcess } from '../process-runner.js'
 
-function textFromAssistantEvent(
-  event: Record<string, unknown>
-): string | undefined
+interface ClaudeEventData
+{
+  session_id?: string
+  model?: string
+  assistant_text?: string
+  result_text?: string
+}
+
+function assistantText(event: Record<string, unknown>): string | undefined
 {
   const message = event.message
   if (typeof message !== 'object' || message === null || Array.isArray(message))
@@ -33,17 +39,9 @@ function textFromAssistantEvent(
   return text === '' ? undefined : text
 }
 
-interface CursorEventData
-{
-  session_id?: string
-  model?: string
-  assistant_text?: string
-  result_text?: string
-}
-
-export function parseCursorEventLine(
+export function parseClaudeEventLine(
   line: string
-): CursorEventData | undefined
+): ClaudeEventData | undefined
 {
   let event: Record<string, unknown>
   try
@@ -54,12 +52,12 @@ export function parseCursorEventLine(
   {
     return undefined
   }
-  const data: CursorEventData = {}
+  const data: ClaudeEventData = {}
   if (typeof event.session_id === 'string') data.session_id = event.session_id
   if (typeof event.model === 'string') data.model = event.model
   if (event.type === 'assistant')
   {
-    const text = textFromAssistantEvent(event)
+    const text = assistantText(event)
     if (text !== undefined) data.assistant_text = text
   }
   if (event.type === 'result' && typeof event.result === 'string')
@@ -69,38 +67,27 @@ export function parseCursorEventLine(
   return data
 }
 
-export function parseCursorResultText(text: string)
-{
-  return parseModelResultText(text, 'Cursor')
-}
-
-export function buildCursorArgs(
+export function buildClaudeArgs(
   context: ProviderRunContext,
   config: BrokerConfig,
   prompt: string
 ): string[]
 {
-  const args = [
-    '--print',
-    '--trust',
-    '--workspace',
-    context.worktree,
-    '--sandbox',
-    'enabled',
-    '--output-format',
-    'stream-json',
-  ]
-  if (context.request.mode === 'edit') args.push('--force')
-  else args.push('--mode', 'plan')
-  const model = context.request.model ?? config.default_cursor_model
+  const args = ['-p', prompt, '--output-format', 'stream-json']
+  if (context.request.mode === 'edit')
+    args.push('--dangerously-skip-permissions')
+  else args.push('--permission-mode', 'plan')
+  const model = context.request.model ?? config.default_claude_model
   if (model !== undefined) args.push('--model', model)
-  args.push(prompt)
+  // claude code currently accepts effort through max; ultra stays advisory metadata
+  const effort = context.request.effort
+  if (effort !== undefined && effort !== 'ultra') args.push('--effort', effort)
   return args
 }
 
-export class CursorProvider implements WorkerProvider
+export class ClaudeProvider implements WorkerProvider
 {
-  readonly name = 'cursor' as const
+  readonly name = 'claude' as const
 
   constructor(private readonly config: BrokerConfig)
   {}
@@ -111,11 +98,11 @@ export class CursorProvider implements WorkerProvider
     await writePrivateFile(context.prompt_path, prompt)
     let workerSessionId: string | undefined
     let effectiveModel: string | undefined
-    let assistantText: string | undefined
-    let resultText: string | undefined
+    let assistantResult: string | undefined
+    let finalResult: string | undefined
     const processResult = await runProcess({
-      command: this.config.cursor_binary,
-      args: buildCursorArgs(context, this.config, prompt),
+      command: this.config.claude_binary,
+      args: buildClaudeArgs(context, this.config, prompt),
       cwd: context.worktree,
       stdout_path: context.event_log_path,
       stderr_path: context.stderr_path,
@@ -123,12 +110,12 @@ export class CursorProvider implements WorkerProvider
       on_process_started: context.on_process_started,
       on_stdout_line: (line) =>
       {
-        const event = parseCursorEventLine(line)
+        const event = parseClaudeEventLine(line)
         if (event?.session_id !== undefined) workerSessionId = event.session_id
         if (event?.model !== undefined) effectiveModel = event.model
         if (event?.assistant_text !== undefined)
-          assistantText = event.assistant_text
-        if (event?.result_text !== undefined) resultText = event.result_text
+          assistantResult = event.assistant_text
+        if (event?.result_text !== undefined) finalResult = event.result_text
       },
     })
 
@@ -141,10 +128,10 @@ export class CursorProvider implements WorkerProvider
     if (effectiveModel !== undefined) outcome.effective_model = effectiveModel
     if (processResult.exit_code === 0)
     {
-      const text = assistantText ?? resultText
+      const text = finalResult ?? assistantResult
       if (text === undefined)
-        throw new Error('Cursor completed without a textual result')
-      const modelResult = parseCursorResultText(text)
+        throw new Error('Claude completed without a textual result')
+      const modelResult = parseModelResultText(text, 'Claude')
       await writePrivateFile(
         context.model_result_path,
         serializePrettyJson(modelResult)

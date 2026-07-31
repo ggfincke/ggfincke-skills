@@ -12,6 +12,7 @@ import type {
   ProviderRunContext,
   WorkerProvider,
 } from '../src/contracts.js'
+import { resolveBaseSha } from '../src/git-worktree.js'
 import { JobManager } from '../src/job-manager.js'
 import { initializeTestRepo, waitUntil } from './helpers.js'
 
@@ -78,6 +79,7 @@ async function fixtureConfig(): Promise<{
       codex_binary: 'codex',
       cursor_binary: 'cursor-agent',
       coral_binary: 'coral',
+      claude_binary: 'claude',
     },
     stateDir,
   }
@@ -177,6 +179,124 @@ test('overlapping edit jobs serialize and a queued job cancels without starting'
       'completed'
     )
     assert.deepEqual(provider.started, [first.job_id])
+  })
+})
+
+test('queued edit jobs preserve FIFO fairness across overlapping scopes', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    const provider = new ControlledProvider()
+    const manager = new JobManager(config, [provider])
+    const first = await manager.start({
+      provider: 'codex',
+      mode: 'edit',
+      repo,
+      task: 'first scope',
+      allowed_paths: ['src/first'],
+    })
+    await waitUntil(() => provider.started.includes(first.job_id))
+    const second = await manager.start({
+      provider: 'codex',
+      mode: 'edit',
+      repo,
+      task: 'bridging scope',
+      allowed_paths: ['src/first', 'src/second'],
+    })
+    const third = await manager.start({
+      provider: 'codex',
+      mode: 'edit',
+      repo,
+      task: 'later second scope',
+      allowed_paths: ['src/second'],
+    })
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    assert.deepEqual(provider.started, [first.job_id])
+
+    provider.release(first.job_id)
+    await waitUntil(() => provider.started.includes(second.job_id))
+    assert.deepEqual(provider.started, [first.job_id, second.job_id])
+    provider.release(second.job_id)
+    await waitUntil(() => provider.started.includes(third.job_id))
+    provider.release(third.job_id)
+    assert.equal(
+      (await manager.waitForTerminal(third.job_id)).status,
+      'completed'
+    )
+  })
+})
+
+test('dependencies wait for completion and reject after a failed dependency', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    const manager = new JobManager(config, [new OutOfScopeProvider()])
+    const dependency = await manager.start({
+      provider: 'codex',
+      mode: 'edit',
+      repo,
+      task: 'fail dependency',
+      allowed_paths: ['src'],
+    })
+    const dependent = await manager.start({
+      provider: 'codex',
+      mode: 'read',
+      repo,
+      task: 'wait on dependency',
+      allowed_paths: [],
+      depends_on: [dependency.job_id],
+    })
+    const finished = await manager.waitForTerminal(dependent.job_id)
+    assert.equal(finished.status, 'rejected')
+    assert.equal(
+      finished.result?.error,
+      `dependency ${dependency.job_id} ended rejected`
+    )
+    await assert.rejects(
+      manager.start({
+        provider: 'codex',
+        mode: 'read',
+        repo,
+        task: 'unknown dependency',
+        allowed_paths: [],
+        depends_on: ['missing-job'],
+      }),
+      /unknown dependency job/
+    )
+  })
+})
+
+test('initialization restores a persisted queued job to the scheduler', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    const seed = new JobManager(config, [])
+    const jobId = 'persisted-queued-job'
+    await seed.store.write({
+      job_id: jobId,
+      status: 'queued',
+      request: {
+        provider: 'codex',
+        mode: 'read',
+        repo,
+        base_ref: 'HEAD',
+        task: 'resume queued work',
+        allowed_paths: [],
+        acceptance_criteria: [],
+        verification_commands: [],
+        depends_on: [],
+        allow_nested_agents: false,
+      },
+      base_sha: await resolveBaseSha(repo, 'HEAD'),
+      created_at: new Date().toISOString(),
+    })
+
+    const provider = new ControlledProvider()
+    const manager = new JobManager(config, [provider])
+    await manager.initialize()
+    await waitUntil(() => provider.started.includes(jobId))
+    provider.release(jobId)
+    assert.equal((await manager.waitForTerminal(jobId)).status, 'completed')
   })
 })
 
