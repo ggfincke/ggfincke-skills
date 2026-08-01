@@ -4,7 +4,9 @@
 import { EventEmitter } from 'node:events'
 import { randomBytes } from 'node:crypto'
 import path from 'node:path'
+import { ActivityWriter } from './activity.js'
 import type {
+  ActivityPhase,
   BrokerConfig,
   ProviderOutcome,
   StartWorkerRequest,
@@ -64,6 +66,7 @@ export class JobManager
   readonly store: JobStore
   private readonly jobs = new Map<string, WorkerJob>()
   private readonly controllers = new Map<string, AbortController>()
+  private readonly activities = new Map<string, ActivityWriter>()
   private readonly providers: Map<string, WorkerProvider>
   private readonly events = new EventEmitter()
   private initialization: Promise<void> | undefined
@@ -133,6 +136,16 @@ export class JobManager
     }
     const priorStatus = job.status
     const message = `broker restarted before the job reached a terminal state (previous status: ${priorStatus})`
+    const activity = this.activity(job)
+    await activity.failPendingActions().catch(() =>
+    {})
+    const interruptedPhase = await activity
+      .currentOpenPhase()
+      .catch(() => undefined)
+    if (interruptedPhase !== undefined)
+    {
+      await this.phase(job, interruptedPhase, 'failed')
+    }
     await this.finish(
       job,
       this.baseResult(
@@ -332,15 +345,41 @@ export class JobManager
     return path.join(this.store.jobDir(job.job_id), name)
   }
 
+  private activity(job: WorkerJob): ActivityWriter
+  {
+    let writer = this.activities.get(job.job_id)
+    if (writer === undefined)
+    {
+      writer = new ActivityWriter(this.artifact(job, 'activity.jsonl'))
+      this.activities.set(job.job_id, writer)
+    }
+    return writer
+  }
+
+  private async phase(
+    job: WorkerJob,
+    phase: ActivityPhase,
+    status: 'started' | 'completed' | 'failed'
+  ): Promise<void>
+  {
+    await this.activity(job)
+      .append({ kind: 'phase', phase, status })
+      .catch(() =>
+      {})
+  }
+
   private async execute(job: WorkerJob): Promise<void>
   {
     const controller = new AbortController()
     this.controllers.set(job.job_id, controller)
     let providerOutcome: ProviderOutcome | undefined
     let providerError: string | undefined
+    let activePhase: ActivityPhase | undefined
 
     try
     {
+      activePhase = 'preparing'
+      await this.phase(job, 'preparing', 'started')
       const created = await createWorktree(
         job.request.repo,
         this.store.worktreePath(job.job_id),
@@ -351,10 +390,14 @@ export class JobManager
       job.worktree = created.path
       if (created.branch !== undefined) job.branch = created.branch
       await this.store.write(job)
+      await this.phase(job, 'preparing', 'completed')
+      activePhase = undefined
 
       const provider = this.providers.get(job.request.provider)
       if (provider === undefined)
         throw new Error(`provider is not configured: ${job.request.provider}`)
+      activePhase = 'working'
+      await this.phase(job, activePhase, 'started')
       try
       {
         providerOutcome = await provider.run({
@@ -372,12 +415,34 @@ export class JobManager
             job.process_id = pid
             await this.store.write(job)
           },
+          on_activity: (activity) =>
+          {
+            void this.activity(job)
+              .append(activity)
+              .catch(() =>
+              {})
+          },
         })
       }
       catch (error)
       {
         providerError = errorMessage(error)
       }
+      await this.activity(job)
+        .failPendingActions()
+        .catch(() =>
+        {})
+      await this.phase(
+        job,
+        'working',
+        providerError === undefined && providerOutcome?.exit_code === 0
+          ? 'completed'
+          : 'failed'
+      )
+      activePhase = undefined
+
+      activePhase = 'verifying'
+      await this.phase(job, activePhase, 'started')
 
       const providerSnapshot = await snapshotWorktree(
         created.path,
@@ -391,6 +456,8 @@ export class JobManager
 
       if (providerViolations.length > 0)
       {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
         await this.finish(
           job,
           this.resultFromEvidence(
@@ -407,6 +474,8 @@ export class JobManager
       }
       if (controller.signal.aborted)
       {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
         await this.finish(
           job,
           this.resultFromEvidence(
@@ -423,6 +492,8 @@ export class JobManager
       }
       if (providerError !== undefined)
       {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
         await this.finish(
           job,
           this.resultFromEvidence(
@@ -439,6 +510,8 @@ export class JobManager
       }
       if (providerOutcome?.exit_code !== 0)
       {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
         await this.finish(
           job,
           this.resultFromEvidence(
@@ -466,6 +539,8 @@ export class JobManager
       )
       if (finalViolations.length > 0)
       {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
         await this.finish(
           job,
           this.resultFromEvidence(
@@ -482,6 +557,8 @@ export class JobManager
       }
       if (controller.signal.aborted)
       {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
         await this.finish(
           job,
           this.resultFromEvidence(
@@ -499,6 +576,12 @@ export class JobManager
       const failedVerification = verification.find(verificationFailed)
       const status: WorkerStatus =
         failedVerification === undefined ? 'completed' : 'failed'
+      await this.phase(
+        job,
+        'verifying',
+        failedVerification === undefined ? 'completed' : 'failed'
+      )
+      activePhase = undefined
       await this.finish(
         job,
         this.resultFromEvidence(
@@ -518,6 +601,11 @@ export class JobManager
     }
     catch (error)
     {
+      if (activePhase !== undefined)
+      {
+        await this.phase(job, activePhase, 'failed').catch(() =>
+        {})
+      }
       await this.finish(
         job,
         this.baseResult(job, 'failed', errorMessage(error))
@@ -653,6 +741,7 @@ export class JobManager
 
   private async finish(job: WorkerJob, result: WorkerResult): Promise<void>
   {
+    await this.phase(job, 'finalizing', 'started')
     const completedAt = new Date().toISOString()
     job.status = result.status
     job.completed_at = completedAt
@@ -663,6 +752,8 @@ export class JobManager
     }
     job.result = result
     await this.store.write(job)
+    await this.phase(job, 'finalizing', 'completed')
+    this.activities.delete(job.job_id)
     this.events.emit(`terminal:${job.job_id}`, job)
   }
 }

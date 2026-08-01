@@ -1,9 +1,11 @@
 // tools/worker-broker/src/providers/cursor.ts
 // invoke Cursor CLI in its native sandbox & normalize observed stream events
 
+import { parseActivitySummary } from '../activity.js'
 import { writePrivateFile } from '../artifact.js'
 import { assignmentPrompt } from '../assignment-prompt.js'
 import type {
+  ActivityInput,
   BrokerConfig,
   ProviderOutcome,
   ProviderRunContext,
@@ -69,6 +71,71 @@ export function parseCursorEventLine(
   return data
 }
 
+export function parseCursorActivity(line: string): ActivityInput | undefined
+{
+  let value: Record<string, unknown>
+  try
+  {
+    value = JSON.parse(line) as Record<string, unknown>
+  }
+  catch
+  {
+    return undefined
+  }
+  if (value.type === 'tool_call')
+  {
+    if (value.subtype === 'started')
+      return { kind: 'action', status: 'started' }
+    if (value.subtype === 'completed')
+    {
+      const toolCall = value.tool_call
+      let failed = value.is_error === true
+      if (
+        typeof toolCall === 'object' &&
+        toolCall !== null &&
+        !Array.isArray(toolCall)
+      )
+      {
+        for (const call of Object.values(toolCall))
+        {
+          if (typeof call !== 'object' || call === null || Array.isArray(call))
+            continue
+          const result = (call as Record<string, unknown>).result
+          if (
+            typeof result === 'object' &&
+            result !== null &&
+            !Array.isArray(result)
+          )
+          {
+            const resultRecord = result as Record<string, unknown>
+            failed =
+              failed ||
+              resultRecord.is_error === true ||
+              (resultRecord.error !== undefined &&
+                resultRecord.error !== null) ||
+              (resultRecord.failure !== undefined &&
+                resultRecord.failure !== null)
+          }
+        }
+      }
+      return { kind: 'action', status: failed ? 'failed' : 'completed' }
+    }
+    return undefined
+  }
+  if (value.type === 'result' && typeof value.result === 'string')
+  {
+    const summary = parseActivitySummary(value.result)
+    return summary === undefined ? undefined : { kind: 'message', summary }
+  }
+  const event = parseCursorEventLine(line)
+  if (event?.assistant_text !== undefined)
+  {
+    const summary = parseActivitySummary(event.assistant_text)
+    return summary === undefined ? undefined : { kind: 'message', summary }
+  }
+  return undefined
+}
+
 export function parseCursorResultText(text: string)
 {
   return parseModelResultText(text, 'Cursor')
@@ -124,11 +191,13 @@ export class CursorProvider implements WorkerProvider
       on_stdout_line: (line) =>
       {
         const event = parseCursorEventLine(line)
+        const activity = parseCursorActivity(line)
         if (event?.session_id !== undefined) workerSessionId = event.session_id
         if (event?.model !== undefined) effectiveModel = event.model
         if (event?.assistant_text !== undefined)
           assistantText = event.assistant_text
         if (event?.result_text !== undefined) resultText = event.result_text
+        if (activity !== undefined) context.on_activity?.(activity)
       },
     })
 
@@ -141,7 +210,7 @@ export class CursorProvider implements WorkerProvider
     if (effectiveModel !== undefined) outcome.effective_model = effectiveModel
     if (processResult.exit_code === 0)
     {
-      const text = assistantText ?? resultText
+      const text = resultText ?? assistantText
       if (text === undefined)
         throw new Error('Cursor completed without a textual result')
       const modelResult = parseCursorResultText(text)

@@ -1,9 +1,11 @@
 // tools/worker-broker/src/providers/claude.ts
 // invoke claude code headlessly & normalize its native stream events
 
+import { parseActivitySummary } from '../activity.js'
 import { writePrivateFile } from '../artifact.js'
 import { assignmentPrompt } from '../assignment-prompt.js'
 import type {
+  ActivityInput,
   BrokerConfig,
   ProviderOutcome,
   ProviderRunContext,
@@ -67,6 +69,69 @@ export function parseClaudeEventLine(
   return data
 }
 
+export function parseClaudeActivities(line: string): ActivityInput[]
+{
+  let value: Record<string, unknown>
+  try
+  {
+    value = JSON.parse(line) as Record<string, unknown>
+  }
+  catch
+  {
+    return []
+  }
+  const activities: ActivityInput[] = []
+  const message = value.message
+  if (
+    typeof message === 'object' &&
+    message !== null &&
+    !Array.isArray(message)
+  )
+  {
+    const content = (message as Record<string, unknown>).content
+    if (Array.isArray(content))
+    {
+      const entries = content.filter(
+        (entry): entry is Record<string, unknown> =>
+          typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+      )
+      for (const entry of entries)
+      {
+        if (entry.type === 'tool_use')
+          activities.push({ kind: 'action', status: 'started' })
+        else if (entry.type === 'tool_result')
+        {
+          activities.push({
+            kind: 'action',
+            status: entry.is_error === true ? 'failed' : 'completed',
+          })
+        }
+      }
+    }
+  }
+  const event = parseClaudeEventLine(line)
+  if (event?.assistant_text !== undefined)
+  {
+    const summary = parseActivitySummary(event.assistant_text)
+    if (summary !== undefined) activities.push({ kind: 'message', summary })
+  }
+  if (value.type === 'tool_use')
+    activities.push({ kind: 'action', status: 'started' })
+  if (value.type === 'tool_result')
+  {
+    activities.push({
+      kind: 'action',
+      status: value.is_error === true ? 'failed' : 'completed',
+    })
+  }
+  return activities
+}
+
+export function parseClaudeActivity(line: string): ActivityInput | undefined
+{
+  return parseClaudeActivities(line)[0]
+}
+
 export function buildClaudeArgs(
   context: ProviderRunContext,
   config: BrokerConfig,
@@ -111,11 +176,13 @@ export class ClaudeProvider implements WorkerProvider
       on_stdout_line: (line) =>
       {
         const event = parseClaudeEventLine(line)
+        const activities = parseClaudeActivities(line)
         if (event?.session_id !== undefined) workerSessionId = event.session_id
         if (event?.model !== undefined) effectiveModel = event.model
         if (event?.assistant_text !== undefined)
           assistantResult = event.assistant_text
         if (event?.result_text !== undefined) finalResult = event.result_text
+        for (const activity of activities) context.on_activity?.(activity)
       },
     })
 
