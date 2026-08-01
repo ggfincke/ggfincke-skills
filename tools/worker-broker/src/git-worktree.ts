@@ -110,6 +110,48 @@ function parseNameStatus(output: string): ChangedPath[]
   return changes
 }
 
+function parseStatusPaths(output: string): string[]
+{
+  const tokens = output.split('\0')
+  if (tokens.at(-1) === '') tokens.pop()
+
+  const paths: string[] = []
+  for (let index = 0; index < tokens.length;)
+  {
+    const entry = tokens[index++]
+    if (entry === undefined || entry.length < 4 || entry[2] !== ' ')
+    {
+      throw new Error(`unexpected git status entry: ${entry ?? ''}`)
+    }
+    const status = entry.slice(0, 2)
+    paths.push(entry.slice(3))
+    if (status.includes('R') || status.includes('C'))
+    {
+      const source = tokens[index++]
+      if (source === undefined || source === '')
+      {
+        throw new Error(`unexpected git status rename after ${entry}`)
+      }
+      paths.push(source)
+    }
+  }
+  return [...new Set(paths)].sort()
+}
+
+export async function listWorktreeStatusPaths(
+  worktree: string
+): Promise<string[]>
+{
+  return parseStatusPaths(
+    await git(worktree, [
+      'status',
+      '--porcelain=v1',
+      '-z',
+      '--untracked-files=normal',
+    ])
+  )
+}
+
 async function writePatchAtomically(
   patchPath: string,
   patch: string
@@ -130,7 +172,8 @@ async function writePatchAtomically(
 export async function snapshotWorktree(
   worktree: string,
   baseSha: string,
-  patchPath: string
+  patchPath: string,
+  excludedPaths: readonly string[] = []
 ): Promise<GitSnapshot>
 {
   const tempDirectory = await mkdtemp(
@@ -142,7 +185,13 @@ export async function snapshotWorktree(
   try
   {
     await git(worktree, ['read-tree', baseSha], env)
-    await git(worktree, ['add', '-A', '--', '.'], env)
+    const pathspec = [
+      '.',
+      ...excludedPaths.map(
+        (excludedPath) => `:(exclude,literal)${excludedPath}`
+      ),
+    ]
+    await git(worktree, ['add', '-A', '--', ...pathspec], env)
     const [patch, nameStatus, headSha] = await Promise.all([
       git(
         worktree,

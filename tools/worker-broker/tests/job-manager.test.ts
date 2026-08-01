@@ -123,7 +123,48 @@ test('job manager rejects final changes outside the assignment', async () =>
     const finished = await manager.waitForTerminal(started.job_id)
     assert.equal(finished.status, 'rejected')
     assert.deepEqual(finished.result?.scope_violations, ['outside.txt'])
-    assert.ok(finished.result?.patch_path)
+    assert.deepEqual(finished.result?.changed_files, ['outside.txt'])
+    const patchPath = finished.result?.patch_path
+    assert.ok(patchPath)
+    assert.match(await readFile(patchPath, 'utf8'), /outside\.txt/u)
+  })
+})
+
+test('setup-created out-of-scope paths stay out of worker evidence', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    let manager: JobManager
+    manager = new JobManager(config, [
+      {
+        name: 'codex',
+        run: async (context) =>
+        {
+          assert.deepEqual(
+            (await manager.store.read(context.job_id)).setup_paths,
+            ['setup-link']
+          )
+          return SUCCESS
+        },
+      },
+    ])
+    const started = await manager.start({
+      provider: 'codex',
+      mode: 'edit',
+      repo,
+      task: 'use setup-provided dependencies',
+      allowed_paths: ['src'],
+      setup_commands: ['ln -s README.md setup-link'],
+    })
+    const finished = await manager.waitForTerminal(started.job_id)
+    assert.equal(finished.status, 'completed')
+    assert.deepEqual(finished.setup_paths, ['setup-link'])
+    assert.deepEqual(finished.result?.scope_violations, [])
+    assert.deepEqual(finished.result?.changed_files, [])
+    assert.deepEqual(finished.result?.changes, [])
+    const patchPath = finished.result?.patch_path
+    assert.ok(patchPath)
+    assert.equal(await readFile(patchPath, 'utf8'), '')
   })
 })
 

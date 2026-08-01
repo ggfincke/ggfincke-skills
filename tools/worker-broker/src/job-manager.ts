@@ -21,6 +21,7 @@ import type {
 } from './contracts.js'
 import {
   createWorktree,
+  listWorktreeStatusPaths,
   removeWorktree,
   resolveBaseSha,
   resolveRepository,
@@ -276,7 +277,8 @@ export class JobManager
     return await snapshotWorktree(
       worktreePath,
       job.base_sha,
-      this.artifact(job, 'change.patch')
+      this.artifact(job, 'change.patch'),
+      job.setup_paths
     )
   }
 
@@ -298,6 +300,7 @@ export class JobManager
     delete job.branch
     delete job.process_id
     delete job.started_at
+    delete job.setup_paths
     job.restart_requeues = (job.restart_requeues ?? 0) + 1
     job.status = 'queued'
     await this.store.write(job)
@@ -660,9 +663,13 @@ export class JobManager
         )
         return
       }
+      unexpectedFailureClass = classifyFailure('broker')
+      // paths visible after setup remain setup-attributed wholesale;
+      // assignments must not overlap their own setup effects
+      job.setup_paths = await listWorktreeStatusPaths(created.path)
+      await this.store.write(job)
       await this.phase(job, 'preparing', 'completed')
       activePhase = undefined
-      unexpectedFailureClass = classifyFailure('broker')
 
       const provider = this.providers.get(job.request.provider)
       if (provider === undefined)
@@ -719,7 +726,8 @@ export class JobManager
       const providerSnapshot = await snapshotWorktree(
         created.path,
         job.base_sha,
-        this.artifact(job, 'change.patch')
+        this.artifact(job, 'change.patch'),
+        job.setup_paths
       )
       const providerViolations = scopeViolations(
         providerSnapshot.changed_files,
@@ -813,7 +821,8 @@ export class JobManager
       const finalSnapshot = await snapshotWorktree(
         created.path,
         job.base_sha,
-        this.artifact(job, 'change.patch')
+        this.artifact(job, 'change.patch'),
+        job.setup_paths
       )
       const finalViolations = scopeViolations(
         finalSnapshot.changed_files,

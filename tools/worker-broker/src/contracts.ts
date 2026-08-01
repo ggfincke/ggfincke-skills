@@ -211,6 +211,7 @@ export interface WorkerJob
   status: WorkerStatus
   request: NormalizedWorkerRequest
   base_sha: string
+  setup_paths?: string[]
   branch?: string
   worktree?: string
   process_id?: number
