@@ -86,3 +86,22 @@ export function scopesOverlap(
     )
   )
 }
+
+// report the deeper prefix of each overlapping pair so callers can name the
+// shared region that forces two edit scopes to serialize
+export function overlappingPaths(
+  left: readonly string[],
+  right: readonly string[]
+): string[]
+{
+  const overlaps = new Set<string>()
+  for (const leftPath of left)
+  {
+    for (const rightPath of right)
+    {
+      if (isPathWithinPrefix(leftPath, rightPath)) overlaps.add(leftPath)
+      else if (isPathWithinPrefix(rightPath, leftPath)) overlaps.add(rightPath)
+    }
+  }
+  return [...overlaps].sort()
+}

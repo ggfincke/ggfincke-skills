@@ -47,6 +47,12 @@ const StartWorkerSchema = z
     task: z.string().min(1),
     allowed_paths: z.array(z.string()),
     acceptance_criteria: z.array(z.string()).optional(),
+    setup_commands: z
+      .array(VerificationSchema)
+      .describe(
+        'environment preparation commands run in the worktree before the provider starts; a failure ends the job before any model work'
+      )
+      .optional(),
     verification_commands: z.array(VerificationSchema).optional(),
     model: z.string().min(1).optional(),
     effort: z
@@ -162,9 +168,17 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
       try
       {
         const job = await manager.start(input as StartWorkerRequest)
+        const serializesBehind = manager.editSerialization(job.job_id)
+        const overlapPaths = [
+          ...new Set(
+            serializesBehind.flatMap((conflict) => conflict.overlapping_paths)
+          ),
+        ].sort()
         return success(
-          { worker: summarize(job) },
-          `started worker ${job.job_id}`
+          { worker: summarize(job), serializes_behind: serializesBehind },
+          serializesBehind.length === 0
+            ? `started worker ${job.job_id}`
+            : `started worker ${job.job_id}; it will serialize behind ${serializesBehind.length} active edit job(s) via shared path(s): ${overlapPaths.join(', ')} — narrow allowed_paths if this wave should run in parallel`
         )
       }
       catch (error)

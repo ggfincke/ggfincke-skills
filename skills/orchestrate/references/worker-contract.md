@@ -20,6 +20,7 @@ Optional inputs:
 
 - `base_ref`: Git reference, default `HEAD`; the broker resolves it to an immutable commit before launch;
 - `acceptance_criteria`: observable conditions the result must satisfy;
+- `setup_commands`: trusted shell commands, optionally with `timeout_seconds`, run in the worktree after creation and before the provider starts (e.g. `pnpm install` for a JS monorepo). A setup failure ends the job in seconds with no model work spent; results are recorded in `setup` with `setup-N.*` artifacts;
 - `verification_commands`: trusted shell commands, optionally with `timeout_seconds`;
 - `model` and `effort`: provider-specific overrides; Cursor encodes effort in `model` and rejects the generic `effort` field;
 - `depends_on`: job IDs that must complete successfully before launch; any unsuccessful dependency rejects the dependent;
@@ -30,6 +31,10 @@ Coral headless workers reject nested-agent requests and use deterministic read-o
 Edit jobs require at least one allowed path. Prefixes are literal, not globs: use `src/auth`, not `src/auth/**`. The broker rejects absolute paths, traversal, Git metadata, and glob characters.
 
 Parent dirt does not block `start_worker`. Worktrees are created from the resolved `base_sha` only; uncommitted parent changes are not copied in. Broker evidence remains final-worktree vs `base_sha`. The lead owns integrating worker patches onto whatever the parent tree has become, including merge conflicts.
+
+Worktrees start bare: nothing is installed in them. Setup and verification commands run via `/bin/sh -lc` in the worktree with `<worktree>/node_modules/.bin` prepended to `PATH`, so repo-local tool shims resolve once `setup_commands` has installed dependencies.
+
+The start response includes `serializes_behind`: the active edit jobs in the same repository whose `allowed_paths` overlap the new job's, with the shared paths. A non-empty list means this job waits for those jobs FIFO; narrow the scopes if the wave should run in parallel.
 
 ### `list_workers`
 
@@ -64,13 +69,15 @@ Cancel queued work immediately or request process-group termination for running 
 - `queued`: accepted but waiting for a non-overlapping edit scope;
 - `running`: provider or broker verification is active;
 - `completed`: provider and every broker verification command succeeded with no scope drift;
-- `failed`: launch, provider, broker, or verification failed;
+- `failed`: launch, setup, provider, broker, or verification failed;
 - `rejected`: final Git-visible paths escaped the assignment;
 - `cancelled`: the lead or server shutdown stopped the assignment.
 
 Only `completed` is a successful implementation result. A read-only research job may complete with an empty patch.
 
-Queued jobs survive broker restart. Conflicting edit jobs start FIFO.
+A verification exit of 126/127 is reported as an environment failure (command not found or not executable), not a test failure: the worker's patch is intact at `change.patch`, so fix the environment via `setup_commands` and salvage the patch instead of re-running the worker.
+
+Queued jobs survive broker restart. A running job orphaned by a broker restart is requeued once with a fresh worktree; a second interruption fails it permanently. Conflicting edit jobs start FIFO.
 
 ## Evidence boundary
 

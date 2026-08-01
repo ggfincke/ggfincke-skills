@@ -36,13 +36,16 @@ Include every field required by [worker-contract.md](references/worker-contract.
 - normalized repository-relative allowed path prefixes;
 - forbidden behavior and scope boundaries;
 - acceptance criteria and broker-run verification commands;
+- setup commands whenever verification needs the repository toolchain — worktrees start bare with no installed dependencies, so a bare tool name fails with exit 127 no matter how good the patch is;
 - model and effort from the approved model plan's stage binding, or an explicit per-assignment override.
+
+Scope discipline: never grant one shared file — a lockfile, a root manifest such as a shared `tests/package.json` — to every worker in a wave. Any shared prefix makes the edit scopes overlap, and overlapping edit jobs serialize FIFO, turning a parallel wave into a multi-hour chain. Have workers report missing shared-file changes (new dependency declarations, manifest entries) as follow-ups, and apply them centrally in the lead during integration.
 
 Use configured providers according to [routing-policy.md](references/routing-policy.md). Never request a provider that the broker does not currently expose.
 
 ## Run workers
 
-1. Call `start_worker` once per bounded assignment and retain each returned job ID. Use `depends_on` when a worker must wait for prior jobs to complete; a failed dependency rejects the dependent.
+1. Call `start_worker` once per bounded assignment and retain each returned job ID. Inspect `serializes_behind` in every start response: a wave that chains behind shared paths is a scoping bug — fix the scopes or accept the serialization deliberately, never discover it hours later. Use `depends_on` when a worker must wait for prior jobs to complete; a failed dependency rejects the dependent.
 2. Use `get_run_status` for run dashboards, `list_workers` with optional `run` or `workflow` filters for inventory, and `get_worker_status` when one job needs attention.
 3. Let read-only work run concurrently. Conflicting edit jobs start FIFO; keep semantic conflicts and integration order explicit with `depends_on`.
 4. Use `cancel_worker` when an assignment is obsolete, mis-scoped, or no longer safe.

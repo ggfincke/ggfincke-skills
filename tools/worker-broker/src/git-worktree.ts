@@ -56,9 +56,35 @@ export async function createWorktree(
     return { path: worktreePath }
   }
 
+  // -B resets a branch an interrupted earlier attempt at this job id left
+  // behind; without it the stale ref blocks every retry of that job
   const branch = `agent/${jobId}`
-  await git(repo, ['worktree', 'add', '-b', branch, worktreePath, baseSha])
+  await git(repo, ['worktree', 'add', '-B', branch, worktreePath, baseSha])
   return { path: worktreePath, branch }
+}
+
+// remove a job worktree & its branch so the same job id can be re-prepared;
+// a branch that survives deletion surfaces later as a createWorktree failure
+export async function removeWorktree(
+  repo: string,
+  worktreePath: string,
+  branch?: string
+): Promise<void>
+{
+  try
+  {
+    await git(repo, ['worktree', 'remove', '--force', worktreePath])
+  }
+  catch
+  {
+    await rm(worktreePath, { recursive: true, force: true })
+    await git(repo, ['worktree', 'prune'])
+  }
+  if (branch !== undefined)
+  {
+    await git(repo, ['branch', '-D', branch]).catch(() =>
+    {})
+  }
 }
 
 function parseNameStatus(output: string): ChangedPath[]

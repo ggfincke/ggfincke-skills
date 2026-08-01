@@ -8,6 +8,37 @@ export type WorkerStatus =
 
 type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
+export type ActivityPhase = 'preparing' | 'working' | 'verifying' | 'finalizing'
+export type ActivityStatus = 'started' | 'completed' | 'failed'
+export type ActivityInput =
+  | { kind: 'phase'; phase: ActivityPhase; status: ActivityStatus }
+  | { kind: 'message'; summary: string }
+  | { kind: 'action'; status: ActivityStatus }
+
+export type ActivityRecord =
+  | {
+      schema_version: 1
+      sequence: number
+      recorded_at: string
+      kind: 'phase'
+      phase: ActivityPhase
+      status: ActivityStatus
+    }
+  | {
+      schema_version: 1
+      sequence: number
+      recorded_at: string
+      kind: 'message'
+      summary: string
+    }
+  | {
+      schema_version: 1
+      sequence: number
+      recorded_at: string
+      kind: 'action'
+      status: ActivityStatus
+    }
+
 interface VerificationCommandInput
 {
   command: string
@@ -25,6 +56,7 @@ export interface StartWorkerRequest
   task: string
   allowed_paths: string[]
   acceptance_criteria?: string[]
+  setup_commands?: VerificationInput[]
   verification_commands?: VerificationInput[]
   model?: string
   effort?: ReasoningEffort
@@ -50,6 +82,7 @@ export interface NormalizedWorkerRequest
   task: string
   allowed_paths: string[]
   acceptance_criteria: string[]
+  setup_commands: NormalizedVerificationCommand[]
   verification_commands: NormalizedVerificationCommand[]
   model?: string
   effort?: ReasoningEffort
@@ -80,6 +113,7 @@ export interface ProviderRunContext
   model_result_path: string
   signal: AbortSignal
   on_process_started: (pid: number) => void | Promise<void>
+  on_activity?: (activity: ActivityInput) => void
 }
 
 export interface ProviderOutcome
@@ -146,6 +180,7 @@ export interface WorkerResult
   follow_ups: string[]
   changed_files: string[]
   changes: ChangedPath[]
+  setup: VerificationResult[]
   verification: VerificationResult[]
   scope_violations: string[]
   patch_path?: string
@@ -171,6 +206,7 @@ export interface WorkerJob
   branch?: string
   worktree?: string
   process_id?: number
+  restart_requeues?: number
   created_at: string
   started_at?: string
   completed_at?: string

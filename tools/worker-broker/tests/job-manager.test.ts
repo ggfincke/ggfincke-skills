@@ -2,7 +2,7 @@
 // exercise rejection, serialized overlap, & cancellation through the real job lifecycle
 
 import assert from 'node:assert/strict'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -10,6 +10,7 @@ import type {
   BrokerConfig,
   ProviderOutcome,
   ProviderRunContext,
+  WorkerJob,
   WorkerProvider,
 } from '../src/contracts.js'
 import { resolveBaseSha } from '../src/git-worktree.js'
@@ -47,9 +48,14 @@ class ControlledProvider implements WorkerProvider
   async run(context: ProviderRunContext): Promise<ProviderOutcome>
   {
     this.started.push(context.job_id)
+    context.on_activity?.({ kind: 'action', status: 'started' })
     return await new Promise<ProviderOutcome>((resolve) =>
     {
-      const finish = (): void => resolve(SUCCESS)
+      const finish = (): void =>
+      {
+        context.on_activity?.({ kind: 'action', status: 'completed' })
+        resolve(SUCCESS)
+      }
       this.releases.set(context.job_id, finish)
       context.signal.addEventListener(
         'abort',
@@ -266,6 +272,44 @@ test('dependencies wait for completion and reject after a failed dependency', as
   })
 })
 
+test('a job record written before setup_commands existed still runs', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    const seed = new JobManager(config, [])
+    const jobId = 'legacy-queued-job'
+    const legacyRequest = {
+      provider: 'codex',
+      mode: 'read',
+      repo,
+      base_ref: 'HEAD',
+      task: 'resume work queued by an older broker',
+      allowed_paths: [],
+      acceptance_criteria: [],
+      verification_commands: [],
+      depends_on: [],
+      allow_nested_agents: false,
+    }
+    await seed.store.write({
+      job_id: jobId,
+      status: 'queued',
+      // a record persisted before the setup_commands field shipped
+      request: legacyRequest as unknown as WorkerJob['request'],
+      base_sha: await resolveBaseSha(repo, 'HEAD'),
+      created_at: new Date().toISOString(),
+    })
+
+    const provider = new ControlledProvider()
+    const manager = new JobManager(config, [provider])
+    await manager.initialize()
+    await waitUntil(() => provider.started.includes(jobId))
+    provider.release(jobId)
+    const finished = await manager.waitForTerminal(jobId)
+    assert.equal(finished.status, 'completed')
+    assert.deepEqual(finished.result?.setup, [])
+  })
+})
+
 test('initialization restores a persisted queued job to the scheduler', async () =>
 {
   await withJobManagerFixture(async ({ config, repo }) =>
@@ -283,6 +327,7 @@ test('initialization restores a persisted queued job to the scheduler', async ()
         task: 'resume queued work',
         allowed_paths: [],
         acceptance_criteria: [],
+        setup_commands: [],
         verification_commands: [],
         depends_on: [],
         allow_nested_agents: false,
@@ -297,6 +342,83 @@ test('initialization restores a persisted queued job to the scheduler', async ()
     await waitUntil(() => provider.started.includes(jobId))
     provider.release(jobId)
     assert.equal((await manager.waitForTerminal(jobId)).status, 'completed')
+  })
+})
+
+test('restart reconciliation closes interrupted activity before finalizing', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    const seed = new JobManager(config, [])
+    const jobId = 'persisted-running-job'
+    await seed.store.write({
+      job_id: jobId,
+      status: 'running',
+      request: {
+        provider: 'codex',
+        mode: 'read',
+        repo,
+        base_ref: 'HEAD',
+        task: 'recover interrupted work',
+        allowed_paths: [],
+        acceptance_criteria: [],
+        setup_commands: [],
+        verification_commands: [],
+        depends_on: [],
+        allow_nested_agents: false,
+      },
+      base_sha: await resolveBaseSha(repo, 'HEAD'),
+      // the single automatic requeue is already spent, so reconciliation
+      // takes the terminal-failure path this test observes
+      restart_requeues: 1,
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+    })
+    await writeFile(
+      path.join(config.state_dir, 'jobs', jobId, 'activity.jsonl'),
+      [
+        JSON.stringify({
+          schema_version: 1,
+          sequence: 1,
+          recorded_at: new Date().toISOString(),
+          kind: 'phase',
+          phase: 'working',
+          status: 'started',
+        }),
+        JSON.stringify({
+          schema_version: 1,
+          sequence: 2,
+          recorded_at: new Date().toISOString(),
+          kind: 'action',
+          status: 'started',
+        }),
+      ].join('\n') + '\n'
+    )
+
+    const manager = new JobManager(config, [])
+    await manager.initialize()
+    const finished = await manager.get(jobId)
+    assert.equal(finished.status, 'failed')
+    const records = (
+      await readFile(
+        path.join(config.state_dir, 'jobs', jobId, 'activity.jsonl'),
+        'utf8'
+      )
+    )
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+    assert.deepEqual(
+      records
+        .slice(2)
+        .map((record) => [record.kind, record.phase, record.status]),
+      [
+        ['action', undefined, 'failed'],
+        ['phase', 'working', 'failed'],
+        ['phase', 'finalizing', 'started'],
+        ['phase', 'finalizing', 'completed'],
+      ]
+    )
   })
 })
 
@@ -318,6 +440,60 @@ test('a running job reaches cancelled after its provider observes abort', async 
     const finished = await manager.waitForTerminal(started.job_id)
     assert.equal(finished.status, 'cancelled')
     assert.equal(finished.result?.process_signal, 'SIGTERM')
+    const activity = await readFile(
+      path.join(config.state_dir, 'jobs', started.job_id, 'activity.jsonl'),
+      'utf8'
+    )
+    assert.equal(activity.includes('"kind":"action","status":"failed"'), true)
+  })
+})
+
+test('activity is persisted incrementally before provider completion', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    const provider = new ControlledProvider()
+    const manager = new JobManager(config, [provider])
+    const started = await manager.start({
+      provider: 'codex',
+      mode: 'read',
+      repo,
+      task: 'report live activity',
+      allowed_paths: [],
+    })
+    await waitUntil(() => provider.started.includes(started.job_id))
+    const activityPath = path.join(
+      config.state_dir,
+      'jobs',
+      started.job_id,
+      'activity.jsonl'
+    )
+    await waitUntil(async () =>
+      (await readFile(activityPath, 'utf8')).includes('"phase":"working"')
+    )
+    const liveActivity = await readFile(activityPath, 'utf8')
+    assert.equal(liveActivity.includes('"status":"started"'), true)
+    assert.equal((await manager.get(started.job_id)).status, 'running')
+
+    provider.release(started.job_id)
+    await manager.waitForTerminal(started.job_id)
+    const records = (await readFile(activityPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+    assert.deepEqual(
+      records.map((record) => record.sequence),
+      records.map((_, index) => index + 1)
+    )
+    assert.equal(
+      records.some(
+        (record) =>
+          record.kind === 'phase' &&
+          record.phase === 'finalizing' &&
+          record.status === 'completed'
+      ),
+      true
+    )
   })
 })
 
