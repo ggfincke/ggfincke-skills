@@ -288,6 +288,7 @@ test('initialization restores a persisted queued job to the scheduler', async ()
         task: 'resume queued work',
         allowed_paths: [],
         acceptance_criteria: [],
+        setup_commands: [],
         verification_commands: [],
         depends_on: [],
         allow_nested_agents: false,
@@ -322,11 +323,15 @@ test('restart reconciliation closes interrupted activity before finalizing', asy
         task: 'recover interrupted work',
         allowed_paths: [],
         acceptance_criteria: [],
+        setup_commands: [],
         verification_commands: [],
         depends_on: [],
         allow_nested_agents: false,
       },
       base_sha: await resolveBaseSha(repo, 'HEAD'),
+      // the single automatic requeue is already spent, so reconciliation
+      // takes the terminal-failure path this test observes
+      restart_requeues: 1,
       created_at: new Date().toISOString(),
       started_at: new Date().toISOString(),
     })

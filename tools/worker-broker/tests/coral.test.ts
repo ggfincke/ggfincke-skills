@@ -19,6 +19,7 @@ function context(mode: 'read' | 'edit'): ProviderRunContext
       task: 'inspect local code',
       allowed_paths: mode === 'edit' ? ['src/local'] : [],
       acceptance_criteria: [],
+      setup_commands: [],
       verification_commands: [],
       allow_nested_agents: false,
       depends_on: [],

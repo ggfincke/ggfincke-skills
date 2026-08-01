@@ -39,6 +39,7 @@ test('Codex arguments enforce the requested sandbox and nested-agent policy', ()
       task: 'change auth',
       allowed_paths: ['src/auth'],
       acceptance_criteria: [],
+      setup_commands: [],
       verification_commands: [],
       effort: 'high',
       allow_nested_agents: false,

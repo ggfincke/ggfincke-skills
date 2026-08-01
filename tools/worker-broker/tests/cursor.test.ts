@@ -23,6 +23,7 @@ function context(mode: 'read' | 'edit'): ProviderRunContext
       task: 'inspect routing',
       allowed_paths: mode === 'edit' ? ['src/routing'] : [],
       acceptance_criteria: [],
+      setup_commands: [],
       verification_commands: [],
       allow_nested_agents: false,
       depends_on: [],

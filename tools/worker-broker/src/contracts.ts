@@ -56,6 +56,7 @@ export interface StartWorkerRequest
   task: string
   allowed_paths: string[]
   acceptance_criteria?: string[]
+  setup_commands?: VerificationInput[]
   verification_commands?: VerificationInput[]
   model?: string
   effort?: ReasoningEffort
@@ -81,6 +82,7 @@ export interface NormalizedWorkerRequest
   task: string
   allowed_paths: string[]
   acceptance_criteria: string[]
+  setup_commands: NormalizedVerificationCommand[]
   verification_commands: NormalizedVerificationCommand[]
   model?: string
   effort?: ReasoningEffort
@@ -178,6 +180,7 @@ export interface WorkerResult
   follow_ups: string[]
   changed_files: string[]
   changes: ChangedPath[]
+  setup: VerificationResult[]
   verification: VerificationResult[]
   scope_violations: string[]
   patch_path?: string
@@ -203,6 +206,7 @@ export interface WorkerJob
   branch?: string
   worktree?: string
   process_id?: number
+  restart_requeues?: number
   created_at: string
   started_at?: string
   completed_at?: string

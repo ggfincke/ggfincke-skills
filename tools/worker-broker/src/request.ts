@@ -100,6 +100,7 @@ export function normalizeRequest(
       request.acceptance_criteria,
       'acceptance criterion'
     ),
+    setup_commands: (request.setup_commands ?? []).map(normalizeVerification),
     verification_commands: (request.verification_commands ?? []).map(
       normalizeVerification
     ),

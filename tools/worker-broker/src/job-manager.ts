@@ -8,6 +8,7 @@ import { ActivityWriter } from './activity.js'
 import type {
   ActivityPhase,
   BrokerConfig,
+  NormalizedVerificationCommand,
   ProviderOutcome,
   StartWorkerRequest,
   VerificationResult,
@@ -18,13 +19,18 @@ import type {
 } from './contracts.js'
 import {
   createWorktree,
+  removeWorktree,
   resolveBaseSha,
   resolveRepository,
   snapshotWorktree,
 } from './git-worktree.js'
 import { errorMessage } from './errors.js'
 import { JobStore } from './job-store.js'
-import { scopesOverlap, scopeViolations } from './path-scope.js'
+import {
+  overlappingPaths,
+  scopesOverlap,
+  scopeViolations,
+} from './path-scope.js'
 import {
   processGroupExists,
   runProcess,
@@ -61,12 +67,34 @@ function verificationFailed(
   return result.timed_out || result.exit_code !== 0
 }
 
+// exit 126/127 means the command itself could not run: an environment
+// defect, not evidence against the worker's change
+function commandFailureMessage(
+  label: 'setup' | 'verification',
+  result: VerificationResult
+): string
+{
+  if (result.timed_out) return `${label} timed out: ${result.command}`
+  const environmentFailure =
+    result.exit_code === 126 || result.exit_code === 127
+  if (label === 'setup')
+  {
+    return environmentFailure
+      ? `setup environment failure (exit ${result.exit_code}: command not found or not executable): ${result.command}; the provider was not started`
+      : `setup failed: ${result.command}; the provider was not started`
+  }
+  return environmentFailure
+    ? `verification environment failure (exit ${result.exit_code}: command not found or not executable): ${result.command} — the worker's patch is preserved at change.patch; fix the worktree environment (setup_commands) instead of re-running the worker`
+    : `verification failed: ${result.command}`
+}
+
 export class JobManager
 {
   readonly store: JobStore
   private readonly jobs = new Map<string, WorkerJob>()
   private readonly controllers = new Map<string, AbortController>()
   private readonly activities = new Map<string, ActivityWriter>()
+  private readonly setupResults = new Map<string, VerificationResult[]>()
   private readonly providers: Map<string, WorkerProvider>
   private readonly events = new EventEmitter()
   private initialization: Promise<void> | undefined
@@ -146,6 +174,24 @@ export class JobManager
     {
       await this.phase(job, interruptedPhase, 'failed')
     }
+    // one automatic recovery: a restart-orphaned worker left no durable
+    // state behind, so a fresh worktree can re-run the same assignment
+    if (
+      cleanupError === undefined &&
+      priorStatus === 'running' &&
+      (job.restart_requeues ?? 0) < 1
+    )
+    {
+      try
+      {
+        await this.requeueInterrupted(job)
+        return
+      }
+      catch
+      {
+        // worktree or branch cleanup failed; fall through to terminal failure
+      }
+    }
     await this.finish(
       job,
       this.baseResult(
@@ -157,6 +203,32 @@ export class JobManager
       )
     )
     if (cleanupError !== undefined) throw cleanupError
+  }
+
+  private async requeueInterrupted(job: WorkerJob): Promise<void>
+  {
+    if (job.worktree !== undefined || job.branch !== undefined)
+    {
+      await removeWorktree(
+        job.request.repo,
+        this.store.worktreePath(job.job_id),
+        job.branch
+      )
+    }
+    delete job.worktree
+    delete job.branch
+    delete job.process_id
+    delete job.started_at
+    job.restart_requeues = (job.restart_requeues ?? 0) + 1
+    job.status = 'queued'
+    await this.store.write(job)
+    await this.activity(job)
+      .append({
+        kind: 'message',
+        summary: 'requeued after a broker restart interrupted the worker',
+      })
+      .catch(() =>
+      {})
   }
 
   async start(request: StartWorkerRequest): Promise<WorkerJob>
@@ -257,6 +329,38 @@ export class JobManager
     const waits = active.map((job) => this.waitForTerminal(job.job_id))
     await Promise.all(active.map((job) => this.cancel(job.job_id)))
     await Promise.all(waits)
+  }
+
+  // which active edit jobs a job will serialize behind, and via which paths;
+  // used to make scoping mistakes visible in the start_worker response
+  editSerialization(
+    jobId: string
+  ): { job_id: string; overlapping_paths: string[] }[]
+  {
+    const job = this.jobs.get(jobId)
+    if (job === undefined || job.request.mode !== 'edit') return []
+    const conflicts: { job_id: string; overlapping_paths: string[] }[] = []
+    for (const other of this.jobs.values())
+    {
+      if (
+        other.job_id === job.job_id ||
+        TERMINAL_STATUSES.has(other.status) ||
+        other.request.mode !== 'edit' ||
+        other.request.repo !== job.request.repo ||
+        !scopesOverlap(other.request.allowed_paths, job.request.allowed_paths)
+      )
+      {
+        continue
+      }
+      conflicts.push({
+        job_id: other.job_id,
+        overlapping_paths: overlappingPaths(
+          other.request.allowed_paths,
+          job.request.allowed_paths
+        ),
+      })
+    }
+    return conflicts
   }
 
   private earlierConflictingEditIsQueued(job: WorkerJob): boolean
@@ -390,6 +494,50 @@ export class JobManager
       job.worktree = created.path
       if (created.branch !== undefined) job.branch = created.branch
       await this.store.write(job)
+
+      // environment preparation runs before the provider so a broken
+      // worktree fails in seconds instead of after a full model run
+      const setupResults = await this.runCommands(
+        job,
+        job.request.setup_commands,
+        'setup',
+        controller.signal
+      )
+      this.setupResults.set(job.job_id, setupResults)
+      if (controller.signal.aborted)
+      {
+        await this.phase(job, 'preparing', 'failed')
+        activePhase = undefined
+        await this.finish(
+          job,
+          this.baseResult(job, 'cancelled', 'job cancelled during setup')
+        )
+        return
+      }
+      const failedSetup = setupResults.find(verificationFailed)
+      if (failedSetup !== undefined)
+      {
+        await this.phase(job, 'preparing', 'failed')
+        activePhase = undefined
+        const setupSnapshot = await snapshotWorktree(
+          created.path,
+          job.base_sha,
+          this.artifact(job, 'change.patch')
+        )
+        await this.finish(
+          job,
+          this.resultFromEvidence(
+            job,
+            'failed',
+            undefined,
+            setupSnapshot,
+            [],
+            [],
+            commandFailureMessage('setup', failedSetup)
+          )
+        )
+        return
+      }
       await this.phase(job, 'preparing', 'completed')
       activePhase = undefined
 
@@ -527,7 +675,12 @@ export class JobManager
         return
       }
 
-      const verification = await this.runVerification(job, controller.signal)
+      const verification = await this.runCommands(
+        job,
+        job.request.verification_commands,
+        'verification',
+        controller.signal
+      )
       const finalSnapshot = await snapshotWorktree(
         created.path,
         job.base_sha,
@@ -593,9 +746,7 @@ export class JobManager
           [],
           failedVerification === undefined
             ? undefined
-            : failedVerification.timed_out
-              ? `verification timed out: ${failedVerification.command}`
-              : `verification failed: ${failedVerification.command}`
+            : commandFailureMessage('verification', failedVerification)
         )
       )
     }
@@ -618,38 +769,40 @@ export class JobManager
     }
   }
 
-  private async runVerification(
+  private async runCommands(
     job: WorkerJob,
+    commands: readonly NormalizedVerificationCommand[],
+    label: 'setup' | 'verification',
     signal: AbortSignal
   ): Promise<VerificationResult[]>
   {
     if (job.worktree === undefined)
-      throw new Error('cannot verify a job without a worktree')
+      throw new Error(`cannot run ${label} commands without a worktree`)
+    // resolve worktree-local tool shims first, like npm run scripts do
+    const environment = {
+      ...process.env,
+      PATH: [
+        path.join(job.worktree, 'node_modules', '.bin'),
+        process.env.PATH ?? '',
+      ].join(path.delimiter),
+    }
     const results: VerificationResult[] = []
-    for (const [
-      index,
-      verification,
-    ] of job.request.verification_commands.entries())
+    for (const [index, command] of commands.entries())
     {
-      const stdoutPath = this.artifact(
-        job,
-        `verification-${index + 1}.stdout.log`
-      )
-      const stderrPath = this.artifact(
-        job,
-        `verification-${index + 1}.stderr.log`
-      )
+      const stdoutPath = this.artifact(job, `${label}-${index + 1}.stdout.log`)
+      const stderrPath = this.artifact(job, `${label}-${index + 1}.stderr.log`)
       const result = await runProcess({
         command: '/bin/sh',
-        args: ['-lc', verification.command],
+        args: ['-lc', command.command],
         cwd: job.worktree,
+        env: environment,
         stdout_path: stdoutPath,
         stderr_path: stderrPath,
         signal,
-        timeout_ms: verification.timeout_seconds * 1_000,
+        timeout_ms: command.timeout_seconds * 1_000,
       })
       results.push({
-        command: verification.command,
+        command: command.command,
         exit_code: result.exit_code,
         signal: result.signal,
         timed_out: result.timed_out,
@@ -681,6 +834,7 @@ export class JobManager
       follow_ups: [],
       changed_files: [],
       changes: [],
+      setup: [],
       verification: [],
       scope_violations: [],
       event_log_path: this.artifact(job, 'events.jsonl'),
@@ -742,6 +896,9 @@ export class JobManager
   private async finish(job: WorkerJob, result: WorkerResult): Promise<void>
   {
     await this.phase(job, 'finalizing', 'started')
+    const setup = this.setupResults.get(job.job_id)
+    if (setup !== undefined) result.setup = setup
+    this.setupResults.delete(job.job_id)
     const completedAt = new Date().toISOString()
     job.status = result.status
     job.completed_at = completedAt
