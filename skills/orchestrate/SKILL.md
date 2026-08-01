@@ -14,6 +14,8 @@ Own the overall design, delegation boundaries, integration, and final correctnes
 3. Identify independent work packages. Keep cross-cutting interfaces and integration sequencing in the lead session.
 4. Delegate only when a package has a concrete objective and an unambiguous file or directory scope.
 
+Before the first wave, run a lightweight broker preflight with `daemon_status` (or an equivalent read call). Confirm the client and daemon build IDs match and that the daemon is not draining. The daemon owns single-writer access plus build, protocol, and state-schema compatibility; surface `build_mismatch` or `draining` errors and resolve them through the daemon lifecycle, never by working around them.
+
 Do not delegate merely to avoid understanding the change. Keep tightly coupled edits in one package or perform them in the lead session.
 
 ## Model plan and approval gate
@@ -39,17 +41,20 @@ Include every field required by [worker-contract.md](references/worker-contract.
 - setup commands whenever verification needs the repository toolchain — worktrees start bare with no installed dependencies, so a bare tool name fails with exit 127 no matter how good the patch is;
 - model and effort from the approved model plan's stage binding, or an explicit per-assignment override.
 
+Every edit assignment must carry an environment plan: either `setup_commands` that provision the broker verification environment, or an explicit no-broker-verification declaration naming the lead's central verification command and when it will run. A bare “do not run tests” instruction is invalid. Use the standard monorepo `node_modules` symlink setup described in [worker-contract.md](references/worker-contract.md) when a shared install is appropriate.
+
 Scope discipline: never grant one shared file — a lockfile, a root manifest such as a shared `tests/package.json` — to every worker in a wave. Any shared prefix makes the edit scopes overlap, and overlapping edit jobs serialize FIFO, turning a parallel wave into a multi-hour chain. Have workers report missing shared-file changes (new dependency declarations, manifest entries) as follow-ups, and apply them centrally in the lead during integration.
 
 Use configured providers according to [routing-policy.md](references/routing-policy.md). Never request a provider that the broker does not currently expose.
 
 ## Run workers
 
-1. Call `start_worker` once per bounded assignment and retain each returned job ID. Inspect `serializes_behind` in every start response: a wave that chains behind shared paths is a scoping bug — fix the scopes or accept the serialization deliberately, never discover it hours later. Use `depends_on` when a worker must wait for prior jobs to complete; a failed dependency rejects the dependent.
-2. Use `get_run_status` for run dashboards, `list_workers` with optional `run` or `workflow` filters for inventory, and `get_worker_status` when one job needs attention.
-3. Let read-only work run concurrently. Conflicting edit jobs start FIFO; keep semantic conflicts and integration order explicit with `depends_on`.
-4. Use `cancel_worker` when an assignment is obsolete, mis-scoped, or no longer safe.
-5. Call `get_worker_result` only for terminal jobs.
+1. Before an edit wave, group jobs by repository and overlapping `allowed_paths` into serialization lanes. Include setup and verification in each lane's wall-clock estimate, declare an ETA threshold in the plan (30 minutes by default), and account for shared manifests such as `tests/package.json` that can turn a whole wave into one FIFO lane.
+2. Call `start_worker` once per bounded assignment and retain each returned job ID. Inspect `serializes_behind` in every start response; stop and re-gate the wave if its projected lane ETA exceeds the declared threshold. Use `depends_on` when a worker must wait for prior jobs to complete; a failed dependency rejects the dependent.
+3. Use `get_run_status` for run dashboards, `list_workers` with optional `run` or `workflow` filters for inventory, and `get_worker_status` when one job needs attention. On the first terminal failure in a wave, pause new launches, classify it from `failure_class` and broker evidence, record the classification and chosen action, then continue. Unrelated read-only jobs may proceed; do not defer triage to wave end.
+4. Let read-only work run concurrently. Conflicting edit jobs start FIFO; keep semantic conflicts and integration order explicit with `depends_on`.
+5. Use `cancel_worker` when an assignment is obsolete, mis-scoped, or no longer safe, but apply the salvage gate below before canceling, relaunching, or discarding any non-completed terminal job.
+6. Call `get_worker_result` only for terminal jobs.
 
 Do not expand a running assignment. Cancel it and start a replacement with the corrected contract.
 
@@ -75,9 +80,13 @@ Treat these broker-computed fields as authoritative:
 - changed paths, scope violations, and binary patch;
 - verification commands, exit codes, timeouts, and output artifacts.
 
-Treat the worker summary, assumptions, risks, and follow-ups as leads to inspect. Reject `failed`, `rejected`, or unverified results; never integrate them as successful work.
+Treat the worker summary, assumptions, risks, and follow-ups as leads to inspect. The blanket rule “reject `failed`, `rejected`, or unverified results” is superseded by the salvage gate in [integration-checklist.md](references/integration-checklist.md): inspect every non-completed terminal result before canceling, relaunching, or discarding it. A salvageable patch is integrated only after lead review and central validation, and is recorded as salvaged rather than relabeled `completed`.
 
 Use `get_worker_artifact` for bounded patch, event, stderr, model-result, prompt, and verification reads; do not read broker artifact paths through the shell. Read [integration-checklist.md](references/integration-checklist.md) before applying or merging a worker result. The full normalized result shape is available at [worker-result.schema.json](assets/worker-result.schema.json).
+
+## Recovery after a daemon restart
+
+The daemon reconciles automatically: it snapshots each interrupted worktree to `change.patch` before cleanup and performs one automatic requeue. Inventory the run with `list_workers`, apply the salvage gate to every requeued or failed job, and never launch a replacement while the original is queued or being requeued. For a build upgrade, use `worker-broker daemon status` and `worker-broker daemon stop --when-idle`; do not kill a busy daemon or bypass its drain.
 
 ## Complete the change
 

@@ -26,6 +26,8 @@ Optional inputs:
 - `depends_on`: job IDs that must complete successfully before launch; any unsuccessful dependency rejects the dependent;
 - `allow_nested_agents`: default `false` and mechanically disabled where the provider supports it.
 
+Every edit assignment must include an environment plan. Supply `setup_commands` that provision everything broker verification needs, or put an explicit no-broker-verification declaration in the task or acceptance criteria naming the lead's central verification command and when it will run. “Do not run tests” without either declaration is invalid. Worktrees are bare; for a monorepo whose dependencies are already installed centrally, the standard setup pattern is to create `<worktree>/node_modules` as a symlink to the valid shared `node_modules` tree, then run the broker commands. Use a repository-appropriate relative or absolute target and do not assume a worktree inherits the source checkout's dependencies.
+
 Coral headless workers reject nested-agent requests and use deterministic read-only or workspace-write tool catalogs. The workspace-write catalog includes shell execution but excludes Coral's task subagent and direct Git mutation tools; broker scope evidence remains authoritative.
 
 Edit jobs require at least one allowed path. Prefixes are literal, not globs: use `src/auth`, not `src/auth/**`. The broker rejects absolute paths, traversal, Git metadata, and glob characters.
@@ -34,7 +36,7 @@ Parent dirt does not block `start_worker`. Worktrees are created from the resolv
 
 Worktrees start bare: nothing is installed in them. Setup and verification commands run via `/bin/sh -lc` in the worktree with `<worktree>/node_modules/.bin` prepended to `PATH`, so repo-local tool shims resolve once `setup_commands` has installed dependencies.
 
-The start response includes `serializes_behind`: the active edit jobs in the same repository whose `allowed_paths` overlap the new job's, with the shared paths. A non-empty list means this job waits for those jobs FIFO; narrow the scopes if the wave should run in parallel.
+The start response includes `serializes_behind`: the active edit jobs in the same repository whose `allowed_paths` overlap the new job's, with the shared paths. Group a wave into these repository/path lanes, estimate each lane including setup and verification, and declare an ETA threshold before launching (30 minutes by default). A non-empty list means this job waits for those jobs FIFO; narrow the scopes or re-gate if the projected lane exceeds the threshold.
 
 ### `list_workers`
 
@@ -54,7 +56,7 @@ Return the terminal broker result. Calling it before the job finishes returns an
 
 ### `wait_for_workers`
 
-Input: `{ run? | job_ids?, timeout_seconds? }`. Target a run or explicit job IDs. `timeout_seconds` defaults to 60 and has a maximum of 300. Block until all targeted jobs are terminal or the timeout expires; return `timed_out`, `pending_job_ids`, and terminal summaries.
+Input: `{ run? | job_ids?, timeout_seconds? }`. Target a run or explicit job IDs, including jobs submitted through another client of the same daemon. `timeout_seconds` defaults to 60 and has a maximum of 300. Block until all targeted jobs are terminal or the timeout expires; return `timed_out`, `pending_job_ids`, and terminal summaries.
 
 ### `get_worker_artifact`
 
@@ -73,11 +75,11 @@ Cancel queued work immediately or request process-group termination for running 
 - `rejected`: final Git-visible paths escaped the assignment;
 - `cancelled`: the lead or server shutdown stopped the assignment.
 
-Only `completed` is a successful implementation result. A read-only research job may complete with an empty patch.
+Only `completed` is a successful implementation result. A read-only research job may complete with an empty patch. A non-completed result is not automatically disposable: use the salvage gate in [integration-checklist.md](integration-checklist.md) before canceling, relaunching, or discarding it.
 
-A verification exit of 126/127 is reported as an environment failure (command not found or not executable), not a test failure: the worker's patch is intact at `change.patch`, so fix the environment via `setup_commands` and salvage the patch instead of re-running the worker.
+A verification exit of 126/127 is reported as an environment failure (command not found or not executable), not a test failure: the worker's patch is preserved at `change.patch`, so fix the environment via `setup_commands`, centrally verify, and salvage the patch instead of re-running the worker.
 
-Queued jobs survive broker restart. A running job orphaned by a broker restart is requeued once with a fresh worktree; a second interruption fails it permanently. Conflicting edit jobs start FIFO.
+Queued jobs survive broker restart. Reconciliation snapshots an interrupted worktree to `change.patch` before cleanup, then requeues a running job once with a fresh worktree; a second interruption fails it permanently. After restart, inventory with `list_workers` and apply the salvage gate to every requeued or failed job. Do not launch a replacement while the original is queued or being requeued. Conflicting edit jobs start FIFO.
 
 ## Evidence boundary
 
@@ -86,5 +88,7 @@ The broker calculates Git changes from the final worktree through a temporary in
 Scope is checked once after provider execution and again after verification commands. This detects final Git-visible scope drift; it is not hostile-worker containment and does not prove a worker never touched and reverted another file.
 
 Model prose is advisory. Git data, command exit codes, timeouts, and broker status are authoritative.
+
+One daemon owns a state directory and all clients use it through the socket; do not run multiple broker processes against the same state directory or perform manual single-writer/version workarounds.
 
 Terminal results echo the requested `model` and `effort`, plus `effective_model` when the provider reports it.

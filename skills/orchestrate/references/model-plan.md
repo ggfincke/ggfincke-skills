@@ -104,6 +104,7 @@ Before launching anything, emit the resolved plan as a fenced block with info st
 - After approval, pass the metadata on every `start_worker` call: `run` = the plan's `runId`, `workflow` = the template, `stage` = the stage id. Dashboards correlate live job status to the approved plan through these fields.
 - `workers` is the planned count per stage; `maxWorkers` is the hard budget the approval covers across the whole run.
 - `mode` and `scope` per stage make read vs edit exposure visible before anything runs.
+- For every edit wave, declare the lane ETA threshold in the plan; use 30 minutes by default and re-gate when `serializes_behind` makes the projected lane exceed it.
 - Keep counts honest: if a stage's fan-out is unknown, state the cap you will enforce, not a guess.
 
 ## Approval gate
