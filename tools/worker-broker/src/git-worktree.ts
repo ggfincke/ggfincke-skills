@@ -56,8 +56,10 @@ export async function createWorktree(
     return { path: worktreePath }
   }
 
+  // -B resets a branch an interrupted earlier attempt at this job id left
+  // behind; without it the stale ref blocks every retry of that job
   const branch = `agent/${jobId}`
-  await git(repo, ['worktree', 'add', '-b', branch, worktreePath, baseSha])
+  await git(repo, ['worktree', 'add', '-B', branch, worktreePath, baseSha])
   return { path: worktreePath, branch }
 }
 

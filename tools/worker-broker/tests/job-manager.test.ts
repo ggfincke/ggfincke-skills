@@ -10,6 +10,7 @@ import type {
   BrokerConfig,
   ProviderOutcome,
   ProviderRunContext,
+  WorkerJob,
   WorkerProvider,
 } from '../src/contracts.js'
 import { resolveBaseSha } from '../src/git-worktree.js'
@@ -268,6 +269,44 @@ test('dependencies wait for completion and reject after a failed dependency', as
       }),
       /unknown dependency job/
     )
+  })
+})
+
+test('a job record written before setup_commands existed still runs', async () =>
+{
+  await withJobManagerFixture(async ({ config, repo }) =>
+  {
+    const seed = new JobManager(config, [])
+    const jobId = 'legacy-queued-job'
+    const legacyRequest = {
+      provider: 'codex',
+      mode: 'read',
+      repo,
+      base_ref: 'HEAD',
+      task: 'resume work queued by an older broker',
+      allowed_paths: [],
+      acceptance_criteria: [],
+      verification_commands: [],
+      depends_on: [],
+      allow_nested_agents: false,
+    }
+    await seed.store.write({
+      job_id: jobId,
+      status: 'queued',
+      // a record persisted before the setup_commands field shipped
+      request: legacyRequest as unknown as WorkerJob['request'],
+      base_sha: await resolveBaseSha(repo, 'HEAD'),
+      created_at: new Date().toISOString(),
+    })
+
+    const provider = new ControlledProvider()
+    const manager = new JobManager(config, [provider])
+    await manager.initialize()
+    await waitUntil(() => provider.started.includes(jobId))
+    provider.release(jobId)
+    const finished = await manager.waitForTerminal(jobId)
+    assert.equal(finished.status, 'completed')
+    assert.deepEqual(finished.result?.setup, [])
   })
 })
 

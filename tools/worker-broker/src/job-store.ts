@@ -26,6 +26,19 @@ async function secureJobDirectory(directory: string): Promise<void>
   )
 }
 
+// a record written by an older broker lacks fields later versions added; fill
+// the list-valued ones so scheduling never dereferences an absent array
+function migrateJob(job: WorkerJob): WorkerJob
+{
+  const request = job.request as Partial<WorkerJob['request']>
+  request.setup_commands ??= []
+  request.verification_commands ??= []
+  request.acceptance_criteria ??= []
+  request.allowed_paths ??= []
+  request.depends_on ??= []
+  return job
+}
+
 export class JobStore
 {
   readonly stateDir: string
@@ -125,7 +138,7 @@ export class JobStore
   async read(jobId: string): Promise<WorkerJob>
   {
     await this.initialize()
-    return await readJson<WorkerJob>(this.jobPath(jobId))
+    return migrateJob(await readJson<WorkerJob>(this.jobPath(jobId)))
   }
 
   async list(): Promise<WorkerJob[]>

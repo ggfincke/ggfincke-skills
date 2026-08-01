@@ -207,14 +207,14 @@ export class JobManager
 
   private async requeueInterrupted(job: WorkerJob): Promise<void>
   {
-    if (job.worktree !== undefined || job.branch !== undefined)
-    {
-      await removeWorktree(
-        job.request.repo,
-        this.store.worktreePath(job.job_id),
-        job.branch
-      )
-    }
+    // clean up by deterministic identity, not by what the record happens to
+    // record: a crash between worktree creation and the next write leaves a
+    // worktree or branch the job never learned about
+    await removeWorktree(
+      job.request.repo,
+      this.store.worktreePath(job.job_id),
+      job.request.mode === 'edit' ? `agent/${job.job_id}` : undefined
+    )
     delete job.worktree
     delete job.branch
     delete job.process_id
