@@ -6,6 +6,13 @@ export type WorkerMode = 'read' | 'edit'
 export type WorkerStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
 
+// why a terminal job failed, so clients can tell salvageable work from lost work:
+// environment = setup/toolchain defect (exit 126/127, setup failure) — patch usually intact;
+// model = provider process/output defect; broker_fault = broker restart/state/ownership;
+// scope = allowed-path violation; verification = genuine nonzero verification
+export type FailureClass =
+  'environment' | 'model' | 'broker_fault' | 'scope' | 'verification'
+
 type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
 export type ActivityPhase = 'preparing' | 'working' | 'verifying' | 'finalizing'
@@ -191,6 +198,7 @@ export interface WorkerResult
   process_exit_code?: number | null
   process_signal?: NodeJS.Signals | null
   error?: string
+  failure_class?: FailureClass
   created_at: string
   started_at?: string
   completed_at?: string
