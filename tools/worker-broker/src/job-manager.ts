@@ -3,11 +3,13 @@
 
 import { EventEmitter } from 'node:events'
 import { randomBytes } from 'node:crypto'
+import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { ActivityWriter } from './activity.js'
 import type {
   ActivityPhase,
   BrokerConfig,
+  FailureClass,
   NormalizedVerificationCommand,
   ProviderOutcome,
   StartWorkerRequest,
@@ -44,6 +46,32 @@ const TERMINAL_STATUSES = new Set<WorkerStatus>([
   'rejected',
   'cancelled',
 ])
+
+export type FailureSite =
+  'setup' | 'provider' | 'restart' | 'scope' | 'verification' | 'broker'
+
+export function classifyFailure(
+  site: FailureSite,
+  result?: Pick<VerificationResult, 'exit_code' | 'timed_out'>
+): FailureClass
+{
+  switch (site)
+  {
+    case 'setup':
+      return 'environment'
+    case 'provider':
+      return 'model'
+    case 'restart':
+    case 'broker':
+      return 'broker_fault'
+    case 'scope':
+      return 'scope'
+    case 'verification':
+      return result?.exit_code === 126 || result?.exit_code === 127
+        ? 'environment'
+        : 'verification'
+  }
+}
 
 function taskSlug(task: string): string
 {
@@ -95,6 +123,7 @@ export class JobManager
   private readonly controllers = new Map<string, AbortController>()
   private readonly activities = new Map<string, ActivityWriter>()
   private readonly setupResults = new Map<string, VerificationResult[]>()
+  private readonly worktreeOperations = new Map<string, Promise<void>>()
   private readonly providers: Map<string, WorkerProvider>
   private readonly events = new EventEmitter()
   private initialization: Promise<void> | undefined
@@ -174,10 +203,21 @@ export class JobManager
     {
       await this.phase(job, interruptedPhase, 'failed')
     }
-    // one automatic recovery: a restart-orphaned worker left no durable
-    // state behind, so a fresh worktree can re-run the same assignment
+    let interruptedSnapshot:
+      Awaited<ReturnType<typeof snapshotWorktree>> | undefined
+    let recoveryError = cleanupError
+    try
+    {
+      interruptedSnapshot = await this.snapshotInterruptedWorktree(job)
+    }
+    catch (error)
+    {
+      recoveryError ??= error
+    }
+    // one automatic recovery re-runs the same assignment after preserving
+    // whatever the restart-orphaned worker left in its worktree
     if (
-      cleanupError === undefined &&
+      recoveryError === undefined &&
       priorStatus === 'running' &&
       (job.restart_requeues ?? 0) < 1
     )
@@ -187,22 +227,57 @@ export class JobManager
         await this.requeueInterrupted(job)
         return
       }
-      catch
+      catch (error)
       {
-        // worktree or branch cleanup failed; fall through to terminal failure
+        recoveryError = error
       }
     }
+    const failureMessage =
+      recoveryError === undefined
+        ? message
+        : `${message}; reconciliation failed: ${errorMessage(recoveryError)}`
     await this.finish(
       job,
-      this.baseResult(
-        job,
-        'failed',
-        cleanupError === undefined
-          ? message
-          : `${message}; process cleanup failed: ${errorMessage(cleanupError)}`
-      )
+      interruptedSnapshot === undefined
+        ? this.baseResult(
+            job,
+            'failed',
+            failureMessage,
+            classifyFailure('restart')
+          )
+        : this.resultFromEvidence(
+            job,
+            'failed',
+            undefined,
+            interruptedSnapshot,
+            [],
+            [],
+            failureMessage,
+            classifyFailure('restart')
+          )
     )
     if (cleanupError !== undefined) throw cleanupError
+  }
+
+  private async snapshotInterruptedWorktree(
+    job: WorkerJob
+  ): Promise<Awaited<ReturnType<typeof snapshotWorktree>> | undefined>
+  {
+    const worktreePath = this.store.worktreePath(job.job_id)
+    try
+    {
+      await access(path.join(worktreePath, '.git'))
+    }
+    catch (error)
+    {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    }
+    return await snapshotWorktree(
+      worktreePath,
+      job.base_sha,
+      this.artifact(job, 'change.patch')
+    )
   }
 
   private async requeueInterrupted(job: WorkerJob): Promise<void>
@@ -210,10 +285,14 @@ export class JobManager
     // clean up by deterministic identity, not by what the record happens to
     // record: a crash between worktree creation and the next write leaves a
     // worktree or branch the job never learned about
-    await removeWorktree(
+    await this.runWorktreeOperation(
       job.request.repo,
-      this.store.worktreePath(job.job_id),
-      job.request.mode === 'edit' ? `agent/${job.job_id}` : undefined
+      async () =>
+        await removeWorktree(
+          job.request.repo,
+          this.store.worktreePath(job.job_id),
+          job.request.mode === 'edit' ? `agent/${job.job_id}` : undefined
+        )
     )
     delete job.worktree
     delete job.branch
@@ -428,7 +507,15 @@ export class JobManager
         if (dependency === 'waiting') continue
         if (dependency !== undefined)
         {
-          await this.finish(job, this.baseResult(job, 'rejected', dependency))
+          await this.finish(
+            job,
+            this.baseResult(
+              job,
+              'rejected',
+              dependency,
+              classifyFailure('broker')
+            )
+          )
           continue
         }
         if (!this.canRun(job)) continue
@@ -472,6 +559,31 @@ export class JobManager
       {})
   }
 
+  private async runWorktreeOperation<T>(
+    repo: string,
+    operation: () => Promise<T>
+  ): Promise<T>
+  {
+    const previous = this.worktreeOperations.get(repo) ?? Promise.resolve()
+    const result = previous.then(operation, operation)
+    const tail = result.then(
+      () => undefined,
+      () => undefined
+    )
+    this.worktreeOperations.set(repo, tail)
+    try
+    {
+      return await result
+    }
+    finally
+    {
+      if (this.worktreeOperations.get(repo) === tail)
+      {
+        this.worktreeOperations.delete(repo)
+      }
+    }
+  }
+
   private async execute(job: WorkerJob): Promise<void>
   {
     const controller = new AbortController()
@@ -479,24 +591,32 @@ export class JobManager
     let providerOutcome: ProviderOutcome | undefined
     let providerError: string | undefined
     let activePhase: ActivityPhase | undefined
+    let unexpectedFailureClass: FailureClass = classifyFailure('broker')
 
     try
     {
       activePhase = 'preparing'
       await this.phase(job, 'preparing', 'started')
-      const created = await createWorktree(
+      unexpectedFailureClass = classifyFailure('setup')
+      const created = await this.runWorktreeOperation(
         job.request.repo,
-        this.store.worktreePath(job.job_id),
-        job.base_sha,
-        job.request.mode,
-        job.job_id
+        async () =>
+          await createWorktree(
+            job.request.repo,
+            this.store.worktreePath(job.job_id),
+            job.base_sha,
+            job.request.mode,
+            job.job_id
+          )
       )
       job.worktree = created.path
       if (created.branch !== undefined) job.branch = created.branch
+      unexpectedFailureClass = classifyFailure('broker')
       await this.store.write(job)
 
       // environment preparation runs before the provider so a broken
       // worktree fails in seconds instead of after a full model run
+      unexpectedFailureClass = classifyFailure('setup')
       const setupResults = await this.runCommands(
         job,
         job.request.setup_commands,
@@ -519,6 +639,7 @@ export class JobManager
       {
         await this.phase(job, 'preparing', 'failed')
         activePhase = undefined
+        unexpectedFailureClass = classifyFailure('broker')
         const setupSnapshot = await snapshotWorktree(
           created.path,
           job.base_sha,
@@ -533,13 +654,15 @@ export class JobManager
             setupSnapshot,
             [],
             [],
-            commandFailureMessage('setup', failedSetup)
+            commandFailureMessage('setup', failedSetup),
+            classifyFailure('setup', failedSetup)
           )
         )
         return
       }
       await this.phase(job, 'preparing', 'completed')
       activePhase = undefined
+      unexpectedFailureClass = classifyFailure('broker')
 
       const provider = this.providers.get(job.request.provider)
       if (provider === undefined)
@@ -592,6 +715,7 @@ export class JobManager
       activePhase = 'verifying'
       await this.phase(job, activePhase, 'started')
 
+      unexpectedFailureClass = classifyFailure('broker')
       const providerSnapshot = await snapshotWorktree(
         created.path,
         job.base_sha,
@@ -615,7 +739,8 @@ export class JobManager
             providerSnapshot,
             [],
             providerViolations,
-            `worker changed paths outside its assignment: ${providerViolations.join(', ')}`
+            `worker changed paths outside its assignment: ${providerViolations.join(', ')}`,
+            classifyFailure('scope')
           )
         )
         return
@@ -651,7 +776,8 @@ export class JobManager
             providerSnapshot,
             [],
             [],
-            providerError
+            providerError,
+            classifyFailure('provider')
           )
         )
         return
@@ -669,18 +795,21 @@ export class JobManager
             providerSnapshot,
             [],
             [],
-            `provider exited with ${providerOutcome?.signal ?? providerOutcome?.exit_code ?? 'unknown status'}`
+            `provider exited with ${providerOutcome?.signal ?? providerOutcome?.exit_code ?? 'unknown status'}`,
+            classifyFailure('provider')
           )
         )
         return
       }
 
+      unexpectedFailureClass = classifyFailure('verification')
       const verification = await this.runCommands(
         job,
         job.request.verification_commands,
         'verification',
         controller.signal
       )
+      unexpectedFailureClass = classifyFailure('broker')
       const finalSnapshot = await snapshotWorktree(
         created.path,
         job.base_sha,
@@ -703,7 +832,8 @@ export class JobManager
             finalSnapshot,
             verification,
             finalViolations,
-            `verification changed paths outside the assignment: ${finalViolations.join(', ')}`
+            `verification changed paths outside the assignment: ${finalViolations.join(', ')}`,
+            classifyFailure('scope')
           )
         )
         return
@@ -746,7 +876,10 @@ export class JobManager
           [],
           failedVerification === undefined
             ? undefined
-            : commandFailureMessage('verification', failedVerification)
+            : commandFailureMessage('verification', failedVerification),
+          failedVerification === undefined
+            ? undefined
+            : classifyFailure('verification', failedVerification)
         )
       )
     }
@@ -759,7 +892,12 @@ export class JobManager
       }
       await this.finish(
         job,
-        this.baseResult(job, 'failed', errorMessage(error))
+        this.baseResult(
+          job,
+          'failed',
+          errorMessage(error),
+          unexpectedFailureClass
+        )
       )
     }
     finally
@@ -818,7 +956,8 @@ export class JobManager
   private baseResult(
     job: WorkerJob,
     status: WorkerStatus,
-    error?: string
+    error?: string,
+    failureClass?: FailureClass
   ): WorkerResult
   {
     const result: WorkerResult = {
@@ -852,6 +991,7 @@ export class JobManager
     if (job.worktree !== undefined) result.worktree = job.worktree
     if (job.branch !== undefined) result.branch = job.branch
     if (error !== undefined) result.error = error
+    if (failureClass !== undefined) result.failure_class = failureClass
     return result
   }
 
@@ -862,10 +1002,11 @@ export class JobManager
     snapshot: Awaited<ReturnType<typeof snapshotWorktree>>,
     verification: VerificationResult[],
     violations: string[],
-    error?: string
+    error?: string,
+    failureClass?: FailureClass
   ): WorkerResult
   {
-    const result = this.baseResult(job, status, error)
+    const result = this.baseResult(job, status, error, failureClass)
     result.head_sha = snapshot.head_sha
     result.patch_path = snapshot.patch_path
     result.changed_files = snapshot.changed_files

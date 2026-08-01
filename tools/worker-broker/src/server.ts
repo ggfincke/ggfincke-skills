@@ -1,29 +1,19 @@
 #!/usr/bin/env node
 // tools/worker-broker/src/server.ts
-// run the worker broker as a shutdown-safe stdio MCP service
+// run a shutdown-safe stdio MCP client over the shared worker daemon
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import process from 'node:process'
 import { defaultBrokerConfig } from './config.js'
+import { ensureDaemonClient } from './daemon/client.js'
 import { errorMessage } from './errors.js'
-import { JobManager } from './job-manager.js'
 import { createWorkerBrokerServer } from './mcp-server.js'
-import { CodexProvider } from './providers/codex.js'
-import { ClaudeProvider } from './providers/claude.js'
-import { CoralProvider } from './providers/coral.js'
-import { CursorProvider } from './providers/cursor.js'
 
 async function main(): Promise<void>
 {
   const config = defaultBrokerConfig()
-  const manager = new JobManager(config, [
-    new CodexProvider(config),
-    new ClaudeProvider(config),
-    new CursorProvider(config),
-    new CoralProvider(config),
-  ])
-  await manager.initialize()
-  const server = createWorkerBrokerServer(manager)
+  const client = await ensureDaemonClient(config)
+  const server = createWorkerBrokerServer(client)
   const transport = new StdioServerTransport()
   let closing: Promise<void> | undefined
 
@@ -31,8 +21,14 @@ async function main(): Promise<void>
   {
     closing ??= (async () =>
     {
-      await manager.shutdown()
-      await server.close()
+      try
+      {
+        await server.close()
+      }
+      finally
+      {
+        await client.close()
+      }
     })()
     return closing
   }

@@ -10,7 +10,10 @@ import {
   securePrivateFile,
 } from './artifact.js'
 import type { WorkerJob } from './contracts.js'
+import { STATE_SCHEMA_VERSION } from './daemon/protocol.js'
 import { readJson, serializePrettyJson } from './json.js'
+
+type StoredWorkerJob = WorkerJob & { state_schema_version?: number }
 
 async function secureJobDirectory(directory: string): Promise<void>
 {
@@ -28,8 +31,25 @@ async function secureJobDirectory(directory: string): Promise<void>
 
 // a record written by an older broker lacks fields later versions added; fill
 // the list-valued ones so scheduling never dereferences an absent array
-function migrateJob(job: WorkerJob): WorkerJob
+function migrateJob(stored: StoredWorkerJob, jobId: string): WorkerJob
 {
+  const version = stored.state_schema_version
+  if (version !== undefined)
+  {
+    if (!Number.isInteger(version) || version < 0)
+    {
+      throw new Error(
+        `job ${jobId} has invalid state schema version: ${String(version)}`
+      )
+    }
+    if (version > STATE_SCHEMA_VERSION)
+    {
+      throw new Error(
+        `job ${jobId} uses state schema version ${version}, but this worker-broker build supports only version ${STATE_SCHEMA_VERSION}`
+      )
+    }
+  }
+  const { state_schema_version: _stateSchemaVersion, ...job } = stored
   const request = job.request as Partial<WorkerJob['request']>
   request.setup_commands ??= []
   request.verification_commands ??= []
@@ -103,7 +123,10 @@ export class JobStore
   async write(job: WorkerJob): Promise<void>
   {
     await this.initialize()
-    const payload = serializePrettyJson(job)
+    const payload = serializePrettyJson({
+      ...job,
+      state_schema_version: STATE_SCHEMA_VERSION,
+    })
     const previous = this.pendingWrites.get(job.job_id) ?? Promise.resolve()
     const pending = previous
       .catch(() => undefined)
@@ -138,7 +161,10 @@ export class JobStore
   async read(jobId: string): Promise<WorkerJob>
   {
     await this.initialize()
-    return migrateJob(await readJson<WorkerJob>(this.jobPath(jobId)))
+    return migrateJob(
+      await readJson<StoredWorkerJob>(this.jobPath(jobId)),
+      jobId
+    )
   }
 
   async list(): Promise<WorkerJob[]>

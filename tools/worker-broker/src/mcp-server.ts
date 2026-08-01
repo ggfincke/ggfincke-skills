@@ -1,17 +1,20 @@
 // tools/worker-broker/src/mcp-server.ts
-// expose broker lifecycle, orchestration rollups, waits, & durable artifacts
+// expose daemon-backed broker lifecycle, orchestration, waits, & artifacts
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import { z } from 'zod'
 import type {
   StartWorkerRequest,
   WorkerJob,
   WorkerStatus,
 } from './contracts.js'
+import type {
+  DaemonClient,
+  DaemonErrorShape,
+  ListWorkersParams,
+  WaitForWorkersParams,
+} from './daemon/protocol.js'
 import { errorMessage } from './errors.js'
-import { JobManager } from './job-manager.js'
 
 const WorkerStatusSchema = z.enum([
   'queued',
@@ -136,16 +139,43 @@ function success(value: Record<string, unknown>, message: string)
   }
 }
 
-function failure(error: unknown)
+function daemonError(error: unknown): DaemonErrorShape | undefined
 {
-  const message = errorMessage(error)
+  if (typeof error !== 'object' || error === null || !('message' in error))
+  {
+    return undefined
+  }
+  const candidate = error as { code?: unknown; message: unknown }
+  if (typeof candidate.message !== 'string') return undefined
+  if (typeof candidate.code === 'string')
+  {
+    return {
+      message: candidate.message,
+      code: candidate.code as NonNullable<DaemonErrorShape['code']>,
+    }
+  }
+  return {
+    message: candidate.message,
+  }
+}
+
+function failure(
+  error: unknown,
+  messages: Partial<Record<NonNullable<DaemonErrorShape['code']>, string>> = {}
+)
+{
+  const shape = daemonError(error)
+  const message =
+    shape?.code === undefined
+      ? errorMessage(error)
+      : (messages[shape.code] ?? shape.message)
   return {
     isError: true,
     content: [{ type: 'text' as const, text: message }],
   }
 }
 
-export function createWorkerBrokerServer(manager: JobManager): McpServer
+export function createWorkerBrokerServer(client: DaemonClient): McpServer
 {
   const server = new McpServer(
     { name: 'worker-broker', version: '0.1.0' },
@@ -167,8 +197,13 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const job = await manager.start(input as StartWorkerRequest)
-        const serializesBehind = manager.editSerialization(job.job_id)
+        const job = await client.call(
+          'start_worker',
+          input as StartWorkerRequest
+        )
+        const serializesBehind = await client.call('edit_serialization', {
+          job_id: job.job_id,
+        })
         const overlapPaths = [
           ...new Set(
             serializesBehind.flatMap((conflict) => conflict.overlapping_paths)
@@ -183,7 +218,9 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
       }
       catch (error)
       {
-        return failure(error)
+        return failure(error, {
+          draining: 'worker broker is shutting down',
+        })
       }
     }
   )
@@ -204,14 +241,13 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const jobs = await manager.list()
-        const workers = jobs
-          .filter((job) => status === undefined || job.status === status)
-          .filter((job) => run === undefined || job.request.run === run)
-          .filter(
-            (job) => workflow === undefined || job.request.workflow === workflow
-          )
-          .map(summarize)
+        const params: ListWorkersParams = {}
+        if (status !== undefined) params.status = status
+        if (run !== undefined) params.run = run
+        if (workflow !== undefined) params.workflow = workflow
+        const workers = (await client.call('list_workers', params)).map(
+          summarize
+        )
         return success({ workers }, `${workers.length} worker job(s)`)
       }
       catch (error)
@@ -232,56 +268,14 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const jobs = (await manager.list()).filter(
-          (job) => job.request.run === run
+        const result = await client.call('get_run_status', { run })
+        const jobCount = Object.values(result.totals).reduce(
+          (total, count) => total + count,
+          0
         )
-        const statuses: WorkerStatus[] = [
-          'queued',
-          'running',
-          'completed',
-          'failed',
-          'rejected',
-          'cancelled',
-        ]
-        const totals = Object.fromEntries(
-          statuses.map((status) => [
-            status,
-            jobs.filter((job) => job.status === status).length,
-          ])
-        )
-        const stageNames = [
-          ...new Set(jobs.map((job) => job.request.stage ?? null)),
-        ]
-        const stages = stageNames.map((stage) =>
-        {
-          const stageJobs = jobs.filter(
-            (job) => (job.request.stage ?? null) === stage
-          )
-          return {
-            stage,
-            ...Object.fromEntries(
-              statuses.map((status) => [
-                status,
-                stageJobs.filter((job) => job.status === status).length,
-              ])
-            ),
-            job_ids: stageJobs.map((job) => job.job_id),
-          }
-        })
         return success(
-          {
-            run,
-            workflows: [
-              ...new Set(
-                jobs
-                  .map((job) => job.request.workflow)
-                  .filter((value): value is string => value !== undefined)
-              ),
-            ],
-            totals,
-            stages,
-          },
-          `${run}: ${jobs.length} worker job(s)`
+          result as unknown as Record<string, unknown>,
+          `${run}: ${jobCount} worker job(s)`
         )
       }
       catch (error)
@@ -314,57 +308,26 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const allJobs = await manager.list()
-        const selectedIds = new Set(jobIds ?? [])
-        if (run !== undefined)
-        {
-          for (const job of allJobs)
-          {
-            if (job.request.run === run) selectedIds.add(job.job_id)
-          }
+        const params: WaitForWorkersParams = {
+          timeout_seconds: timeoutSeconds,
         }
-        const selected = await Promise.all(
-          [...selectedIds].map(async (jobId) => await manager.get(jobId))
-        )
-        const pending = selected.filter(
-          (job) => !TERMINAL_STATUSES.has(job.status)
-        )
-        let timedOut = false
-        if (pending.length > 0)
-        {
-          let timer: NodeJS.Timeout | undefined
-          const timeout = new Promise<'timeout'>((resolve) =>
-          {
-            timer = setTimeout(() => resolve('timeout'), timeoutSeconds * 1_000)
-          })
-          const outcome = await Promise.race([
-            Promise.all(
-              pending.map(
-                async (job) => await manager.waitForTerminal(job.job_id)
-              )
-            ),
-            timeout,
-          ])
-          if (timer !== undefined) clearTimeout(timer)
-          timedOut = outcome === 'timeout'
-        }
-        const current = await Promise.all(
-          [...selectedIds].map(async (jobId) => await manager.get(jobId))
-        )
-        const pendingJobIds = current
+        if (run !== undefined) params.run = run
+        if (jobIds !== undefined) params.job_ids = jobIds
+        const result = await client.call('wait_for_workers', params)
+        const pendingJobIds = result.workers
           .filter((job) => !TERMINAL_STATUSES.has(job.status))
           .map((job) => job.job_id)
         return success(
           {
-            timed_out: timedOut,
+            timed_out: result.timed_out,
             pending_job_ids: pendingJobIds,
-            jobs: current
+            jobs: result.workers
               .filter((job) => TERMINAL_STATUSES.has(job.status))
               .map(summarize),
           },
-          timedOut
+          result.timed_out
             ? `timed out with ${pendingJobIds.length} pending worker(s)`
-            : `${current.length} worker(s) terminal`
+            : `${result.workers.length} worker(s) terminal`
         )
       }
       catch (error)
@@ -397,49 +360,15 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const job = await manager.get(jobId)
-        if (
-          ['patch', 'model_result', 'verification'].includes(artifact) &&
-          !TERMINAL_STATUSES.has(job.status)
-        )
-        {
-          throw new Error(`artifact ${artifact} requires a terminal worker job`)
-        }
-        let bytes: Buffer
-        if (artifact === 'verification')
-        {
-          bytes = Buffer.from(
-            `${JSON.stringify(job.result?.verification ?? [], null, 2)}\n`
-          )
-        }
-        else
-        {
-          const names = {
-            prompt: 'prompt.md',
-            events: 'events.jsonl',
-            stderr: 'provider.stderr.log',
-            patch: 'change.patch',
-            model_result: 'model-result.json',
-          } as const
-          bytes = await readFile(
-            path.join(manager.store.jobDir(jobId), names[artifact])
-          )
-        }
-        const truncated = bytes.length > maxBytes
-        const contentBytes = truncated
-          ? tail
-            ? bytes.subarray(bytes.length - maxBytes)
-            : bytes.subarray(0, maxBytes)
-          : bytes
+        const result = await client.call('get_worker_artifact', {
+          job_id: jobId,
+          artifact,
+          max_bytes: maxBytes,
+          tail,
+        })
         return success(
-          {
-            job_id: jobId,
-            artifact,
-            content: contentBytes.toString('utf8'),
-            byte_length: bytes.length,
-            truncated,
-          },
-          `${jobId}: ${artifact} (${bytes.length} bytes)`
+          result as unknown as Record<string, unknown>,
+          `${jobId}: ${artifact} (${result.byte_length} bytes)`
         )
       }
       catch (error)
@@ -461,7 +390,7 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const job = await manager.get(jobId)
+        const job = await client.call('get_worker_status', { job_id: jobId })
         return success(
           { worker: summarize(job) },
           `${job.job_id}: ${job.status}`
@@ -486,7 +415,7 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const job = await manager.get(jobId)
+        const job = await client.call('get_worker_result', { job_id: jobId })
         if (job.result === undefined)
         {
           return failure(
@@ -522,7 +451,7 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
     {
       try
       {
-        const job = await manager.cancel(jobId)
+        const job = await client.call('cancel_worker', { job_id: jobId })
         return success(
           { worker: summarize(job) },
           job.status === 'running'
@@ -532,7 +461,9 @@ export function createWorkerBrokerServer(manager: JobManager): McpServer
       }
       catch (error)
       {
-        return failure(error)
+        return failure(error, {
+          unknown_job: `job is not active in this broker process: ${jobId}`,
+        })
       }
     }
   )

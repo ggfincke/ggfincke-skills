@@ -1,7 +1,8 @@
 // tools/worker-broker/src/git-worktree.ts
 // create immutable-base worktrees & derive authoritative final-tree patches
 
-import { mkdtemp, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdtemp, rename, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { secureDirectory, writePrivateFile } from './artifact.js'
@@ -109,6 +110,23 @@ function parseNameStatus(output: string): ChangedPath[]
   return changes
 }
 
+async function writePatchAtomically(
+  patchPath: string,
+  patch: string
+): Promise<void>
+{
+  const temporary = `${patchPath}.${process.pid}.${randomUUID()}.tmp`
+  try
+  {
+    await writePrivateFile(temporary, patch)
+    await rename(temporary, patchPath)
+  }
+  finally
+  {
+    await rm(temporary, { force: true })
+  }
+}
+
 export async function snapshotWorktree(
   worktree: string,
   baseSha: string,
@@ -155,7 +173,7 @@ export async function snapshotWorktree(
       ),
       git(worktree, ['rev-parse', 'HEAD']),
     ])
-    await writePrivateFile(patchPath, patch)
+    await writePatchAtomically(patchPath, patch)
 
     const changes = parseNameStatus(nameStatus)
     return {

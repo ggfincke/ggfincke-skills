@@ -1,34 +1,47 @@
 #!/usr/bin/env node
 // tools/worker-broker/src/cli.ts
-// provide a deterministic local CLI over the broker core before MCP wrapping
+// provide a deterministic CLI over the shared worker daemon
 
 import path from 'node:path'
 import process from 'node:process'
+import { pathToFileURL } from 'node:url'
 import type {
   BrokerConfig,
   StartWorkerRequest,
   WorkerJob,
+  WorkerStatus,
 } from './contracts.js'
 import { defaultBrokerConfig } from './config.js'
+import { ensureDaemonClient } from './daemon/client.js'
+import type { DaemonClient } from './daemon/protocol.js'
 import { errorMessage } from './errors.js'
-import { JobManager } from './job-manager.js'
-import { JobStore } from './job-store.js'
 import { readJson } from './json.js'
-import { CodexProvider } from './providers/codex.js'
-import { ClaudeProvider } from './providers/claude.js'
-import { CoralProvider } from './providers/coral.js'
-import { CursorProvider } from './providers/cursor.js'
 
-interface ParsedCli
+export interface ParsedCli
 {
   command: string
   positionals: string[]
   request_path?: string
   state_dir?: string
   pretty: boolean
+  when_idle: boolean
 }
 
-function usage(): string
+export interface CliDependencies
+{
+  connect(config: BrokerConfig): Promise<DaemonClient>
+  writeStdout(value: string): void
+  readRequest(path: string): Promise<StartWorkerRequest>
+}
+
+const TERMINAL_STATUSES = new Set<WorkerStatus>([
+  'completed',
+  'failed',
+  'rejected',
+  'cancelled',
+])
+
+export function usage(): string
 {
   return `worker-broker <command> [options]
 
@@ -36,6 +49,9 @@ Commands:
   run --request <file>   run one assignment and wait for its terminal result
   list                   list persisted jobs
   result <job-id>        print one persisted job
+  daemon status          print shared daemon status
+  daemon stop            stop the daemon when no jobs are active
+  daemon stop --when-idle drain active jobs, then stop the daemon
 
 Options:
   --state-dir <path>     override WORKER_BROKER_HOME
@@ -43,10 +59,15 @@ Options:
 `
 }
 
-function parseCli(argv: string[]): ParsedCli
+export function parseCli(argv: string[]): ParsedCli
 {
   const [command = 'help', ...rest] = argv
-  const parsed: ParsedCli = { command, positionals: [], pretty: false }
+  const parsed: ParsedCli = {
+    command,
+    positionals: [],
+    pretty: false,
+    when_idle: false,
+  }
   for (let index = 0; index < rest.length; index += 1)
   {
     const argument = rest[index]
@@ -63,6 +84,7 @@ function parseCli(argv: string[]): ParsedCli
       parsed.state_dir = value
     }
     else if (argument === '--pretty') parsed.pretty = true
+    else if (argument === '--when-idle') parsed.when_idle = true
     else if (argument?.startsWith('-'))
       throw new Error(`unknown option: ${argument}`)
     else if (argument !== undefined) parsed.positionals.push(argument)
@@ -70,11 +92,9 @@ function parseCli(argv: string[]): ParsedCli
   return parsed
 }
 
-function output(value: unknown, pretty: boolean): void
+function serializeOutput(value: unknown, pretty: boolean): string
 {
-  process.stdout.write(
-    `${JSON.stringify(value, null, pretty ? 2 : undefined)}\n`
-  )
+  return `${JSON.stringify(value, null, pretty ? 2 : undefined)}\n`
 }
 
 function withStateDirectory(
@@ -86,29 +106,33 @@ function withStateDirectory(
   return { ...config, state_dir: path.resolve(stateDir) }
 }
 
-async function runJob(
-  config: BrokerConfig,
-  parsed: ParsedCli
+async function waitForTerminal(
+  client: DaemonClient,
+  jobId: string
 ): Promise<WorkerJob>
 {
-  if (parsed.request_path === undefined)
-    throw new Error('run requires --request <file>')
-  const request = await readJson<StartWorkerRequest>(
-    path.resolve(parsed.request_path)
-  )
-  const manager = new JobManager(config, [
-    new CodexProvider(config),
-    new ClaudeProvider(config),
-    new CursorProvider(config),
-    new CoralProvider(config),
-  ])
-  const started = await manager.start(request)
-  return await manager.waitForTerminal(started.job_id)
+  while (true)
+  {
+    const waited = await client.call('wait_for_workers', {
+      job_ids: [jobId],
+      timeout_seconds: 300,
+    })
+    const job = waited.workers.find((worker) => worker.job_id === jobId)
+    if (job !== undefined && TERMINAL_STATUSES.has(job.status)) return job
+  }
 }
 
-async function main(): Promise<void>
+export async function runCli(
+  argv: string[],
+  dependencies: CliDependencies = {
+    connect: ensureDaemonClient,
+    writeStdout: (value) => process.stdout.write(value),
+    readRequest: async (requestPath) =>
+      await readJson<StartWorkerRequest>(requestPath),
+  }
+): Promise<number>
 {
-  const parsed = parseCli(process.argv.slice(2))
+  const parsed = parseCli(argv)
   const config = withStateDirectory(defaultBrokerConfig(), parsed.state_dir)
   if (
     parsed.command === 'help' ||
@@ -116,36 +140,85 @@ async function main(): Promise<void>
     parsed.command === '-h'
   )
   {
-    process.stdout.write(usage())
-    return
+    dependencies.writeStdout(usage())
+    return 0
   }
-  if (parsed.command === 'run')
+  const client = await dependencies.connect(config)
+  try
   {
-    const job = await runJob(config, parsed)
-    output(job.result ?? job, parsed.pretty)
-    if (job.status !== 'completed') process.exitCode = 1
-    return
-  }
+    if (parsed.command === 'run')
+    {
+      if (parsed.request_path === undefined)
+        throw new Error('run requires --request <file>')
+      const request = await dependencies.readRequest(
+        path.resolve(parsed.request_path)
+      )
+      const started = await client.call('start_worker', request)
+      const job = await waitForTerminal(client, started.job_id)
+      dependencies.writeStdout(
+        serializeOutput(job.result ?? job, parsed.pretty)
+      )
+      return job.status === 'completed' ? 0 : 1
+    }
 
-  const store = new JobStore(config.state_dir)
-  if (parsed.command === 'list')
-  {
-    output(await store.list(), parsed.pretty)
-    return
+    if (parsed.command === 'list')
+    {
+      dependencies.writeStdout(
+        serializeOutput(await client.call('list_workers', {}), parsed.pretty)
+      )
+      return 0
+    }
+    if (parsed.command === 'result')
+    {
+      const jobId = parsed.positionals[0]
+      if (jobId === undefined) throw new Error('result requires a job id')
+      const job = await client.call('get_worker_result', { job_id: jobId })
+      dependencies.writeStdout(
+        serializeOutput(job.result ?? job, parsed.pretty)
+      )
+      return 0
+    }
+    if (parsed.command === 'daemon')
+    {
+      const action = parsed.positionals[0]
+      if (action === 'status')
+      {
+        dependencies.writeStdout(
+          serializeOutput(await client.call('daemon_status', {}), parsed.pretty)
+        )
+        return 0
+      }
+      if (action === 'stop')
+      {
+        const status = await client.call('shutdown', {
+          when_idle: parsed.when_idle,
+        })
+        dependencies.writeStdout(serializeOutput(status, parsed.pretty))
+        return !parsed.when_idle && status.active_jobs.length > 0 ? 1 : 0
+      }
+      throw new Error('daemon requires status or stop')
+    }
+    throw new Error(`unknown command: ${parsed.command}\n\n${usage()}`)
   }
-  if (parsed.command === 'result')
+  finally
   {
-    const jobId = parsed.positionals[0]
-    if (jobId === undefined) throw new Error('result requires a job id')
-    const job = await store.read(jobId)
-    output(job.result ?? job, parsed.pretty)
-    return
+    await client.close()
   }
-  throw new Error(`unknown command: ${parsed.command}\n\n${usage()}`)
 }
 
-main().catch((error: unknown) =>
+async function main(): Promise<void>
 {
-  process.stderr.write(`${errorMessage(error)}\n`)
-  process.exitCode = 1
-})
+  process.exitCode = await runCli(process.argv.slice(2))
+}
+
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+)
+{
+  main().catch((error: unknown) =>
+  {
+    process.stderr.write(`${errorMessage(error)}\n`)
+    process.exitCode = 1
+  })
+}
