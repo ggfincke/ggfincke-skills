@@ -108,6 +108,30 @@ class RealRepoStaysClean(unittest.TestCase):
 		self.assertIn("Validated", result.stdout)
 
 
+class OrchestrateProtocolContract(unittest.TestCase):
+	# guards explicit activation against contextual mentions and generic delegation
+	def test_activation_is_explicit_opt_in(self) -> None:
+		orchestrate_dir = support.REPO_ROOT / "skills" / "orchestrate"
+		skill = (orchestrate_dir / "SKILL.md").read_text()
+
+		self.assertIn("Use only when the user affirmatively asks", skill)
+		self.assertIn("Treat loading or mentioning this skill as distinct", skill)
+		self.assertIn("generic permission to use workflows, agents, subagents", skill)
+		self.assertIn("remains binding until the user explicitly reverses it", skill)
+		self.assertIn("Ordinary subagents remain independent", skill)
+
+	# keeps the approval card scoped to actual worker-broker delegation
+	def test_plan_gate_requires_broker_workers(self) -> None:
+		orchestrate_dir = support.REPO_ROOT / "skills" / "orchestrate"
+		model_plan = (orchestrate_dir / "references" / "model-plan.md").read_text()
+		skill = (orchestrate_dir / "SKILL.md").read_text()
+
+		self.assertIn("at least one planned worker-broker job", model_plan)
+		self.assertIn("Do not emit a zero-worker plan", model_plan)
+		self.assertNotIn("even when the resolved plan has `totalWorkers: 0`", model_plan)
+		self.assertNotIn("Both classifications require the model plan and approval gate", skill)
+
+
 class ExitCodeContract(unittest.TestCase):
 	# the gate's whole job is to fail closed: an error must be printed & must
 	# decide the exit code, never be swallowed by an early return

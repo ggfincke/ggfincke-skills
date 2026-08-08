@@ -1,6 +1,8 @@
 # Model plan
 
-The model plan is the single authorization boundary between an orchestrate invocation and any `start_worker` call. It fixes, per stage, which provider/model/effort runs and how many workers may launch. No worker starts before the plan is approved.
+The model plan is the single authorization boundary between a confirmed orchestrate invocation with at least one planned worker-broker job and any `start_worker` call. It fixes the approved broker execution path and, per delegated stage, which provider/model/effort runs and how many workers may launch. No broker worker starts before the plan is approved. Lead-owned work and ordinary subagents remain outside this gate.
+
+Apply this reference only after the activation boundary in `SKILL.md` confirms an affirmative current-task directive. The presence of the word or linked token `orchestrate` is not itself an invocation. If intake yields zero broker workers, do not emit a plan; leave the orchestrate workflow and continue normally.
 
 ## Invocation grammar
 
@@ -13,9 +15,13 @@ The model plan is the single authorization boundary between an orchestrate invoc
 - `<stage>=` overrides one stage's binding. Omitted segments fall back down the precedence chain. Cursor encodes effort in its model identifier; reject an effort segment for Cursor.
 - When the value's leading segment is not a configured broker provider, treat the whole value as `model[:effort]` — a model-only override. The user picks models; the orchestrator routes each model to a harness that can run it (for example Anthropic models through Cursor) and re-gates if no configured harness can.
 - `max-workers=` caps the run's total worker budget regardless of what the plan proposes.
-- `--yes` skips the approval gate and launches with the resolved plan. Only an explicit `--yes` does this.
+- `--yes` bypasses the approval gate and begins execution with the resolved plan. Only an explicit `--yes` does this.
 
-The same grammar is accepted in replies at the gate, so an edited plan (from chat or from a UI plan card) round-trips as ordinary text.
+The same grammar is accepted in replies at the gate, so an edited plan (from chat or from a UI plan card) round-trips as ordinary text. Three reply-only tokens extend it:
+
+- `run=<runId>` names the run a reply belongs to, so a thread holding several plans correlates each approval to its own run. Renderers include it; treat it as binding.
+- `<stage>.effort=<tier>` edits one stage's effort without restating provider or model.
+- `<stage>.workers=<n>` edits one stage's planned worker count (still capped by `maxWorkers`).
 
 ## Workflow templates
 
@@ -76,7 +82,9 @@ On a user request such as "remember these models", atomically write the approved
 
 ## Plan block
 
-Before launching anything, emit the resolved plan as a fenced block with info string `orchestrate-plan` (renderable as an interactive card by clients that support it; readable as text everywhere else):
+When the host exposes an `orchestrate_plan_upsert` tool (456code's orchestrate MCP toolkit), persist the plan by calling that tool, then ALSO print the fenced block below with the same `runId` — the fence is the timeline anchor the host renders the persisted revision into, so a tool call without a fence leaves the plan invisible. Wherever the tool is absent, the fenced block alone is the canonical form. Every gate rule applies identically to both forms.
+
+Before launching any broker worker, emit the resolved plan as a fenced block with info string `orchestrate-plan` (renderable as an interactive card by clients that support it; readable as text everywhere else):
 
 ```orchestrate-plan
 {
@@ -106,11 +114,14 @@ Before launching anything, emit the resolved plan as a fenced block with info st
 - `mode` and `scope` per stage make read vs edit exposure visible before anything runs.
 - For every edit wave, declare the lane ETA threshold in the plan; use 30 minutes by default and re-gate when `serializes_behind` makes the projected lane exceed it.
 - Keep counts honest: if a stage's fan-out is unknown, state the cap you will enforce, not a guess.
+- Do not emit a zero-worker plan; no broker delegation budget exists to approve.
 
 ## Approval gate
 
-1. Present the plan block and ask for approval. The canonical approval reply is `approve`, optionally followed by grammar tokens for edits (`approve review=cursor:opus-5-high max-workers=6`); apply edits, and re-emit the plan only when edits changed it. Any other reply is discussion — keep gating.
-2. Call `start_worker` only after approval or an explicit `--yes`. In a session where no user can respond, an invocation without `--yes` ends at the plan: report it and stop rather than launch.
+Every confirmed orchestrate run with one or more planned broker workers must emit an `orchestrate-plan` block and stop at the approval gate. Only an explicit `--yes` bypasses the gate.
+
+1. Present the plan block and ask for approval. The canonical approval reply is `approve`, optionally followed by grammar tokens for edits (`approve run=<runId> review=cursor:opus-5-high verify.effort=xhigh max-workers=6`); apply edits, and re-emit the plan only when edits changed it. Any other reply is discussion — keep gating. Hosts with persisted plans deliver the decision instead as an `<orchestrate_plan_response run="…" revision="…" decision="approve|reject|discuss">` envelope whose JSON body may carry `stageOverrides`, `maxWorkers`, and `note`: `approve` launches with those overrides applied to that revision; `reject` means do not launch — acknowledge and await direction; `discuss` means answer the note and keep gating. Both reply forms are always valid input.
+2. Call `start_worker` only after approval or an explicit `--yes`. In a session where no user can respond, an invocation without `--yes` ends at the plan: report it and stop rather than launch workers.
 3. The approval covers scale as well as models. If the run needs to exceed `maxWorkers`, stop, present a delta plan (added workers, stage, reason), and re-gate before launching more.
 4. Changing an approved stage's provider or model mid-run also re-gates; effort-only changes within an approved stage do not.
 5. Record deviations from the approved plan (failed workers replaced, stages skipped) in the final report.

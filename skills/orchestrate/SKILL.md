@@ -1,9 +1,22 @@
 ---
 name: orchestrate
-description: Lead multi-part repository work by establishing architecture and acceptance criteria, dividing it into non-overlapping packages, delegating bounded research, review, or implementation through the worker-broker MCP tools, inspecting broker-computed Git and verification evidence, and owning final integration. Use when work spans independent subsystems, benefits from native Codex, Cursor, or Coral workers, or needs parallel read-only exploration, review fan-outs, or isolated implementation worktrees.
+description: Opt-in worker-broker orchestration for multi-part repository work that needs an explicit provider, model, worker-budget, and approval plan. Use only when the user affirmatively asks to run or invoke orchestrate for the current task, such as `/orchestrate`, an imperative `$orchestrate` directive, or an unambiguous natural-language request to use orchestrate. Do not activate for contextual mentions, prior use, inspection or discussion of the skill, generic requests to use workflows or subagents, or while a current instruction not to orchestrate remains unreversed.
 ---
 
 # Orchestrate
+
+## Activation boundary
+
+Treat loading or mentioning this skill as distinct from invoking its worker workflow. Activate only from an affirmative current-task directive such as `/orchestrate ...`, `$orchestrate ...` used imperatively, or “use orchestrate for this.”
+
+Do not activate for:
+
+- a contextual link, prior-use reference, or comparison involving orchestrate;
+- a request to inspect, discuss, debug, or modify the skill itself;
+- generic permission to use workflows, agents, subagents, delegation, or parallel work;
+- an acknowledgment such as “lgtm” after the user has said not to orchestrate.
+
+A current instruction not to orchestrate wins and remains binding until the user explicitly reverses it. Ordinary subagents remain independent of this skill and follow the host's normal delegation policy without an orchestrate plan.
 
 Own the overall design, delegation boundaries, integration, and final correctness. Treat workers as bounded executors; never delegate architectural ownership or accept their prose as evidence.
 
@@ -18,16 +31,18 @@ Before the first wave, run a lightweight broker preflight with `daemon_status` (
 
 Do not delegate merely to avoid understanding the change. Keep tightly coupled edits in one package or perform them in the lead session.
 
+After intake, continue the orchestrate workflow only when at least one bounded worker-broker assignment meets the routing-policy conditions. If none does, do not emit a zero-worker plan: state that no broker run is warranted and continue under the ordinary lead or subagent workflow unless the user asked only for an orchestration proposal.
+
 ## Model plan and approval gate
 
 Before any `start_worker` call, resolve and present a model plan per [model-plan.md](references/model-plan.md):
 
 1. Parse `workflow=`, per-stage `<stage>=provider[:model[:effort]]` overrides, and `--yes` from the invocation; infer the workflow template when not pinned.
 2. Resolve each stage's provider, model, effort, mode, and worker count from the precedence chain (broker defaults, global and repository profile bindings, gate edits, inline arguments).
-3. Emit the resolved plan as an `orchestrate-plan` fenced block and gate on user approval. Launch without approval only on an explicit `--yes`; with no responsive user and no `--yes`, report the plan and stop.
+3. Emit the resolved plan — persist via the host's `orchestrate_plan_upsert` tool when exposed and then print the `orchestrate-plan` fenced block as its render anchor, else the fenced block alone — and gate on user approval (which may arrive as an `<orchestrate_plan_response>` envelope; see model-plan.md). Launch workers without approval only on an explicit `--yes`; with no responsive user and no `--yes`, report the plan and stop.
 4. Treat the approved plan as a budget: exceeding `maxWorkers` or changing a stage's provider or model re-gates before more workers launch.
 
-The session model is the orchestrator; the plan governs workers only.
+The session model is the orchestrator; the plan governs the approved broker execution path and its workers. It does not gate lead-owned work or ordinary subagents.
 
 ## Define each assignment
 
