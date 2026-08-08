@@ -50,7 +50,7 @@ The session model is the orchestrator; the plan governs the approved broker exec
 
 ## Run checkpoint
 
-One file per run, in the integration checkout: `.plans/runs/<runId>.md` where the repository has a plan directory (456code does, and that path is git-ignored), otherwise an untracked `.orchestrate/runs/<runId>.md`. Never a numerically ordered plan file — those are durable designs, not run state. Template:
+One file per run, in the integration checkout: `.plans/runs/<runId>.md` where the repository already has a `.plans/` directory (456code does, and ignores that path), otherwise an untracked `.orchestrate/runs/<runId>.md`. Leave it untracked either way and do not assume any repository ignores it. Never a numerically ordered plan file — those are durable designs, not run state. Template:
 
 ```markdown
 # run <runId> — <task>
@@ -105,7 +105,7 @@ Do not expand a running assignment. Cancel it and start a replacement with the c
 The run-discipline list above carries the norms; these are the mechanics that satisfy them.
 
 1. Immediately after launching, call `wait_for_workers` once with the `run` and a bounded timeout (default 300 seconds, maximum 900). It is a liveness probe, not a completion channel: read its `pending` entries — `job_id`, `status`, `stage`, `phase`, `elapsed_ms`, `last_message` — as the wave's first real snapshot, and never re-call it on an unchanged pending set.
-2. For any wave that outlives that probe, start `worker-broker wait --run <run> --json` as a background shell command and let its exit be the single wake; [worker-contract.md](references/worker-contract.md) carries the absolute command and its three exit codes. For one job mid-flight, `get_worker_artifact` with `artifact: "activity"`, `tail: true`, `max_bytes: 2000` is the cheap liveness read.
+2. For any wave that outlives that probe, start the broker's wait CLI as a background shell command and let its exit be the single wake. `worker-broker` is not on `PATH`, so run the absolute form — `/opt/homebrew/bin/node /Users/ggfincke/Projects/ggfincke-skills/tools/worker-broker/dist/src/cli.js wait --run <run> --json` — and never the bare name, which exits 127 and leaves the wave with no wake at all. [worker-contract.md](references/worker-contract.md) carries the same command and its three exit codes. For one job mid-flight, `get_worker_artifact` with `artifact: "activity"`, `tail: true`, `max_bytes: 2000` is the cheap liveness read.
 3. On every wake — a completion exit, monitor event, or user message — lead with a one-to-two-line progress line: `N/M workers done; <what just finished>; next: <step>; ~<time> remaining`. Then continue working.
 4. At each wave boundary (all results collected, integration starting, validation running), post the same short progress line unprompted.
 5. For waves expected to run 15+ minutes while the user is likely away, send a PushNotification on wave completion or first failure.
@@ -130,7 +130,7 @@ Use `get_worker_artifact` for bounded patch, event, stderr, model-result, prompt
 
 After a compaction, reconcile in this order: the run checkpoint, then `get_run_status`, then `list_workers({ run })`. The broker is authoritative for job status and evidence; the checkpoint is authoritative for intent — which job belonged to which package, what you had already accepted, and what the next action was. Relaunch nothing until the two agree.
 
-The daemon reconciles automatically: it snapshots each interrupted worktree to `change.patch` before cleanup and performs one automatic requeue. Inventory the run with `list_workers`, apply the salvage gate to every requeued or failed job, and never launch a replacement while the original is queued or being requeued. For a build upgrade, use `worker-broker daemon status` and `worker-broker daemon stop --when-idle`; do not kill a busy daemon or bypass its drain.
+The daemon reconciles automatically: it snapshots each interrupted worktree to `change.patch` before cleanup and performs one automatic requeue. Inventory the run with `list_workers`, apply the salvage gate to every requeued or failed job, and never launch a replacement while the original is queued or being requeued. For a build upgrade, run the same absolute `cli.js` command with `daemon status` and then `daemon stop --when-idle`; do not kill a busy daemon or bypass its drain.
 
 ## Complete the change
 

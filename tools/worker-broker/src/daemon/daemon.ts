@@ -380,6 +380,23 @@ async function runStatus(
   }
 }
 
+async function readArtifactBytes(
+  artifactPath: string,
+  allowMissing: boolean
+): Promise<Buffer>
+{
+  try
+  {
+    return await readFile(artifactPath)
+  }
+  catch (error)
+  {
+    if (allowMissing && (error as NodeJS.ErrnoException).code === 'ENOENT')
+      return Buffer.alloc(0)
+    throw error
+  }
+}
+
 async function workerArtifact(
   manager: JobManager,
   params: Record<string, unknown>
@@ -436,8 +453,12 @@ async function workerArtifact(
       model_result: 'model-result.json',
       activity: 'activity.jsonl',
     } as const
-    bytes = await readFile(
-      path.join(manager.store.jobDir(jobId), names[artifactName])
+    // activity is the one artifact readable before a job is terminal, so a
+    // queued worker legitimately has no log yet; that reads as empty rather
+    // than as a raw fs error naming the broker's state path
+    bytes = await readArtifactBytes(
+      path.join(manager.store.jobDir(jobId), names[artifactName]),
+      artifactName === 'activity'
     )
   }
   const truncated = bytes.length > maxBytes

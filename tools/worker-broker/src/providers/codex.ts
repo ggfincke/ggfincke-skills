@@ -109,7 +109,12 @@ export class CodexProvider implements WorkerProvider
     const prompt = assignmentPrompt(context)
     await writePrivateFile(context.prompt_path, prompt)
     let workerSessionId: string | undefined
-    let effectiveModel =
+    // * effective_model is provider evidence: it stays undefined until Codex
+    // reports a model, so it can disagree with the approved plan binding
+    let effectiveModel: string | undefined
+    // pricing needs a model name whether or not Codex reports one, so the
+    // requested binding seeds usage accounting only
+    const requestedModel =
       context.request.model ?? this.config.default_codex_model
     const attempt = context.provider_attempt ?? 0
     let turnIndex = 0
@@ -148,7 +153,8 @@ export class CodexProvider implements WorkerProvider
               timestamp: new Date().toISOString(),
               provenance: 'captured',
             }
-            if (effectiveModel !== undefined) source.model = effectiveModel
+            const pricingModel = effectiveModel ?? requestedModel
+            if (pricingModel !== undefined) source.model = pricingModel
             turnIndex += 1
             usageWrites = usageWrites
               .then(async () =>

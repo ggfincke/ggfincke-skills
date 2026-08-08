@@ -3,11 +3,13 @@
 
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { constants, createReadStream } from 'node:fs'
 import {
   access,
+  open,
   readFile,
   readdir,
+  realpath,
   rename,
   stat,
   unlink,
@@ -15,6 +17,7 @@ import {
 import os from 'node:os'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
+import { fileURLToPath } from 'node:url'
 import {
   secureDirectory,
   securePrivateFile,
@@ -543,12 +546,128 @@ function combinedCodexHome(
   return homes.join(',')
 }
 
+// the whole point of this command is to run behind a wrapper named `ccusage`
+// that sits ahead of the stock binary on PATH, so spawning the bare name would
+// re-enter this command forever; resolution walks PATH itself & skips every
+// candidate that points back at this package
+const CCUSAGE_BINARY_NAME = 'ccusage'
+// stock ccusage is a bundled entrypoint & a wrapper is a short script, so the
+// head of a candidate is enough to tell them apart
+const CCUSAGE_PROBE_BYTES = 65536
+// carried into the child so a wrapper that still wins the lookup fails on its
+// second entry instead of forking another level
+const CCUSAGE_REENTRY_MARKER = 'WORKER_BROKER_CCUSAGE_WRAPPED'
+// dist/src/ccusage.js -> the package root a wrapper would name
+const PACKAGE_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..'
+)
+
+async function readFileHead(filePath: string, bytes: number): Promise<string>
+{
+  const handle = await open(filePath, 'r')
+  try
+  {
+    const buffer = Buffer.alloc(bytes)
+    const { bytesRead } = await handle.read(buffer, 0, bytes, 0)
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  }
+  finally
+  {
+    await handle.close()
+  }
+}
+
+// a candidate re-enters this package when it lives inside it or when its text
+// names it; the wrapper shape is `npm --prefix <package> run ccusage`
+async function reentersWorkerBroker(candidate: string): Promise<boolean>
+{
+  let resolved = candidate
+  try
+  {
+    resolved = await realpath(candidate)
+  }
+  catch
+  {
+    // an unresolvable link is judged on its text alone
+  }
+  if (
+    resolved === PACKAGE_ROOT ||
+    resolved.startsWith(`${PACKAGE_ROOT}${path.sep}`)
+  )
+  {
+    return true
+  }
+  try
+  {
+    const head = await readFileHead(resolved, CCUSAGE_PROBE_BYTES)
+    return head.includes(PACKAGE_ROOT) || head.includes('worker-broker')
+  }
+  catch
+  {
+    return false
+  }
+}
+
+async function isExecutableFile(candidate: string): Promise<boolean>
+{
+  try
+  {
+    if (!(await stat(candidate)).isFile()) return false
+    await access(candidate, constants.X_OK)
+    return true
+  }
+  catch
+  {
+    return false
+  }
+}
+
+async function resolveCcusageBinary(
+  environment: NodeJS.ProcessEnv
+): Promise<string>
+{
+  const configured = nonEmptyString(environment.WORKER_BROKER_CCUSAGE_BINARY)
+  if (configured !== undefined) return configured
+  const skipped: string[] = []
+  for (const directory of (nonEmptyString(environment.PATH) ?? '').split(
+    path.delimiter
+  ))
+  {
+    if (directory.trim() === '') continue
+    const candidate = path.resolve(directory, CCUSAGE_BINARY_NAME)
+    if (!(await isExecutableFile(candidate))) continue
+    if (await reentersWorkerBroker(candidate))
+    {
+      if (!skipped.includes(candidate)) skipped.push(candidate)
+      continue
+    }
+    return candidate
+  }
+  const wrappers =
+    skipped.length === 0
+      ? ''
+      : ` (skipped ${skipped.join(', ')}: each one runs worker-broker again)`
+  throw new Error(
+    `no stock ccusage on PATH${wrappers}; install ccusage or set WORKER_BROKER_CCUSAGE_BINARY to the absolute path of the stock binary`
+  )
+}
+
 export async function runCcusage(
   stateDir: string,
   args: string[],
   environment: NodeJS.ProcessEnv = process.env
 ): Promise<number>
 {
+  if (nonEmptyString(environment[CCUSAGE_REENTRY_MARKER]) !== undefined)
+  {
+    throw new Error(
+      'refusing to re-enter worker-broker ccusage: the resolved ccusage runs this command again; set WORKER_BROKER_CCUSAGE_BINARY to the absolute path of the stock binary'
+    )
+  }
+  // resolved before the sidecar walk so a broken setup fails in milliseconds
+  const binary = await resolveCcusageBinary(environment)
   const summary = await materializeCodexUsageSidecar(stateDir)
   const fallback =
     summary.missing_models === 0
@@ -557,11 +676,10 @@ export async function runCcusage(
   process.stderr.write(
     `worker-broker: included ${summary.records} Codex worker turns${fallback}\n`
   )
-  const binary =
-    nonEmptyString(environment.WORKER_BROKER_CCUSAGE_BINARY) ?? 'ccusage'
   const childEnvironment = {
     ...environment,
     CODEX_HOME: combinedCodexHome(environment, summary.directory),
+    [CCUSAGE_REENTRY_MARKER]: '1',
   }
   return await new Promise<number>((resolve, reject) =>
   {

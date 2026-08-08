@@ -60,7 +60,7 @@ Return the terminal broker result. Calling it before the job finishes returns an
 
 Input: `{ run? | job_ids?, timeout_seconds? }`. Target a run or explicit job IDs, including jobs submitted through another client of the same daemon. `timeout_seconds` defaults to 300 and has a maximum of 900. Block until all targeted jobs are terminal or the timeout expires; return `timed_out`, terminal summaries, and `pending`: one entry per still-running worker with `job_id`, `status`, `stage`, `phase`, `elapsed_ms`, and `last_message`.
 
-This is a bounded liveness probe, not a completion channel. Call it once after a launch and read `pending`; re-calling it on an unchanged pending set buys nothing and costs a full response. For a wave that outlives the probe, use the `worker-broker wait` command below.
+This is a bounded liveness probe, not a completion channel. Call it once after a launch and read `pending`; re-calling it on an unchanged pending set buys nothing and costs a full response. For a wave that outlives the probe, use the broker's wait CLI below.
 
 ### `get_worker_artifact`
 
@@ -74,7 +74,7 @@ Cancel queued work immediately or request process-group termination for running 
 
 ## `worker-broker wait` (background completion wake)
 
-The out-of-process wait for a wave that outlives one `wait_for_workers` probe. Run it as a background shell command and treat its exit as the single wake for the wave, instead of re-polling:
+The out-of-process wait for a wave that outlives one `wait_for_workers` probe. Run it as a background shell command and treat its exit as the single wake for the wave, instead of re-polling. The `worker-broker` bin is not on `PATH`, so run the absolute form and never the bare name:
 
 ```
 /opt/homebrew/bin/node /Users/ggfincke/Projects/ggfincke-skills/tools/worker-broker/dist/src/cli.js wait --run <run> --json
@@ -86,7 +86,7 @@ Exit codes are the contract a detached caller branches on:
 
 - `0`: every selected worker reached `completed`;
 - `1`: every selected worker is terminal but at least one did not complete — triage with `get_worker_result`;
-- `2`: terminality was never observed (no daemon listening, empty selector, or transport loss). Never read `2` as "the wave finished".
+- `2`: terminality was never observed — a malformed invocation, no daemon listening, a selector that matched no workers, or transport loss. Never read `2` as "the wave finished".
 
 ## Statuses
 

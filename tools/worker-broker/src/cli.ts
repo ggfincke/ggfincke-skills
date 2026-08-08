@@ -60,6 +60,8 @@ Commands:
   list                   list persisted jobs
   result <job-id>        print one persisted job
   ccusage -- [args...]   include Codex worker usage in stock ccusage
+                         (WORKER_BROKER_CCUSAGE_BINARY pins the stock binary
+                          when a wrapper shadows it on PATH)
   daemon status          print shared daemon status
   daemon stop            stop the daemon when no jobs are active
   daemon stop --when-idle drain active jobs, then stop the daemon
@@ -207,14 +209,9 @@ async function runWait(
   }
 }
 
-export async function runCli(
+async function dispatchCli(
   argv: string[],
-  dependencies: CliDependencies = {
-    connect: ensureDaemonClient,
-    writeStdout: (value) => process.stdout.write(value),
-    readRequest: async (requestPath) =>
-      await readJson<StartWorkerRequest>(requestPath),
-  }
+  dependencies: CliDependencies
 ): Promise<number>
 {
   const parsed = parseCli(argv)
@@ -310,6 +307,31 @@ export async function runCli(
   finally
   {
     await client.close()
+  }
+}
+
+export async function runCli(
+  argv: string[],
+  dependencies: CliDependencies = {
+    connect: ensureDaemonClient,
+    writeStdout: (value) => process.stdout.write(value),
+    readRequest: async (requestPath) =>
+      await readJson<StartWorkerRequest>(requestPath),
+  }
+): Promise<number>
+{
+  try
+  {
+    return await dispatchCli(argv, dependencies)
+  }
+  catch (error)
+  {
+    // an invocation error is not an observed wave: exit 1 is reserved for a
+    // terminal wave with failures, so a bad flag or a missing selector reports
+    // 2 rather than waking the caller into triage
+    if (argv[0] !== 'wait') throw error
+    process.stderr.write(`${errorMessage(error)}\n`)
+    return 2
   }
 }
 
