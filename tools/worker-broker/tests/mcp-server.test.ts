@@ -154,7 +154,8 @@ function summary(job: WorkerJob): Record<string, unknown>
     status: job.status,
     provider: 'codex',
     mode: 'edit',
-    task: 'create MCP fixture',
+    task_preview: 'create MCP fixture',
+    task_bytes: 18,
     repo: '/repo',
     allowed_paths: ['src'],
     base_sha: 'base-sha',
@@ -335,7 +336,7 @@ test('MCP preserves schemas and translates every tool through the daemon client'
       ),
       {
         timed_out: false,
-        pending_job_ids: [],
+        pending: [],
         jobs: [summary(completedJob)],
       }
     )
@@ -369,7 +370,12 @@ test('MCP preserves schemas and translates every tool through the daemon client'
           arguments: { job_id: 'completed-job' },
         })
       ),
-      { worker: summary(completedJob), result: completedJob.result }
+      {
+        worker: summary(completedJob),
+        result: completedJob.result,
+        summary_truncated: false,
+        summary_byte_length: 15,
+      }
     )
     assert.deepEqual(
       structured(

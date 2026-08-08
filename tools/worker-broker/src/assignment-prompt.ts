@@ -27,7 +27,7 @@ ${request.verification_commands.length === 0 ? '- None supplied.' : request.veri
 Inspect the repository instructions before acting. Make the smallest complete change within scope. You may run focused checks, but the broker will independently run the listed verification commands and calculate the final Git diff.
 
 Return only a JSON object with exactly these fields:
-- "summary": string
+- "summary": string, at most ~1500 words; put long findings in the listed arrays as discrete items rather than one prose block
 - "assumptions": string[]
 - "risks": string[]
 - "follow_ups": string[]

@@ -12,6 +12,7 @@ import type {
   DaemonClient,
   DaemonErrorShape,
   ListWorkersParams,
+  PendingWorker,
   WaitForWorkersParams,
 } from './daemon/protocol.js'
 import { errorMessage } from './errors.js'
@@ -76,7 +77,12 @@ const StartWorkerSchema = z
       .min(1)
       .describe('orchestration run identifier, metadata only')
       .optional(),
-    depends_on: z.array(z.string().min(1)).optional(),
+    depends_on: z
+      .array(z.string().min(1))
+      .describe(
+        'job ids that must reach completed before this job leaves the queue; a failed dependency rejects this job. Declare later phases up front with depends_on instead of holding the sequence in the lead and polling between waves.'
+      )
+      .optional(),
     allow_nested_agents: z.boolean().optional(),
   })
   .strict()
@@ -87,7 +93,8 @@ interface JobSummary
   status: WorkerStatus
   provider: string
   mode: string
-  task: string
+  task_preview: string
+  task_bytes: number
   repo: string
   allowed_paths: string[]
   base_sha: string
@@ -104,6 +111,19 @@ interface JobSummary
   completed_at?: string
 }
 
+// the lead authored this prompt; echo a locator, not the text. every summary
+// carried the full task before, so one wave of long prompts replayed hundreds of
+// kilobytes of the lead's own words back into its context on every list or wait.
+// nothing is lost: get_worker_artifact({artifact:'prompt'}) still has all of it.
+const TASK_PREVIEW_CHARACTERS = 160
+
+function preview(task: string): string
+{
+  const characters = [...task]
+  if (characters.length <= TASK_PREVIEW_CHARACTERS) return task
+  return `${characters.slice(0, TASK_PREVIEW_CHARACTERS).join('')}…`
+}
+
 function summarize(job: WorkerJob): JobSummary
 {
   const summary: JobSummary = {
@@ -111,7 +131,8 @@ function summarize(job: WorkerJob): JobSummary
     status: job.status,
     provider: job.request.provider,
     mode: job.request.mode,
-    task: job.request.task,
+    task_preview: preview(job.request.task),
+    task_bytes: Buffer.byteLength(job.request.task, 'utf8'),
     repo: job.request.repo,
     allowed_paths: job.request.allowed_paths,
     base_sha: job.base_sha,
@@ -129,6 +150,28 @@ function summarize(job: WorkerJob): JobSummary
   if (job.started_at !== undefined) summary.started_at = job.started_at
   if (job.completed_at !== undefined) summary.completed_at = job.completed_at
   return summary
+}
+
+// accumulate whole code points so a byte budget never splits one mid-sequence
+function clipToBytes(value: string, maxBytes: number): string
+{
+  let used = 0
+  const kept: string[] = []
+  for (const character of value)
+  {
+    const size = Buffer.byteLength(character, 'utf8')
+    if (used + size > maxBytes) break
+    used += size
+    kept.push(character)
+  }
+  return `${kept.join('')}…`
+}
+
+// the text channel is what a lead reads first, so it carries progress too
+function pendingLine(entry: PendingWorker): string
+{
+  const seconds = Math.round(entry.elapsed_ms / 1_000)
+  return `${entry.job_id} ${entry.phase ?? '-'} ${seconds}s — ${entry.last_message ?? 'no message'}`
 }
 
 function success(value: Record<string, unknown>, message: string)
@@ -290,12 +333,12 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
     {
       title: 'Wait for workers',
       description:
-        'Wait until all selected workers are terminal or the timeout expires.',
+        'Bounded liveness probe for a wave that just launched. NOT a completion channel — for waves longer than the timeout, run `worker-broker wait --run <run> --json` as a background shell command and let its exit wake you. Never re-call this tool with an unchanged pending set.',
       inputSchema: z
         .object({
           run: z.string().min(1).optional(),
           job_ids: z.array(z.string().min(1)).optional(),
-          timeout_seconds: z.number().int().positive().max(300).default(60),
+          timeout_seconds: z.number().int().positive().max(900).default(300),
         })
         .refine(
           (input) =>
@@ -314,19 +357,21 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
         if (run !== undefined) params.run = run
         if (jobIds !== undefined) params.job_ids = jobIds
         const result = await client.call('wait_for_workers', params)
-        const pendingJobIds = result.workers
-          .filter((job) => !TERMINAL_STATUSES.has(job.status))
-          .map((job) => job.job_id)
+        // defaulted so this still reads against a daemon built before pending
+        const pending = result.pending ?? []
         return success(
           {
             timed_out: result.timed_out,
-            pending_job_ids: pendingJobIds,
+            pending,
             jobs: result.workers
               .filter((job) => TERMINAL_STATUSES.has(job.status))
               .map(summarize),
           },
           result.timed_out
-            ? `timed out with ${pendingJobIds.length} pending worker(s)`
+            ? `timed out; ${pending.length} pending: ${pending
+                .slice(0, 3)
+                .map(pendingLine)
+                .join('; ')}`
             : `${result.workers.length} worker(s) terminal`
         )
       }
@@ -341,7 +386,8 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
     'get_worker_artifact',
     {
       title: 'Get worker artifact',
-      description: 'Read one bounded worker artifact as UTF-8 text.',
+      description:
+        'Read one bounded worker artifact as UTF-8 text. activity with tail: true, max_bytes: 2000 is the cheap liveness read for a running job.',
       inputSchema: {
         job_id: z.string().min(1),
         artifact: z.enum([
@@ -351,6 +397,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
           'patch',
           'model_result',
           'verification',
+          'activity',
         ]),
         max_bytes: z.number().int().positive().max(262_144).default(65_536),
         tail: z.boolean().default(false),
@@ -409,9 +456,17 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       title: 'Get worker result',
       description:
         'Get broker-computed Git, process, and verification evidence for a terminal worker job.',
-      inputSchema: { job_id: z.string().min(1) },
+      inputSchema: {
+        job_id: z.string().min(1),
+        summary_max_bytes: z
+          .number()
+          .int()
+          .positive()
+          .max(65_536)
+          .default(4_000),
+      },
     },
-    async ({ job_id: jobId }) =>
+    async ({ job_id: jobId, summary_max_bytes: summaryMaxBytes }) =>
     {
       try
       {
@@ -424,12 +479,28 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
             )
           )
         }
+        // only the model's prose is capped; the computed evidence (changed
+        // files, changes, verification, setup, scope violations) stays whole
+        // because that is what the lead has to act on
+        const summary = job.result.summary
+        const summaryBytes = Buffer.byteLength(summary ?? '', 'utf8')
+        const truncated = summaryBytes > summaryMaxBytes
+        const result =
+          truncated && summary !== undefined
+            ? { ...job.result, summary: clipToBytes(summary, summaryMaxBytes) }
+            : job.result
         return success(
           {
             worker: summarize(job),
-            result: job.result as unknown as Record<string, unknown>,
+            result: result as unknown as Record<string, unknown>,
+            summary_truncated: truncated,
+            summary_byte_length: summaryBytes,
           },
-          `${job.job_id}: ${job.status}; ${job.result.changed_files.length} changed file(s)`
+          `${job.job_id}: ${job.status}; ${job.result.changed_files.length} changed file(s)${
+            truncated
+              ? '; full summary via get_worker_artifact({job_id, artifact: "model_result"})'
+              : ''
+          }`
         )
       }
       catch (error)

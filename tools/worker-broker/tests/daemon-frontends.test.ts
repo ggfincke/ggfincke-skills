@@ -273,11 +273,11 @@ test('CLI run, list, and result are daemon-backed', async () =>
     },
     {
       method: 'wait_for_workers',
-      params: { job_ids: ['cli-job'], timeout_seconds: 300 },
+      params: { job_ids: ['cli-job'], timeout_seconds: 900 },
     },
     {
       method: 'wait_for_workers',
-      params: { job_ids: ['cli-job'], timeout_seconds: 300 },
+      params: { job_ids: ['cli-job'], timeout_seconds: 900 },
     },
   ])
   assert.equal(runOutput[0], `${JSON.stringify(completed.result)}\n`)

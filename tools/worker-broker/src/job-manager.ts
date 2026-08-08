@@ -41,6 +41,13 @@ import {
 } from './process-runner.js'
 import { normalizeRequest } from './request.js'
 
+export interface JobProgress
+{
+  phase?: ActivityPhase
+  last_message?: string
+  last_message_at?: string
+}
+
 const TERMINAL_STATUSES = new Set<WorkerStatus>([
   'completed',
   'failed',
@@ -363,6 +370,31 @@ export class JobManager
     )
   }
 
+  // phase & newest prose for a job still in flight, read only from the writer
+  // this process already owns: activity() memoizes and finish() drops the entry
+  // (see finish), so constructing one here would re-open activity.jsonl for a
+  // job that is already done
+  async progress(jobId: string): Promise<JobProgress>
+  {
+    const job = await this.get(jobId)
+    if (TERMINAL_STATUSES.has(job.status)) return {}
+    const writer = this.activities.get(jobId)
+    if (writer === undefined) return {}
+    const progress: JobProgress = {}
+    const phase = await writer.currentOpenPhase()
+    if (phase !== undefined) progress.phase = phase
+    const latest = await writer.latestMessage()
+    if (latest !== undefined)
+    {
+      progress.last_message = latest.summary
+      if (latest.recorded_at !== undefined)
+      {
+        progress.last_message_at = latest.recorded_at
+      }
+    }
+    return progress
+  }
+
   async cancel(jobId: string): Promise<WorkerJob>
   {
     await this.initialize()
@@ -384,19 +416,34 @@ export class JobManager
     return structuredClone(job)
   }
 
-  async waitForTerminal(jobId: string): Promise<WorkerJob>
+  // signal lets a caller that lost a timeout race drop its listener; without it
+  // every timed-out wait leaked one 'terminal:<id>' listener per pending job
+  async waitForTerminal(
+    jobId: string,
+    signal?: AbortSignal
+  ): Promise<WorkerJob>
   {
     await this.initialize()
-    const current = this.jobs.get(jobId)
-    if (current === undefined) throw new Error(`unknown active job: ${jobId}`)
+    // fall back to the store so a persisted job reports status instead of
+    // throwing once it has been evicted from the in-memory map
+    const current = this.jobs.get(jobId) ?? (await this.store.read(jobId))
     if (TERMINAL_STATUSES.has(current.status)) return structuredClone(current)
 
     return await new Promise<WorkerJob>((resolve) =>
     {
       const eventName = `terminal:${jobId}`
-      this.events.once(eventName, (job: WorkerJob) =>
+      const onTerminal = (job: WorkerJob): void =>
+      {
+        signal?.removeEventListener('abort', onAbort)
         resolve(structuredClone(job))
-      )
+      }
+      const onAbort = (): void =>
+      {
+        this.events.off(eventName, onTerminal)
+        resolve(structuredClone(this.jobs.get(jobId) ?? current))
+      }
+      this.events.once(eventName, onTerminal)
+      signal?.addEventListener('abort', onAbort, { once: true })
     })
   }
 

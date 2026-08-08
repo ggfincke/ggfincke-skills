@@ -99,10 +99,26 @@ export interface WaitForWorkersParams
   timeout_seconds?: number
 }
 
+/**
+ * One still-running worker at the moment a wait returned, so a timed-out wait
+ * carries real progress instead of a bare id.
+ */
+export interface PendingWorker
+{
+  job_id: string
+  status: WorkerStatus
+  stage?: string
+  phase?: string
+  elapsed_ms: number
+  last_message?: string
+}
+
 export interface WaitForWorkersResult
 {
   timed_out: boolean
   workers: WorkerJob[]
+  // optional so a client built against an older daemon still parses the frame
+  pending?: PendingWorker[]
 }
 
 export interface RunStatusParams
@@ -133,8 +149,15 @@ export interface RunStatusResult
 export interface ArtifactParams
 {
   job_id: string
+  // activity is the only name readable before the job is terminal
   artifact:
-    'prompt' | 'events' | 'stderr' | 'patch' | 'model_result' | 'verification'
+    | 'prompt'
+    | 'events'
+    | 'stderr'
+    | 'patch'
+    | 'model_result'
+    | 'verification'
+    | 'activity'
   max_bytes?: number
   tail?: boolean
 }

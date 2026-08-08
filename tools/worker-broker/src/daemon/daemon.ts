@@ -39,6 +39,7 @@ import {
   type DaemonRequestFrame,
   type DaemonResponseFrame,
   type DaemonStatusResult,
+  type PendingWorker,
   type RunStatusResult,
   type WaitForWorkersResult,
 } from './protocol.js'
@@ -78,11 +79,14 @@ const ARTIFACT_NAMES: ArtifactParams['artifact'][] = [
   'patch',
   'model_result',
   'verification',
+  'activity',
 ]
 const DEFAULT_ARTIFACT_BYTES = 65_536
 const MAX_ARTIFACT_BYTES = 262_144
 const DEFAULT_WAIT_SECONDS = 60
-const MAX_WAIT_SECONDS = 300
+// matches the MCP schema max exactly, so a model-facing wait is never silently
+// re-clamped to a shorter timeout than the one it asked for
+const MAX_WAIT_SECONDS = 900
 
 type HandshakeState = 'pending' | 'processing' | 'complete' | 'rejected'
 
@@ -430,6 +434,7 @@ async function workerArtifact(
       stderr: 'provider.stderr.log',
       patch: 'change.patch',
       model_result: 'model-result.json',
+      activity: 'activity.jsonl',
     } as const
     bytes = await readFile(
       path.join(manager.store.jobDir(jobId), names[artifactName])
@@ -458,6 +463,32 @@ function waitSeconds(params: Record<string, unknown>): number
     requestError('timeout_seconds must be a positive integer')
   }
   return Math.min(value, MAX_WAIT_SECONDS)
+}
+
+// bounded because the whole point of the wait payload is token economy; a wave
+// of twenty workers must not return twenty kilobytes of prose
+const MAX_PENDING_MESSAGE_CHARACTERS = 200
+
+async function pendingWorker(
+  manager: JobManager,
+  job: WorkerJob
+): Promise<PendingWorker>
+{
+  const progress = await manager.progress(job.job_id)
+  const entry: PendingWorker = {
+    job_id: job.job_id,
+    status: job.status,
+    elapsed_ms: Date.now() - Date.parse(job.started_at ?? job.created_at),
+  }
+  if (job.request.stage !== undefined) entry.stage = job.request.stage
+  if (progress.phase !== undefined) entry.phase = progress.phase
+  if (progress.last_message !== undefined)
+  {
+    entry.last_message = [...progress.last_message]
+      .slice(0, MAX_PENDING_MESSAGE_CHARACTERS)
+      .join('')
+  }
+  return entry
 }
 
 async function waitForWorkers(
@@ -495,28 +526,47 @@ async function waitForWorkers(
   const selected = await Promise.all(
     [...selectedIds].map(async (jobId) => await knownJob(manager, jobId))
   )
+  // validated before the early-exit branch so a malformed timeout is still
+  // rejected when nothing happens to be pending
+  const timeoutSeconds = waitSeconds(params)
   const pending = selected.filter((job) => !TERMINAL_STATUSES.has(job.status))
   let timedOut = false
   if (pending.length > 0)
   {
     let timer: NodeJS.Timeout | undefined
+    const aborter = new AbortController()
     const timeout = new Promise<true>((resolve) =>
     {
-      timer = setTimeout(() => resolve(true), waitSeconds(params) * 1_000)
+      timer = setTimeout(() => resolve(true), timeoutSeconds * 1_000)
     })
     timedOut = await Promise.race([
       Promise.all(
-        pending.map(async (job) => await manager.waitForTerminal(job.job_id))
+        pending.map(
+          async (job) =>
+            await manager.waitForTerminal(job.job_id, aborter.signal)
+        )
       ).then(() => false as const),
       timeout,
     ])
     if (timer !== undefined) clearTimeout(timer)
+    // the losing branch of the race keeps one 'terminal:<id>' listener per
+    // pending job alive forever unless it is told to stop waiting
+    aborter.abort()
   }
+  const workers = await Promise.all(
+    [...selectedIds].map(async (jobId) => await knownJob(manager, jobId))
+  )
+  // derived from the post-race read, so a worker that finished during the wait
+  // is never reported as pending
+  const pendingWorkers = await Promise.all(
+    workers
+      .filter((job) => !TERMINAL_STATUSES.has(job.status))
+      .map(async (job) => await pendingWorker(manager, job))
+  )
   return {
     timed_out: timedOut,
-    workers: await Promise.all(
-      [...selectedIds].map(async (jobId) => await knownJob(manager, jobId))
-    ),
+    workers,
+    pending: pendingWorkers,
   }
 }
 
