@@ -9,7 +9,6 @@ from pathlib import Path
 
 import support
 
-
 sync = support.load_module("sync_agents", support.SCRIPTS_DIR / "sync-agents.py")
 
 

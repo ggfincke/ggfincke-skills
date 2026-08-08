@@ -11,7 +11,6 @@ from pathlib import Path
 
 import always_on
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
 PROJECTS_DIR = ROOT / "projects"

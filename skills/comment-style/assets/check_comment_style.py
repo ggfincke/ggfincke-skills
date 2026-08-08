@@ -103,7 +103,7 @@ def is_code_like_token(token: str) -> bool:
 
 
 def is_tagged_description(description: str) -> bool:
-	return bool(re.match(r"^(?:[*!?](?:\s|$)|todo(?:\([^)]*\))?:?\s)", description, re.I))
+	return bool(re.match(r"^(?:[*!?](?:\s|$)|todo(?:\([^)]*\))?:?\s)", description, re.IGNORECASE))
 
 
 def normalize_header_description(line: str, prefix: str) -> str:
@@ -486,11 +486,7 @@ def fix_swift_file(path: Path) -> bool:
 		if inside_literal or comment_index == -1:
 			continue
 		comment = body[comment_index:]
-		if (
-			comment.startswith("///")
-			or comment.startswith("// MARK:")
-			or SWIFT_TOOLING_RE.match(comment)
-		):
+		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
 		normalized = normalize_comment(comment)
 		if normalized != comment:
@@ -608,11 +604,7 @@ def check_swift_file(path: Path) -> list[Violation]:
 			continue
 		prefix = body[:comment_index]
 		comment = body[comment_index:]
-		if (
-			comment.startswith("///")
-			or comment.startswith("// MARK:")
-			or SWIFT_TOOLING_RE.match(comment)
-		):
+		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
 		if "→" in comment:
 			violations.append(Violation(path, index, "use ASCII ->, not the Unicode arrow"))

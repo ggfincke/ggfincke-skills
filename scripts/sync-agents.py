@@ -10,7 +10,6 @@ import re
 import shutil
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
 AGENT_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")

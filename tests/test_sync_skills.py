@@ -256,9 +256,11 @@ class AlwaysOnUpdatesAreAllOrNothing(unittest.TestCase):
 				"AGENTS_HOME": str(home / ".agents"),
 				"CLAUDE_HOME": str(home / ".claude"),
 			}
-			with mock.patch.dict(os.environ, env):
-				with self.assertRaises(SystemExit) as caught:
-					sync.sync_always_on(["codex", "agents", "claude"], dry_run=False)
+			with (
+				mock.patch.dict(os.environ, env),
+				self.assertRaises(SystemExit) as caught,
+			):
+				sync.sync_always_on(["codex", "agents", "claude"], dry_run=False)
 
 			self.assertIn("CLAUDE.md", str(caught.exception))
 			self.assertNotIn(always_on.REGION_BEGIN, codex.read_text(encoding="utf-8"))
