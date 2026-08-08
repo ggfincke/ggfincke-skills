@@ -18,12 +18,12 @@ Required inputs:
 
 Optional inputs:
 
-- `base_ref`: Git reference, default `HEAD`; the broker resolves it to an immutable commit before launch;
+- `base_ref`: Git reference, default `HEAD`; the broker resolves it to an immutable commit when the job is *submitted*, not when it is dispatched — a queued job's base does not follow later integration, so never submit a job whose base does not exist yet;
 - `acceptance_criteria`: observable conditions the result must satisfy;
 - `setup_commands`: trusted shell commands, optionally with `timeout_seconds`, run in the worktree after creation and before the provider starts (e.g. `pnpm install` for a JS monorepo). A setup failure ends the job in seconds with no model work spent; results are recorded in `setup` with `setup-N.*` artifacts;
 - `verification_commands`: trusted shell commands, optionally with `timeout_seconds`;
 - `model` and `effort`: provider-specific overrides; Cursor encodes effort in `model` and rejects the generic `effort` field;
-- `depends_on`: job IDs that must complete successfully before launch; any unsuccessful dependency rejects the dependent;
+- `depends_on`: job IDs that must reach `completed` before this job leaves the queue. Dependencies must exist at submit time, so submit in topological order or the call fails with `unknown dependency job`. Any non-completed dependency rejects the dependent and the rejection cascades down the chain, so triage the first terminal failure in a chain before letting the rest of the phase drain. Declaring a phase pyramid up front is what collapses N waits into one; the exception is a phase that needs an earlier phase's integrated output, whose base ref would already be stale;
 - `allow_nested_agents`: default `false` and mechanically disabled where the provider supports it.
 
 Every edit assignment must include an environment plan. Supply `setup_commands` that provision everything broker verification needs, or put an explicit no-broker-verification declaration in the task or acceptance criteria naming the lead's central verification command and when it will run. “Do not run tests” without either declaration is invalid. Worktrees are bare; for a monorepo whose dependencies are already installed centrally, the standard setup pattern is to create `<worktree>/node_modules` as a symlink to the valid shared `node_modules` tree, then run the broker commands. Use a repository-appropriate relative or absolute target and do not assume a worktree inherits the source checkout's dependencies.
@@ -42,6 +42,8 @@ The start response includes `serializes_behind`: the active edit jobs in the sam
 
 Return the compact persisted job inventory. Optionally filter by lifecycle status, `run`, or `workflow`.
 
+A job summary carries `task_preview` (the first 160 characters) and `task_bytes`, never the task text: the lead authored that prompt, and replaying it in every list or wait response cost hundreds of kilobytes of its own words per wave. Read the full assignment with `get_worker_artifact({ job_id, artifact: 'prompt' })` when you actually need it.
+
 ### `get_run_status`
 
 Input: `{ run }`. Return totals by status and per-stage rollups for a run. Use this for dashboards.
@@ -56,15 +58,35 @@ Return the terminal broker result. Calling it before the job finishes returns an
 
 ### `wait_for_workers`
 
-Input: `{ run? | job_ids?, timeout_seconds? }`. Target a run or explicit job IDs, including jobs submitted through another client of the same daemon. `timeout_seconds` defaults to 60 and has a maximum of 300. Block until all targeted jobs are terminal or the timeout expires; return `timed_out`, `pending_job_ids`, and terminal summaries.
+Input: `{ run? | job_ids?, timeout_seconds? }`. Target a run or explicit job IDs, including jobs submitted through another client of the same daemon. `timeout_seconds` defaults to 300 and has a maximum of 900. Block until all targeted jobs are terminal or the timeout expires; return `timed_out`, terminal summaries, and `pending`: one entry per still-running worker with `job_id`, `status`, `stage`, `phase`, `elapsed_ms`, and `last_message`.
+
+This is a bounded liveness probe, not a completion channel. Call it once after a launch and read `pending`; re-calling it on an unchanged pending set buys nothing and costs a full response. For a wave that outlives the probe, use the `worker-broker wait` command below.
 
 ### `get_worker_artifact`
 
-Input: `{ job_id, artifact, max_bytes, tail }`, where `artifact` is `prompt|events|stderr|patch|model_result|verification`. Return a bounded content read. Use this instead of shell reads of broker artifact paths.
+Input: `{ job_id, artifact, max_bytes, tail }`, where `artifact` is `prompt|events|stderr|patch|model_result|verification|activity`. Return a bounded content read. Use this instead of shell reads of broker artifact paths.
+
+`activity` is readable while the job is still running: `{ artifact: 'activity', tail: true, max_bytes: 2000 }` is the cheap liveness read for one worker mid-flight. Every other artifact is meaningful only once the job is terminal.
 
 ### `cancel_worker`
 
 Cancel queued work immediately or request process-group termination for running work. Cancellation retains the job record and any final Git evidence the broker can safely collect.
+
+## `worker-broker wait` (background completion wake)
+
+The out-of-process wait for a wave that outlives one `wait_for_workers` probe. Run it as a background shell command and treat its exit as the single wake for the wave, instead of re-polling:
+
+```
+/opt/homebrew/bin/node /Users/ggfincke/Projects/ggfincke-skills/tools/worker-broker/dist/src/cli.js wait --run <run> --json
+```
+
+Select with `--run <run>` or one or more `--job-id <id>`; `--timeout <seconds>` sets the per-call daemon wait (default 900) and the command keeps waiting across calls until the selection is terminal. It connects to the daemon the workers were started on and never spawns one — a spawned daemon would carry a different provider config, so a missing daemon is reported rather than papered over.
+
+Exit codes are the contract a detached caller branches on:
+
+- `0`: every selected worker reached `completed`;
+- `1`: every selected worker is terminal but at least one did not complete — triage with `get_worker_result`;
+- `2`: terminality was never observed (no daemon listening, empty selector, or transport loss). Never read `2` as "the wave finished".
 
 ## Statuses
 

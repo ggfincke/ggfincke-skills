@@ -107,7 +107,7 @@ Before launching any broker worker, emit the resolved plan as a fenced block wit
 ```
 
 - Field types are fixed: every stage field is a scalar — `scope` is one string (summarize multiple packages in prose, never an array), `workers` an integer, `effort` a string or omitted. Renderers may reject shape drift.
-- For multi-wave runs, add an optional `phase` label (one string, e.g. `"wave 1: research"`) to each stage; renderers group stages under their phase in first-appearance order. Omit it for single-wave plans.
+- For multi-phase runs, add a `phase` label (one string, e.g. `"phase 1: research"`) to each stage; renderers group stages under their phase in first-appearance order, and omitting it collapses the plan into one group. The label is display metadata and nothing enforces it — the rule that only the current phase launches is behavioural and lives in the run discipline in `SKILL.md`. Omit it for single-phase plans.
 - Include a `runId`: a short unique identifier for this run (task slug plus a random suffix). Reuse the same `runId` when re-emitting the plan after gate edits; generate a fresh one only for a genuinely new run.
 - After approval, pass the metadata on every `start_worker` call: `run` = the plan's `runId`, `workflow` = the template, `stage` = the stage id. Dashboards correlate live job status to the approved plan through these fields.
 - `workers` is the planned count per stage; `maxWorkers` is the hard budget the approval covers across the whole run.

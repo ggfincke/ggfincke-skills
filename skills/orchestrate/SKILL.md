@@ -20,6 +20,10 @@ A current instruction not to orchestrate wins and remains binding until the user
 
 Own the overall design, delegation boundaries, integration, and final correctness. Treat workers as bounded executors; never delegate architectural ownership or accept their prose as evidence.
 
+## Run discipline
+
+A host may inject these as a collaboration-mode block (456code does); this list is the portable statement for hosts that do not. Each line is normative: run one phase at a time and hold the rest with `depends_on`; address a wave by `run` and read evidence through broker tools rather than the shell; announce a wave before launching it and never leave a running wave silent; keep one durable run checkpoint; stop lead-side shell work at six consecutive commands with no intervening `start_worker`, `get_worker_result`, or user turn; salvage a non-completed result before relaunching it; never claim a self-scheduled resume. The rest of this file supplies the mechanisms and formats, not a second copy of the rules.
+
 ## Establish the change
 
 1. Inspect the repository instructions and enough live code to understand the relevant boundaries.
@@ -44,6 +48,29 @@ Before any `start_worker` call, resolve and present a model plan per [model-plan
 
 The session model is the orchestrator; the plan governs the approved broker execution path and its workers. It does not gate lead-owned work or ordinary subagents.
 
+## Run checkpoint
+
+One file per run, in the integration checkout: `.plans/runs/<runId>.md` where the repository has a plan directory (456code does, and that path is git-ignored), otherwise an untracked `.orchestrate/runs/<runId>.md`. Never a numerically ordered plan file — those are durable designs, not run state. Template:
+
+```markdown
+# run <runId> — <task>
+
+- integration: <absolute repo path> @ <branch> (base <sha>)
+- plan: revision <n>, maxWorkers <n>, used <n>
+- validation: <exact commands>
+- next: <one action>
+
+## phases
+| phase | status | gate |
+|---|---|---|
+
+## jobs
+| job id | stage | phase | scope | disposition |
+|---|---|---|---|---|
+```
+
+`disposition` is one of accepted / salvaged / rejected / cancelled / outstanding. Job status itself stays the broker's to answer: keep the mapping here and read status from `get_run_status`, so a missed write cannot make this file lie.
+
 ## Define each assignment
 
 Include every field required by [worker-contract.md](references/worker-contract.md):
@@ -65,7 +92,7 @@ Use configured providers according to [routing-policy.md](references/routing-pol
 ## Run workers
 
 1. Before an edit wave, group jobs by repository and overlapping `allowed_paths` into serialization lanes. Include setup and verification in each lane's wall-clock estimate, declare an ETA threshold in the plan (30 minutes by default), and account for shared manifests such as `tests/package.json` that can turn a whole wave into one FIFO lane.
-2. Call `start_worker` once per bounded assignment and retain each returned job ID. Inspect `serializes_behind` in every start response; stop and re-gate the wave if its projected lane ETA exceeds the declared threshold. Use `depends_on` when a worker must wait for prior jobs to complete; a failed dependency rejects the dependent.
+2. Call `start_worker` once per bounded assignment and retain each returned job ID. Inspect `serializes_behind` in every start response; stop and re-gate the wave if its projected lane ETA exceeds the declared threshold. Use `depends_on` when a worker must wait for prior jobs to complete; a non-completed dependency rejects the dependent and the rejection cascades down the chain. Dependencies must already exist at submit time, so submit in topological order. Only one phase runs at a time; declaring the whole pyramid up front is what collapses N waits into one. The exception is a phase that needs an earlier phase's integrated output: `base_ref` resolves to an immutable commit when a job is submitted, so submit that phase after the integration lands rather than queueing it ahead.
 3. Use `get_run_status` for run dashboards, `list_workers` with optional `run` or `workflow` filters for inventory, and `get_worker_status` when one job needs attention. On the first terminal failure in a wave, pause new launches, classify it from `failure_class` and broker evidence, record the classification and chosen action, then continue. Unrelated read-only jobs may proceed; do not defer triage to wave end.
 4. Let read-only work run concurrently. Conflicting edit jobs start FIFO; keep semantic conflicts and integration order explicit with `depends_on`.
 5. Use `cancel_worker` when an assignment is obsolete, mis-scoped, or no longer safe, but apply the salvage gate below before canceling, relaunching, or discarding any non-completed terminal job.
@@ -75,11 +102,11 @@ Do not expand a running assignment. Cancel it and start a replacement with the c
 
 ## Progress visibility
 
-The user must never have to ask "status?" — silence during a running wave is a defect in the orchestration, not a neutral state.
+The run-discipline list above carries the norms; these are the mechanics that satisfy them.
 
-1. At wave launch, state the wave size, what each worker owns, and a rough wall-clock estimate.
-2. Immediately after launching workers, call `wait_for_workers` with the run or job IDs and a bounded timeout. Re-call it when `timed_out` is true, using `pending_job_ids` to track unfinished work. Use a Monitor or background shell loop only when `wait_for_workers` is unavailable.
-3. On every wake — monitor event, subagent notification, or user message — lead with a one-to-two-line progress line: `N/M workers done; <what just finished>; next: <step>; ~<time> remaining`. Then continue working.
+1. Immediately after launching, call `wait_for_workers` once with the `run` and a bounded timeout (default 300 seconds, maximum 900). It is a liveness probe, not a completion channel: read its `pending` entries — `job_id`, `status`, `stage`, `phase`, `elapsed_ms`, `last_message` — as the wave's first real snapshot, and never re-call it on an unchanged pending set.
+2. For any wave that outlives that probe, start `worker-broker wait --run <run> --json` as a background shell command and let its exit be the single wake; [worker-contract.md](references/worker-contract.md) carries the absolute command and its three exit codes. For one job mid-flight, `get_worker_artifact` with `artifact: "activity"`, `tail: true`, `max_bytes: 2000` is the cheap liveness read.
+3. On every wake — a completion exit, monitor event, or user message — lead with a one-to-two-line progress line: `N/M workers done; <what just finished>; next: <step>; ~<time> remaining`. Then continue working.
 4. At each wave boundary (all results collected, integration starting, validation running), post the same short progress line unprompted.
 5. For waves expected to run 15+ minutes while the user is likely away, send a PushNotification on wave completion or first failure.
 
@@ -95,11 +122,13 @@ Treat these broker-computed fields as authoritative:
 - changed paths, scope violations, and binary patch;
 - verification commands, exit codes, timeouts, and output artifacts.
 
-Treat the worker summary, assumptions, risks, and follow-ups as leads to inspect. The blanket rule “reject `failed`, `rejected`, or unverified results” is superseded by the salvage gate in [integration-checklist.md](references/integration-checklist.md): inspect every non-completed terminal result before canceling, relaunching, or discarding it. A salvageable patch is integrated only after lead review and central validation, and is recorded as salvaged rather than relabeled `completed`.
+Treat the worker summary, assumptions, risks, and follow-ups as leads to inspect. Apply the salvage gate in [integration-checklist.md](references/integration-checklist.md) to every non-completed terminal result before canceling, relaunching, or discarding it.
 
 Use `get_worker_artifact` for bounded patch, event, stderr, model-result, prompt, and verification reads; do not read broker artifact paths through the shell. Read [integration-checklist.md](references/integration-checklist.md) before applying or merging a worker result. The full normalized result shape is available at [worker-result.schema.json](assets/worker-result.schema.json).
 
-## Recovery after a daemon restart
+## Recovery after a daemon restart or a context compaction
+
+After a compaction, reconcile in this order: the run checkpoint, then `get_run_status`, then `list_workers({ run })`. The broker is authoritative for job status and evidence; the checkpoint is authoritative for intent — which job belonged to which package, what you had already accepted, and what the next action was. Relaunch nothing until the two agree.
 
 The daemon reconciles automatically: it snapshots each interrupted worktree to `change.patch` before cleanup and performs one automatic requeue. Inventory the run with `list_workers`, apply the salvage gate to every requeued or failed job, and never launch a replacement while the original is queued or being requeued. For a build upgrade, use `worker-broker daemon status` and `worker-broker daemon stop --when-idle`; do not kill a busy daemon or bypass its drain.
 
