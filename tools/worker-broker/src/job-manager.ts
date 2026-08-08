@@ -680,6 +680,7 @@ export class JobManager
       {
         providerOutcome = await provider.run({
           job_id: job.job_id,
+          provider_attempt: job.restart_requeues ?? 0,
           request: job.request,
           worktree: created.path,
           job_dir: this.store.jobDir(job.job_id),

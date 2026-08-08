@@ -111,6 +111,7 @@ export interface ModelWorkerResult
 export interface ProviderRunContext
 {
   job_id: string
+  provider_attempt?: number
   request: NormalizedWorkerRequest
   worktree: string
   job_dir: string

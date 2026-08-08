@@ -11,6 +11,7 @@ import type {
   WorkerJob,
   WorkerStatus,
 } from './contracts.js'
+import { runCcusage as runCcusageCommand } from './ccusage.js'
 import { defaultBrokerConfig } from './config.js'
 import { ensureDaemonClient } from './daemon/client.js'
 import type { DaemonClient } from './daemon/protocol.js'
@@ -23,6 +24,7 @@ export interface ParsedCli
   positionals: string[]
   request_path?: string
   state_dir?: string
+  passthrough?: string[]
   pretty: boolean
   when_idle: boolean
 }
@@ -32,6 +34,7 @@ export interface CliDependencies
   connect(config: BrokerConfig): Promise<DaemonClient>
   writeStdout(value: string): void
   readRequest(path: string): Promise<StartWorkerRequest>
+  runCcusage?(stateDir: string, args: string[]): Promise<number>
 }
 
 const TERMINAL_STATUSES = new Set<WorkerStatus>([
@@ -49,6 +52,7 @@ Commands:
   run --request <file>   run one assignment and wait for its terminal result
   list                   list persisted jobs
   result <job-id>        print one persisted job
+  ccusage -- [args...]   include Codex worker usage in stock ccusage
   daemon status          print shared daemon status
   daemon stop            stop the daemon when no jobs are active
   daemon stop --when-idle drain active jobs, then stop the daemon
@@ -71,6 +75,12 @@ export function parseCli(argv: string[]): ParsedCli
   for (let index = 0; index < rest.length; index += 1)
   {
     const argument = rest[index]
+    if (argument === '--')
+    {
+      if (command !== 'ccusage') throw new Error('unknown option: --')
+      parsed.passthrough = rest.slice(index + 1)
+      break
+    }
     if (argument === '--request')
     {
       const value = rest[++index]
@@ -142,6 +152,20 @@ export async function runCli(
   {
     dependencies.writeStdout(usage())
     return 0
+  }
+  if (parsed.command === 'ccusage')
+  {
+    if (
+      parsed.positionals.length > 0 ||
+      parsed.request_path !== undefined ||
+      parsed.pretty ||
+      parsed.when_idle
+    )
+    {
+      throw new Error('ccusage arguments must follow --')
+    }
+    const runCcusage = dependencies.runCcusage ?? runCcusageCommand
+    return await runCcusage(config.state_dir, parsed.passthrough ?? [])
   }
   const client = await dependencies.connect(config)
   try
