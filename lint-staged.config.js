@@ -1,8 +1,8 @@
 // lint-staged.config.js
-// staged TS/JS get eslint+prettier; any staged .py runs the python style wrapper
+// staged TS/JS and root-owned Python get exact-file formatting before snapshot validation
 
 export default {
-  '*.{js,mjs,ts,tsx}': ['eslint --fix', 'prettier --write'],
-  // wrapper scans configured roots; do not append staged paths
-  '*.py': () => 'bash scripts/checks/check-python-style.sh --format',
+  '*.{js,mjs,cjs,ts,tsx}': ['eslint --fix', 'prettier --write'],
+  '{scripts/**/*.py,tests/**/*.py,projects/**/*.py,skills/comment-style/assets/check_comment_style.py}':
+    'bash scripts/checks/check-python-style.sh --format-files',
 }
