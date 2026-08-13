@@ -103,7 +103,7 @@ def is_code_like_token(token: str) -> bool:
 
 
 def is_tagged_description(description: str) -> bool:
-	return bool(re.match(r"^(?:[*!?](?:\s|$)|todo(?:\([^)]*\))?:?\s)", description, re.I))
+	return bool(re.match(r"^(?:[*!?](?:\s|$)|todo(?:\([^)]*\))?:?\s)", description, re.IGNORECASE))
 
 
 def normalize_header_description(line: str, prefix: str) -> str:
@@ -486,11 +486,7 @@ def fix_swift_file(path: Path) -> bool:
 		if inside_literal or comment_index == -1:
 			continue
 		comment = body[comment_index:]
-		if (
-			comment.startswith("///")
-			or comment.startswith("// MARK:")
-			or SWIFT_TOOLING_RE.match(comment)
-		):
+		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
 		normalized = normalize_comment(comment)
 		if normalized != comment:
@@ -608,11 +604,7 @@ def check_swift_file(path: Path) -> list[Violation]:
 			continue
 		prefix = body[:comment_index]
 		comment = body[comment_index:]
-		if (
-			comment.startswith("///")
-			or comment.startswith("// MARK:")
-			or SWIFT_TOOLING_RE.match(comment)
-		):
+		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
 		if "→" in comment:
 			violations.append(Violation(path, index, "use ASCII ->, not the Unicode arrow"))
@@ -688,7 +680,13 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--python", action="store_true", help="include Python files")
 	parser.add_argument("--swift", action="store_true", help="include Swift files")
 	parser.add_argument("--root", type=Path, default=None, help="repo root for header paths")
-	parser.add_argument("--python-root", action="append", type=Path, default=None, metavar="DIR")
+	python_scope = parser.add_mutually_exclusive_group()
+	python_scope.add_argument(
+		"--python-root", action="append", type=Path, default=None, metavar="DIR"
+	)
+	python_scope.add_argument(
+		"--python-file", action="append", type=Path, default=None, metavar="FILE"
+	)
 	parser.add_argument("--swift-root", type=Path, default=None, metavar="DIR")
 	return parser.parse_args()
 
@@ -700,6 +698,7 @@ def main() -> int:
 	PYTHON_ROOTS = (
 		tuple(path.resolve() for path in args.python_root) if args.python_root else (ROOT,)
 	)
+	python_files = tuple(path.resolve() for path in args.python_file) if args.python_file else ()
 	SWIFT_ROOT = args.swift_root.resolve() if args.swift_root else ROOT
 	include_python = args.python or not args.swift
 	include_swift = args.swift or not args.python
@@ -707,14 +706,22 @@ def main() -> int:
 	bad_roots: list[Path] = []
 	if include_python:
 		bad_roots.extend(root for root in PYTHON_ROOTS if not is_within(root, ROOT))
+		bad_roots.extend(path for path in python_files if not is_within(path, ROOT))
 	if include_swift and not is_within(SWIFT_ROOT, ROOT):
 		bad_roots.append(SWIFT_ROOT)
 	if bad_roots:
 		for path in bad_roots:
 			print(f"error: {path} is outside --root {ROOT}", file=sys.stderr)
 		return 2
+	bad_files = [path for path in python_files if path.suffix != ".py" or not path.is_file()]
+	if bad_files:
+		for path in bad_files:
+			print(f"error: {path} is not an existing Python file", file=sys.stderr)
+		return 2
 
-	python_paths = iter_python_paths() if include_python else []
+	python_paths = sorted(set(python_files)) if include_python and python_files else []
+	if include_python and not python_files:
+		python_paths = iter_python_paths()
 	swift_paths = iter_swift_paths() if include_swift else []
 	# --fix only fixes; applying a fix is not a failure, so an explicit --check owns the exit code
 	if args.fix:

@@ -1,10 +1,25 @@
 #!/usr/bin/env sh
 # scripts/hooks/pre-commit
-# validate skills, run regression tests, & lint-staged format fixes
+# format staged files, then validate & test the resulting index snapshot
 set -e
 
 repo_root=$(git rev-parse --show-toplevel)
-python3 "$repo_root/scripts/validate-skills.py"
-python3 -m unittest discover -s "$repo_root/tests" -p 'test_*.py'
 cd "$repo_root"
-npx lint-staged
+
+config_dir=$(mktemp -d "${TMPDIR:-/tmp}/ggfincke-lint-staged-config.XXXXXX")
+snapshot_root=$(mktemp -d "${TMPDIR:-/tmp}/ggfincke-pre-commit.XXXXXX")
+trap 'rm -rf -- "$config_dir" "$snapshot_root"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# indexed config, not the dirty worktree copy; .mjs so export default loads outside type=module
+git show :lint-staged.config.js > "$config_dir/lint-staged.config.mjs"
+npx lint-staged --config "$config_dir/lint-staged.config.mjs"
+
+git checkout-index --all --prefix="$snapshot_root/"
+# hook GIT_* vars make nested git (worktree add) treat a gitfile as a directory
+unset GIT_INDEX_FILE GIT_PREFIX GIT_DIR
+python3 "$snapshot_root/scripts/validate-skills.py"
+cd "$snapshot_root"
+python3 -m unittest discover -s tests -p 'test_*.py'

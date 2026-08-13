@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,18 @@ import support
 sync = support.load_module("sync_skills", support.SCRIPTS_DIR / "sync-skills.py")
 always_on = sync.always_on
 SYNC_PATH = support.SCRIPTS_DIR / "sync-skills.py"
+
+
+class FailFourthReplaceOps(sync.sync_transaction.FileOps):
+	def __init__(self) -> None:
+		self.replaces = 0
+
+	def before(self, action: str, path: Path) -> None:
+		if action != "replace":
+			return
+		self.replaces += 1
+		if self.replaces == 4:
+			raise OSError(f"injected second-root promote failure at {path}")
 
 
 class PathGuards(unittest.TestCase):
@@ -134,10 +147,32 @@ class CliRefusesDangerousTargets(unittest.TestCase):
 		with tempfile.TemporaryDirectory() as project:
 			result = support.run_script(
 				SYNC_PATH,
-				["--project-repo", "tierlistbuilder", "--project", project, "--dry-run"],
+				["--project-repo", "tierlistbuilder", "--project", project],
 			)
 			self.assertEqual(result.returncode, 0, result.stderr)
-			self.assertIn("would copy", result.stdout)
+			installed = Path(project) / ".agents" / "skills" / "seed-example-sourcing"
+			self.assertTrue(installed.is_dir())
+			self.assertFalse((Path(project) / ".claude" / "skills").exists())
+			helper_names = [
+				"batch-sourcing-wf.template.js",
+				"cover-sourcing-wf.template.js",
+				"simulate-cover-surfaces.py",
+			]
+			skill_text = (installed / "SKILL.md").read_text()
+			for helper_name in helper_names:
+				relative = Path("scripts") / helper_name
+				self.assertIn(f"]({relative.as_posix()})", skill_text)
+				self.assertTrue((installed / relative).is_file())
+			self.assertTrue(
+				(
+					Path(project)
+					/ ".agents"
+					/ "skills"
+					/ "seed-example-sourcing"
+					/ "scripts"
+					/ "simulate-cover-surfaces.py"
+				).is_file()
+			)
 
 
 class PruneOnlyTouchesOrphanedInstalls(unittest.TestCase):
@@ -256,13 +291,304 @@ class AlwaysOnUpdatesAreAllOrNothing(unittest.TestCase):
 				"AGENTS_HOME": str(home / ".agents"),
 				"CLAUDE_HOME": str(home / ".claude"),
 			}
-			with mock.patch.dict(os.environ, env):
-				with self.assertRaises(SystemExit) as caught:
-					sync.sync_always_on(["codex", "agents", "claude"], dry_run=False)
+			with (
+				mock.patch.dict(os.environ, env),
+				self.assertRaises(SystemExit) as caught,
+			):
+				sync.sync_always_on(["codex", "agents", "claude"], dry_run=False)
 
 			self.assertIn("CLAUDE.md", str(caught.exception))
 			self.assertNotIn(always_on.REGION_BEGIN, codex.read_text(encoding="utf-8"))
 			self.assertNotIn(always_on.REGION_BEGIN, agents.read_text(encoding="utf-8"))
+
+	def test_instruction_symlink_is_preserved_while_its_referent_updates(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			home = root / "claude"
+			home.mkdir()
+			physical = root / "managed" / "CLAUDE.md"
+			physical.parent.mkdir()
+			physical.write_text("my notes\n", encoding="utf-8")
+			logical = home / "CLAUDE.md"
+			logical.symlink_to(physical)
+
+			with (
+				mock.patch.dict(os.environ, {"CLAUDE_HOME": str(home)}),
+				mock.patch.object(
+					sync, "collect_always_on", return_value=[("demo", "Demo", "rule")]
+				),
+			):
+				sync.sync_always_on(["claude"], dry_run=False)
+
+			self.assertTrue(logical.is_symlink())
+			self.assertEqual(logical.resolve(), physical.resolve())
+			self.assertIn(always_on.REGION_BEGIN, physical.read_text(encoding="utf-8"))
+
+
+class SourceAndZeroBlockPreflight(unittest.TestCase):
+	def test_direct_sync_of_invalid_selected_package_creates_no_target(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			source = root / "skills"
+			skill = source / "demo-skill"
+			skill.mkdir(parents=True)
+			(skill / "SKILL.md").write_text(
+				"---\nname: demo-skill\ndescription: d\nmodel: opus\n---\n",
+				encoding="utf-8",
+			)
+			home = root / "codex"
+			with (
+				mock.patch.object(sync, "SKILLS_DIR", source),
+				mock.patch.dict(os.environ, {"CODEX_HOME": str(home)}),
+				mock.patch.object(
+					sys,
+					"argv",
+					[
+						"sync-skills.py",
+						"--target",
+						"codex",
+						"--skill",
+						"demo-skill",
+						"--skip-always-on",
+					],
+				),
+				self.assertRaises(SystemExit),
+			):
+				sync.main()
+
+			self.assertFalse((home / "skills").exists())
+
+	def test_unselected_malformed_always_on_source_blocks_selected_inventory(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			base = Path(directory) / "skills"
+			good = base / "good"
+			bad = base / "bad"
+			good.mkdir(parents=True)
+			bad.mkdir(parents=True)
+			(good / "SKILL.md").write_text(
+				"---\nname: good\ndescription: d\n---\n", encoding="utf-8"
+			)
+			(bad / "SKILL.md").write_text(
+				"---\nname: bad\ndescription: d\n---\n<!-- always-on:end -->\n",
+				encoding="utf-8",
+			)
+			with self.assertRaises(SystemExit):
+				sync._inspect_source(base, ["good"], require_all=True)
+
+	def test_malformed_instruction_preflight_blocks_forced_skill_replacement(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			source = root / "skills"
+			skill = source / "demo-skill"
+			skill.mkdir(parents=True)
+			(skill / "SKILL.md").write_text(
+				"---\nname: demo-skill\ndescription: d\n---\nnew\n", encoding="utf-8"
+			)
+			home = root / "codex"
+			destination = home / "skills" / "demo-skill"
+			destination.mkdir(parents=True)
+			(destination / "SKILL.md").write_text("old\n", encoding="utf-8")
+			home.mkdir(exist_ok=True)
+			(home / "AGENTS.md").write_text(
+				f"notes\n{always_on.REGION_BEGIN}\norphan\n", encoding="utf-8"
+			)
+
+			with (
+				mock.patch.object(sync, "SKILLS_DIR", source),
+				mock.patch.dict(os.environ, {"CODEX_HOME": str(home)}),
+				mock.patch.object(
+					sys,
+					"argv",
+					[
+						"sync-skills.py",
+						"--target",
+						"codex",
+						"--skill",
+						"demo-skill",
+						"--force",
+					],
+				),
+				self.assertRaises(SystemExit),
+			):
+				sync.main()
+
+			self.assertEqual((destination / "SKILL.md").read_text(), "old\n")
+			self.assertFalse(list((home / "skills").glob(".*.ggfincke-sync.*")))
+
+	def test_empty_portable_catalog_still_removes_generated_region(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			source = root / "skills"
+			source.mkdir()
+			home = root / "codex"
+			home.mkdir()
+			instruction = home / "AGENTS.md"
+			region = always_on.render_region([("old", "Old", "old rule")])
+			instruction.write_text(f"my notes\n\n{region}\n", encoding="utf-8")
+
+			with (
+				mock.patch.object(sync, "SKILLS_DIR", source),
+				mock.patch.dict(os.environ, {"CODEX_HOME": str(home)}),
+				mock.patch.object(sys, "argv", ["sync-skills.py", "--target", "codex"]),
+			):
+				code = sync.main()
+
+			self.assertEqual(code, 0)
+			self.assertNotIn(always_on.REGION_BEGIN, instruction.read_text(encoding="utf-8"))
+			self.assertIn("my notes", instruction.read_text(encoding="utf-8"))
+
+	def test_empty_catalog_refuses_a_removed_source_artifact(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			source = root / "skills"
+			source.mkdir()
+			home = root / "codex"
+			target = home / "skills"
+			target.mkdir(parents=True)
+			artifact = target / ".removed-skill.ggfincke-sync.crashed.stage"
+			artifact.mkdir()
+			(artifact / "partial").write_text("recover me\n", encoding="utf-8")
+
+			with (
+				mock.patch.object(sync, "SKILLS_DIR", source),
+				mock.patch.dict(os.environ, {"CODEX_HOME": str(home)}),
+				mock.patch.object(
+					sys,
+					"argv",
+					["sync-skills.py", "--target", "codex", "--skip-always-on"],
+				),
+				self.assertRaises(SystemExit) as caught,
+			):
+				sync.main()
+
+			self.assertIn(str(artifact), str(caught.exception))
+			self.assertIn("manual recovery", str(caught.exception))
+			self.assertEqual((artifact / "partial").read_text(encoding="utf-8"), "recover me\n")
+
+	def test_equivalent_symlinked_instruction_refuses_a_physical_stale_artifact(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			home = root / "codex"
+			home.mkdir()
+			physical = root / "managed" / "instructions.md"
+			physical.parent.mkdir()
+			items = [("demo", "Demo", "rule")]
+			desired = always_on.apply_region("", always_on.render_region(items))
+			physical.write_text(desired, encoding="utf-8")
+			logical = home / "AGENTS.md"
+			logical.symlink_to(physical)
+			artifact = physical.parent / (f".{physical.name}.ggfincke-sync.crashed.backup")
+			artifact.write_text("recover me\n", encoding="utf-8")
+
+			with (
+				mock.patch.dict(os.environ, {"CODEX_HOME": str(home)}),
+				self.assertRaises(SystemExit) as caught,
+			):
+				sync.build_sync_plan(
+					[],
+					root / "skills",
+					[],
+					"copy",
+					force=False,
+					instruction_agents=["codex"],
+					always_on_items=items,
+				)
+
+			self.assertIn(str(artifact), str(caught.exception))
+			self.assertIn("manual recovery", str(caught.exception))
+			self.assertTrue(logical.is_symlink())
+			self.assertEqual(logical.resolve(), physical.resolve())
+			self.assertEqual(physical.read_text(encoding="utf-8"), desired)
+			self.assertEqual(artifact.read_text(encoding="utf-8"), "recover me\n")
+
+
+class ApplyReportingMatchesCommittedState(unittest.TestCase):
+	def test_later_root_failure_never_prints_rolled_back_action_as_success(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			source = root / "source" / "demo-skill"
+			source.mkdir(parents=True)
+			(source / "SKILL.md").write_text(
+				"---\nname: demo-skill\ndescription: d\n---\nnew\n", encoding="utf-8"
+			)
+			targets = []
+			for label in ("first", "second"):
+				target = root / label
+				destination = target / "demo-skill"
+				destination.mkdir(parents=True)
+				(destination / "SKILL.md").write_text("old\n", encoding="utf-8")
+				targets.append((label, target))
+			plan = sync.build_sync_plan([source], source.parent, targets, "copy", force=True)
+
+			report = sync.sync_transaction.apply_plan(
+				plan.transaction, ops=FailFourthReplaceOps(), run_id="test"
+			)
+			output = "\n".join(sync._report_lines(plan, report))
+
+			self.assertFalse(report.success)
+			self.assertIn("[first] copied demo-skill", output)
+			self.assertNotIn("[second] copied demo-skill", output)
+			self.assertIn("[second] failed", output)
+			self.assertIn("new", (root / "first" / "demo-skill" / "SKILL.md").read_text())
+			self.assertEqual((root / "second" / "demo-skill" / "SKILL.md").read_text(), "old\n")
+
+
+class DistinctSymlinkInstallsRemainDistinctDestinations(unittest.TestCase):
+	def test_multi_root_force_copy_replaces_links_to_the_same_source(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			source = root / "source" / "demo-skill"
+			source.mkdir(parents=True)
+			(source / "SKILL.md").write_text(
+				"---\nname: demo-skill\ndescription: d\n---\ncanonical\n",
+				encoding="utf-8",
+			)
+			targets = []
+			for label in ("first", "second"):
+				target = root / label
+				target.mkdir()
+				(target / "demo-skill").symlink_to(source, target_is_directory=True)
+				targets.append((label, target))
+
+			plan = sync.build_sync_plan([source], source.parent, targets, "copy", force=True)
+			report = sync.sync_transaction.apply_plan(plan.transaction, run_id="test")
+
+			self.assertTrue(report.success, report.events)
+			for _, target in targets:
+				destination = target / "demo-skill"
+				self.assertFalse(destination.is_symlink())
+				self.assertIn("canonical", (destination / "SKILL.md").read_text(encoding="utf-8"))
+			self.assertIn("canonical", (source / "SKILL.md").read_text(encoding="utf-8"))
+			self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
+
+	def test_multi_root_prune_removes_links_to_the_same_deleted_source(self) -> None:
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			base_dir = root / "source"
+			base_dir.mkdir()
+			deleted_source = base_dir / "gone-upstream"
+			targets = []
+			for label in ("first", "second"):
+				target = root / label
+				target.mkdir()
+				(target / "gone-upstream").symlink_to(deleted_source, target_is_directory=True)
+				targets.append((label, target))
+
+			plan = sync.build_sync_plan(
+				[],
+				base_dir,
+				targets,
+				"copy",
+				force=False,
+				prune_enabled=True,
+				source_names=set(),
+			)
+			report = sync.sync_transaction.apply_plan(plan.transaction, run_id="test")
+
+			self.assertTrue(report.success, report.events)
+			for _, target in targets:
+				self.assertFalse((target / "gone-upstream").is_symlink())
+			self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
 
 
 if __name__ == "__main__":

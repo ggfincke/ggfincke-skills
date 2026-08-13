@@ -1,0 +1,37 @@
+// tools/worker-broker/scripts/emit-build-id.mjs
+// stamp dist with a content hash so daemon & clients can detect mixed builds
+
+import { createHash } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+const distSource = path.join(root, 'dist', 'src')
+
+function collect(directory)
+{
+  const files = []
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true }))
+  {
+    const full = path.join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...collect(full))
+    else if (entry.name.endsWith('.js')) files.push(full)
+  }
+  return files.sort()
+}
+
+const hash = createHash('sha256')
+for (const file of collect(distSource))
+{
+  hash.update(path.relative(root, file))
+  hash.update('\0')
+  hash.update(fs.readFileSync(file))
+}
+
+const buildId = hash.digest('hex').slice(0, 16)
+fs.writeFileSync(
+  path.join(root, 'dist', 'build-id.json'),
+  `${JSON.stringify({ build_id: buildId, emitted_at: new Date().toISOString() })}\n`
+)
+process.stdout.write(`build-id ${buildId}\n`)

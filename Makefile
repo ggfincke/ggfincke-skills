@@ -63,7 +63,7 @@ sync-project-repo: check ## Install projects/REPO skills into that repo's .agent
 	@test -n "$(PROJECT)" || { echo "set PROJECT=/path/to/repo"; exit 1; }
 	$(PYTHON) $(SCRIPTS)/sync-skills.py --project-repo "$(REPO)" --project "$(PROJECT)" --mode link
 
-install-hooks: ## Route git hooks at scripts/hooks (validate + tests + lint-staged)
+install-hooks: ## Route hooks: owned staged formatting, then final-index validation + tests
 	git config core.hooksPath $(HOOKS_DIR)
 	@echo "git hooks -> $(HOOKS_DIR)"
 

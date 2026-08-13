@@ -7,6 +7,8 @@ description: "Audit existing user-facing docs against the current code for drift
 
 You are auditing existing, user-facing documentation against the current code to find where the docs have drifted, verifying each discrepancy against live code, aggregating into one findings doc, and staying read-only until the user approves which to fix. This is non-destructive: you correct what already exists, you do not regenerate it.
 
+Copy [the packaged template](assets/templates/docs-freshness-audit-template.md) to one concrete dated document, normally `dev-docs/docs-freshness-audit-YYYY-MM-DD.md`. Never edit or overwrite the packaged template; update an existing audit only when the user points to the same scope. That concrete audit is the sole permitted write during the review; existing user-facing docs remain untouched until approval.
+
 This skill's axis is docs-vs-code. It is the docs-vs-code cousin of consolidation-audit (which is code-vs-code), and it borrows the evidence-before-verdict discipline of verify-review-findings (keeping its own doc-specific verdict set). It is not the documentation plugin: that authors and generates new docs; this audits and corrects what is already shipped. Do not write fresh docs here - find drift, verify it, and propose corrections in place.
 
 Two limbs, run whichever the input calls for (often both):
@@ -51,7 +53,7 @@ Start by reading the repo's conventions (AGENTS.md / CLAUDE.md / README) for bui
 1. **Inventory the in-scope docs.** List every user-facing doc in scope. Break each into atomic, checkable claims - one claim = one assertion about one thing (one flag, one path, one config key, one count).
 2. **Verify each claim against live code.** Read the code, run the `--help`, confirm the file/flag/route/key exists, grep for the symbol. For the changelog limb, walk `git log` since the last release tag and map merged commits to Keep a Changelog sections (Added / Changed / Fixed / Removed / Deprecated / Security).
 3. **Classify each claim** (see Classification) with cited evidence.
-4. **Aggregate into one findings doc** using the template, and present it. Stay read-only until the user approves which to fix.
+4. **Aggregate into one concrete findings document** copied from the packaged template, and present it. That concrete document is the findings record and source of truth. Stay read-only until the user approves which to fix.
 5. **After approval, hand off** (see After approval).
 
 ## Classification
@@ -68,7 +70,7 @@ For the changelog limb, frame findings as: entries to add to Unreleased (merged 
 
 ## Required output before edits
 
-One findings doc (use the template). It must contain:
+One concrete findings document, copied from the packaged template. It must contain:
 
 - Scope and the doc inventory you audited.
 - A per-claim findings table: claim, location, verdict, evidence, proposed fix.
@@ -95,4 +97,4 @@ Only claim what you verified. Do not assert the rest of the docs are accurate - 
 - Siblings: consolidation-audit is the code-vs-code cousin and shares this doc shape and the Current/verified (Considered & Rejected) discipline; verify-review-findings supplies the evidence-before-verdict rule, though there you triage external claims and here you generate findings about the docs; mega-review is the multi-lens orchestrator, not this; phased-implementation is the after-approval handoff. The changelog limb follows the public Keep a Changelog standard (keepachangelog.com), not a skill in this repo.
 - The documentation plugin authors new docs from scratch; this skill audits and corrects what already exists. If the user wants brand-new docs, that is the plugin's job, not this one.
 - references/usage.md has first-turn invocation variants by input (a single README, the whole docs/ tree, changelog/version-from-git, a manifest/marketplace listing, stale screenshots, a pre-release sweep).
-- assets/templates/docs-freshness-audit-template.md is the findings doc: scope, doc inventory, per-claim findings table, missing-from-docs, current/verified, and the recommended update sequence.
+- assets/templates/docs-freshness-audit-template.md is the packaged template to copy; the concrete audit document is the findings record and source of truth, with scope, doc inventory, per-claim findings table, missing-from-docs, current/verified, and the recommended update sequence.

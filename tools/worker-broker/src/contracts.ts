@@ -1,12 +1,72 @@
 // tools/worker-broker/src/contracts.ts
 // define broker requests, lifecycle state, provider outcomes, & computed results
 
-type ProviderName = 'codex' | 'cursor' | 'coral' | 'claude'
-export type WorkerMode = 'read' | 'edit'
-export type WorkerStatus =
-  'queued' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
+export const PROVIDER_NAMES = ['codex', 'cursor', 'coral', 'claude'] as const
+export const WORKER_MODES = ['read', 'edit'] as const
+export const WORKER_STATUSES = [
+  'queued',
+  'running',
+  'completed',
+  'failed',
+  'rejected',
+  'cancelled',
+] as const
+export const TERMINAL_WORKER_STATUSES = [
+  'completed',
+  'failed',
+  'rejected',
+  'cancelled',
+] as const
+export const FAILURE_CLASSES = [
+  'environment',
+  'model',
+  'broker_fault',
+  'scope',
+  'verification',
+] as const
+export const REASONING_EFFORTS = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+] as const
 
-type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+export type ProviderName = (typeof PROVIDER_NAMES)[number]
+export type WorkerMode = (typeof WORKER_MODES)[number]
+export type WorkerStatus = (typeof WORKER_STATUSES)[number]
+export type TerminalWorkerStatus = (typeof TERMINAL_WORKER_STATUSES)[number]
+
+const CODEX_EVENT_LOG_PATTERN = /^events\.attempt-(0|[1-9]\d*)\.jsonl$/u
+
+export function workerEventLogFileName(
+  provider: ProviderName,
+  attempt: number
+): string
+{
+  if (provider !== 'codex') return 'events.jsonl'
+  if (!Number.isSafeInteger(attempt) || attempt < 0)
+  {
+    throw new Error(`invalid Codex provider attempt: ${attempt}`)
+  }
+  return `events.attempt-${attempt}.jsonl`
+}
+
+export function codexEventLogAttempt(fileName: string): number | undefined
+{
+  const match = CODEX_EVENT_LOG_PATTERN.exec(fileName)
+  if (match === null) return undefined
+  const attempt = Number(match[1])
+  return Number.isSafeInteger(attempt) ? attempt : undefined
+}
+
+// why a terminal job failed, so clients can tell salvageable work from lost work:
+// environment = setup/toolchain defect (exit 126/127, setup failure) — patch usually intact;
+// model = provider process/output defect; broker_fault = broker restart/state/ownership;
+// scope = allowed-path or setup-attribution violation; verification = genuine nonzero verification
+export type FailureClass = (typeof FAILURE_CLASSES)[number]
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 
 export type ActivityPhase = 'preparing' | 'working' | 'verifying' | 'finalizing'
 export type ActivityStatus = 'started' | 'completed' | 'failed'
@@ -42,7 +102,7 @@ export type ActivityRecord =
 interface VerificationCommandInput
 {
   command: string
-  timeout_seconds?: number
+  timeout_seconds?: number | undefined
 }
 
 export type VerificationInput = string | VerificationCommandInput
@@ -52,19 +112,19 @@ export interface StartWorkerRequest
   provider: ProviderName
   mode: WorkerMode
   repo: string
-  base_ref?: string
+  base_ref?: string | undefined
   task: string
   allowed_paths: string[]
-  acceptance_criteria?: string[]
-  setup_commands?: VerificationInput[]
-  verification_commands?: VerificationInput[]
-  model?: string
-  effort?: ReasoningEffort
-  stage?: string
-  workflow?: string
-  run?: string
-  depends_on?: string[]
-  allow_nested_agents?: boolean
+  acceptance_criteria?: string[] | undefined
+  setup_commands?: VerificationInput[] | undefined
+  verification_commands?: VerificationInput[] | undefined
+  model?: string | undefined
+  effort?: ReasoningEffort | undefined
+  stage?: string | undefined
+  workflow?: string | undefined
+  run?: string | undefined
+  depends_on?: string[] | undefined
+  allow_nested_agents?: boolean | undefined
 }
 
 export interface NormalizedVerificationCommand
@@ -101,9 +161,17 @@ export interface ModelWorkerResult
   follow_ups: string[]
 }
 
+/** Durable identity for one broker-owned detached process-group supervisor. */
+export interface ProcessIdentity
+{
+  pid: number
+  token: string
+}
+
 export interface ProviderRunContext
 {
   job_id: string
+  provider_attempt?: number
   request: NormalizedWorkerRequest
   worktree: string
   job_dir: string
@@ -112,7 +180,8 @@ export interface ProviderRunContext
   stderr_path: string
   model_result_path: string
   signal: AbortSignal
-  on_process_started: (pid: number) => void | Promise<void>
+  on_process_started: (identity: ProcessIdentity) => void | Promise<void>
+  on_process_finished: (identity: ProcessIdentity) => void | Promise<void>
   on_activity?: (activity: ActivityInput) => void
 }
 
@@ -159,7 +228,7 @@ export interface VerificationResult
 export interface WorkerResult
 {
   job_id: string
-  status: WorkerStatus
+  status: TerminalWorkerStatus
   provider: ProviderName
   mode: WorkerMode
   repo: string
@@ -191,6 +260,7 @@ export interface WorkerResult
   process_exit_code?: number | null
   process_signal?: NodeJS.Signals | null
   error?: string
+  failure_class?: FailureClass
   created_at: string
   started_at?: string
   completed_at?: string
@@ -203,14 +273,62 @@ export interface WorkerJob
   status: WorkerStatus
   request: NormalizedWorkerRequest
   base_sha: string
+  setup_paths?: string[]
+  setup_tree_sha?: string
   branch?: string
   worktree?: string
   process_id?: number
+  process_token?: string
   restart_requeues?: number
   created_at: string
   started_at?: string
   completed_at?: string
   result?: WorkerResult
+}
+
+/** Bounded lifecycle and assignment projection for routine broker reads. */
+export interface WorkerSummary
+{
+  job_id: string
+  status: WorkerStatus
+  provider: ProviderName
+  mode: WorkerMode
+  task_preview: string
+  task_bytes: number
+  repo: string
+  allowed_paths: string[]
+  base_sha: string
+  stage?: string | undefined
+  workflow?: string | undefined
+  run?: string | undefined
+  depends_on: string[]
+  model?: string | undefined
+  effort?: ReasoningEffort | undefined
+  branch?: string | undefined
+  worktree?: string | undefined
+  created_at: string
+  started_at?: string | undefined
+  completed_at?: string | undefined
+  elapsed_ms?: number | undefined
+  changed_file_count: number
+  scope_violation_count: number
+  failure_class?: FailureClass | undefined
+  error_preview?: string | undefined
+  error_bytes?: number | undefined
+}
+
+/** One earlier edit admission that this job must serialize behind. */
+export interface EditSerializationConflict
+{
+  job_id: string
+  overlapping_paths: string[]
+}
+
+/** Durable manager admission plus scheduling metadata captured at that instant. */
+export interface WorkerAdmission
+{
+  job: WorkerSummary
+  serializes_behind: EditSerializationConflict[]
 }
 
 export interface BrokerConfig

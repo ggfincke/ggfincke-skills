@@ -9,7 +9,8 @@
     "worker-broker-mcp": "dist/src/server.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/emit-build-id.mjs",
+    "ccusage": "npm run build --silent >/dev/null && node dist/src/cli.js ccusage --",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "npm run clean && npm run build && node --test 'dist/tests/**/*.test.js'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "26.1.2",
+    "ajv": "8.20.0",
     "typescript": "7.0.2"
   },
   "dependencies": {

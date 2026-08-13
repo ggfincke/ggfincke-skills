@@ -9,7 +9,7 @@ You are doing deliberate Git history rewrite work. Your job is to preserve the u
 
 ## Start Here
 
-Run `scripts/git-snapshot.sh` first from the target repo. If the script is unavailable, manually collect the same facts: branch, HEAD, upstream, default branch, merge-base, staged/unstaged/untracked files, submodules, worktrees, recent log, and ahead/behind state.
+Run [this skill's snapshot helper](scripts/git-snapshot.sh) first from the target repo. If the script is unavailable, manually collect the same facts: branch, HEAD, upstream, default branch, merge-base, staged/unstaged/untracked files, submodules, worktrees, recent log, and ahead/behind state.
 
 Then classify the request:
 
@@ -47,7 +47,7 @@ Approval can be a direct instruction such as "rewrite and force-push this branch
 
 ## Execution Pattern
 
-1. Orient: run `scripts/git-snapshot.sh`, then inspect any commit range involved in the request.
+1. Orient: run [this skill's snapshot helper](scripts/git-snapshot.sh), then inspect any commit range involved in the request.
 2. Confirm scope: identify the commits to keep, combine, split, drop, or move.
 3. Backup: create a local backup branch from the pre-op HEAD.
 4. Rewrite: use the relevant playbook from `references/playbooks.md`.

@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { parseActivitySummary } from '../activity.js'
 import { securePrivateFile, writePrivateFile } from '../artifact.js'
 import { assignmentPrompt } from '../assignment-prompt.js'
+import {
+  codexEventModel,
+  persistCodexUsageEvent,
+  type CodexUsageSource,
+} from '../ccusage.js'
 import type {
   ActivityInput,
   BrokerConfig,
@@ -104,7 +109,17 @@ export class CodexProvider implements WorkerProvider
     const prompt = assignmentPrompt(context)
     await writePrivateFile(context.prompt_path, prompt)
     let workerSessionId: string | undefined
+    // * effective_model is provider evidence: it stays undefined until Codex
+    // reports a model, so it can disagree with the approved plan binding
     let effectiveModel: string | undefined
+    // pricing needs a model name whether or not Codex reports one, so the
+    // requested binding seeds usage accounting only
+    const requestedModel =
+      context.request.model ?? this.config.default_codex_model
+    const attempt = context.provider_attempt ?? 0
+    let turnIndex = 0
+    let usageCaptureFailed = false
+    let usageWrites = Promise.resolve()
     const processResult = await runProcess({
       command: this.config.codex_binary,
       args: buildCodexArgs(context, this.config),
@@ -114,6 +129,7 @@ export class CodexProvider implements WorkerProvider
       stderr_path: context.stderr_path,
       signal: context.signal,
       on_process_started: context.on_process_started,
+      on_process_finished: context.on_process_finished,
       on_stdout_line: (line) =>
       {
         const activity = parseCodexActivity(line)
@@ -128,16 +144,52 @@ export class CodexProvider implements WorkerProvider
           {
             workerSessionId = event.thread_id
           }
-          if (typeof event.model === 'string') effectiveModel = event.model
+          effectiveModel = codexEventModel(event) ?? effectiveModel
+          if (event.type === 'turn.completed')
+          {
+            const source: CodexUsageSource = {
+              job_id: context.job_id,
+              attempt,
+              turn_index: turnIndex,
+              timestamp: new Date().toISOString(),
+              provenance: 'captured',
+            }
+            const pricingModel = effectiveModel ?? requestedModel
+            if (pricingModel !== undefined) source.model = pricingModel
+            turnIndex += 1
+            usageWrites = usageWrites
+              .then(async () =>
+              {
+                await persistCodexUsageEvent(
+                  this.config.state_dir,
+                  event,
+                  source
+                )
+              })
+              .catch(() =>
+              {
+                usageCaptureFailed = true
+              })
+          }
         }
         catch
         {
           // malformed provider events remain available in the raw log
         }
       },
-    }).finally(
-      async () => await securePrivateFile(context.model_result_path, true)
-    )
+    }).finally(async () =>
+    {
+      await usageWrites
+      if (usageCaptureFailed)
+      {
+        context.on_activity?.({
+          kind: 'message',
+          summary:
+            'Codex usage accounting could not be persisted; the raw event log remains available for backfill',
+        })
+      }
+      await securePrivateFile(context.model_result_path, true)
+    })
 
     const outcome: ProviderOutcome = {
       exit_code: processResult.exit_code,

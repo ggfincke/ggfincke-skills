@@ -3,6 +3,14 @@
 
 import type { ModelWorkerResult } from './contracts.js'
 
+export const MODEL_RESULT_SUMMARY_MAX_CODE_POINTS = 8_000
+export const MODEL_RESULT_ITEM_MAX_CODE_POINTS = 500
+
+function codePointLength(value: string): number
+{
+  return [...value].length
+}
+
 export function parseModelResult(
   value: unknown,
   provider: string
@@ -25,11 +33,30 @@ export function parseModelResult(
         `${provider} model result ${field} must be an array of strings`
       )
     }
+    if (
+      entry.some(
+        (item) =>
+          codePointLength(item as string) > MODEL_RESULT_ITEM_MAX_CODE_POINTS
+      )
+    )
+    {
+      throw new Error(
+        `${provider} model result ${field} items must be at most ${MODEL_RESULT_ITEM_MAX_CODE_POINTS} code points`
+      )
+    }
     return entry as string[]
   }
   if (typeof candidate.summary !== 'string')
   {
     throw new Error(`${provider} model result summary must be a string`)
+  }
+  if (
+    codePointLength(candidate.summary) > MODEL_RESULT_SUMMARY_MAX_CODE_POINTS
+  )
+  {
+    throw new Error(
+      `${provider} model result summary must be at most ${MODEL_RESULT_SUMMARY_MAX_CODE_POINTS} code points`
+    )
   }
   return {
     summary: candidate.summary,

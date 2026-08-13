@@ -9,8 +9,7 @@ Why a workflow and not a skill: occasional setup pass, not something to auto-fir
 Seed the repo's conventions doc before anything else - later steps reference the command names it defines. Model the structure on this repo's `AGENTS.md`:
 - A top block of repo conventions (source of truth, what not to hand-edit, where detail lives).
 - A portable vs project split if the repo has both reusable and repo-only material.
-- The gate / landing commands stated explicitly (this repo: `make check` to validate + test, `make install-hooks` for the pre-commit hook, what CI runs). Name them so every agent lands changes the same way.
-- A `## Pre-1.0 breaking-change policy` section (see the pending stub at the bottom of this file).
+- The gate / landing commands stated explicitly (this repo: `make check` for the full validation, test, broker, and format gate; `make install-hooks` for root-owned staged formatting plus index-snapshot validation/tests; and what CI runs). Name them so every agent lands changes the same way.
 - A repo-specific carve-out only if this repo deviates from the `working-conventions` always-on rules (commit grouping by concern, test restraint); otherwise nothing to add - they ride in via the global always-on block.
 
 Check the repo in for a `CLAUDE.md` -> `See AGENTS.md` one-liner so both agents read the same doc (this repo does exactly that).
@@ -27,14 +26,14 @@ The comment-style rules already ship globally via the always-on block; this step
 
 ## 3. Landing gate + pre-commit hook
 
-The gate bundles validation + tests behind one command; the hook runs it pre-commit. In this repo (confirm against the target repo's Makefile before copying):
+The full gate bundles validation, tests, broker checks, and non-mutating format checks. The pre-commit hook is a narrower adapter: it formats staged files owned by the repository's formatter, then validates and tests a temporary checkout of the resulting index. In this repo (confirm against the target repo's Makefile before copying):
 
 ```sh
 make check          # validate + test + broker-check + format-check + format-python-check
-make install-hooks  # route git hooks at scripts/hooks (validate + tests + lint-staged)
+make install-hooks  # owned staged formatting + validation/tests against the final index snapshot
 ```
 
-For a new repo without a Makefile, give it a `check` target (or `npm run check` / `just check`) that runs the validator + the test suite + format gates, and a pre-commit hook that runs validate/tests plus lint-staged (mutating format on staged files). Note: this repo's hook does **not** run full `make check` (broker-check stays for CI / `make check`).
+For a new repo without a Makefile, give it a `check` target (or `npm run check` / `just check`) that runs the validator + the test suite + format gates. Its pre-commit hook should normalize staged files first, then validate and test the updated index rather than the restored dirty worktree. This repo's hook does **not** run full `make check` (broker-check stays for CI / `make check`).
 
 ## 4. Python repos
 
@@ -61,8 +60,4 @@ Optional: where the repo wants it enforced, wire a changelog-check into the `che
 
 ## 6. CI
 
-Clone the validate workflow from a sibling repo rather than writing one from scratch. This repo's `.github/workflows/validate.yml` runs the same gate as the local hook (validate, then the regression tests) on every push + PR, on pinned action SHAs. Copy it, swap the two run-steps for the new repo's gate command, and keep the SHA pins verbatim (`actions/checkout@9c091bb... # v7.0.0`, `actions/setup-python@a309ff8... # v6.2.0`).
-
-## Pre-1.0 breaking-change policy (pending)
-
-Not finalized. The canonical wording lands later; do not paste a specific policy here meanwhile. When decided, it lives in the repo's `AGENTS.md` (its own `## Pre-1.0 breaking-change policy` section), and this stub gets replaced with a one-line pointer to it. Until then, leave the AGENTS.md section a placeholder rather than inventing terms.
+Clone the validate workflow from a sibling repo rather than writing one from scratch. This repo's `.github/workflows/validate.yml` decomposes the full local gate across Python-version, root-format, and worker-broker jobs on every push + PR, with actions pinned by SHA. Copy the structure, replace its commands with the new repo's full gate, and take current action pins from the live workflow rather than prose.

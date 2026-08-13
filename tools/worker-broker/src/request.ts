@@ -1,13 +1,127 @@
 // tools/worker-broker/src/request.ts
 // validate external assignments & reduce them to one deterministic broker contract
 
-import type {
-  NormalizedVerificationCommand,
-  NormalizedWorkerRequest,
-  StartWorkerRequest,
-  VerificationInput,
+import path from 'node:path'
+import { z } from 'zod'
+import {
+  PROVIDER_NAMES,
+  REASONING_EFFORTS,
+  WORKER_MODES,
+  type NormalizedVerificationCommand,
+  type NormalizedWorkerRequest,
+  type StartWorkerRequest,
+  type VerificationInput,
 } from './contracts.js'
+import { errorMessage } from './errors.js'
 import { normalizeAllowedPaths } from './path-scope.js'
+
+const VerificationSchema = z.union([
+  z.string().min(1),
+  z
+    .object({
+      command: z.string().min(1),
+      timeout_seconds: z.number().int().positive().max(86_400).optional(),
+    })
+    .strict(),
+])
+
+export const StartWorkerRequestSchema = z
+  .object({
+    provider: z.enum(PROVIDER_NAMES),
+    mode: z.enum(WORKER_MODES),
+    repo: z.string().min(1),
+    base_ref: z.string().min(1).optional(),
+    task: z.string().min(1),
+    allowed_paths: z.array(z.string()),
+    acceptance_criteria: z.array(z.string()).optional(),
+    setup_commands: z
+      .array(VerificationSchema)
+      .describe(
+        'environment preparation commands run in the worktree before the provider starts; a failure ends the job before any model work'
+      )
+      .optional(),
+    verification_commands: z.array(VerificationSchema).optional(),
+    model: z.string().min(1).optional(),
+    effort: z.enum(REASONING_EFFORTS).optional(),
+    stage: z
+      .string()
+      .min(1)
+      .describe('orchestration stage identifier, metadata only')
+      .optional(),
+    workflow: z
+      .string()
+      .min(1)
+      .describe('workflow template identifier, metadata only')
+      .optional(),
+    run: z
+      .string()
+      .min(1)
+      .describe('orchestration run identifier, metadata only')
+      .optional(),
+    depends_on: z
+      .array(z.string().min(1))
+      .describe(
+        'job ids that must reach completed before this job leaves the queue; a failed dependency rejects this job. Declare later phases up front with depends_on instead of holding the sequence in the lead and polling between waves.'
+      )
+      .optional(),
+    allow_nested_agents: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((request, context) =>
+  {
+    if (request.provider === 'cursor' && request.effort !== undefined)
+    {
+      context.addIssue({
+        code: 'custom',
+        path: ['effort'],
+        message:
+          'Cursor reasoning effort must be encoded in the model identifier',
+      })
+    }
+    if (request.provider === 'coral' && request.effort !== undefined)
+    {
+      context.addIssue({
+        code: 'custom',
+        path: ['effort'],
+        message: 'Coral does not support the broker effort override',
+      })
+    }
+    if (request.provider === 'coral' && request.allow_nested_agents === true)
+    {
+      context.addIssue({
+        code: 'custom',
+        path: ['allow_nested_agents'],
+        message: 'Coral headless workers do not support nested agents',
+      })
+    }
+  })
+
+export class RequestValidationError extends Error
+{
+  constructor(message: string)
+  {
+    super(message)
+    this.name = 'RequestValidationError'
+  }
+}
+
+function requestValidationError(error: unknown): RequestValidationError
+{
+  if (error instanceof RequestValidationError) return error
+  return new RequestValidationError(errorMessage(error))
+}
+
+export function parseStartWorkerRequest(value: unknown): StartWorkerRequest
+{
+  try
+  {
+    return StartWorkerRequestSchema.parse(value)
+  }
+  catch (error)
+  {
+    throw requestValidationError(error)
+  }
+}
 
 const DEFAULT_VERIFICATION_TIMEOUT_SECONDS = 600
 
@@ -51,48 +165,24 @@ function normalizeVerification(
   }
 }
 
-export function normalizeRequest(
+function normalizeParsedRequest(
   request: StartWorkerRequest
 ): NormalizedWorkerRequest
 {
-  if (
-    request.provider !== 'codex' &&
-    request.provider !== 'cursor' &&
-    request.provider !== 'coral' &&
-    request.provider !== 'claude'
-  )
-  {
-    throw new Error(`unsupported provider: ${request.provider}`)
-  }
-  if (request.mode !== 'read' && request.mode !== 'edit')
-  {
-    throw new Error(`unsupported worker mode: ${String(request.mode)}`)
-  }
-
   const allowedPaths = normalizeAllowedPaths(request.allowed_paths)
   if (request.mode === 'edit' && allowedPaths.length === 0)
   {
     throw new Error('edit workers require at least one allowed path prefix')
   }
-  if (request.provider === 'cursor' && request.effort !== undefined)
+  const repo = requireNonEmpty(request.repo, 'repo')
+  if (!path.isAbsolute(repo))
   {
-    throw new Error(
-      'Cursor reasoning effort must be encoded in the model identifier'
-    )
+    throw new Error(`repo must be an absolute path: ${repo}`)
   }
-  if (request.provider === 'coral' && request.effort !== undefined)
-  {
-    throw new Error('Coral does not support the broker effort override')
-  }
-  if (request.provider === 'coral' && request.allow_nested_agents === true)
-  {
-    throw new Error('Coral headless workers do not support nested agents')
-  }
-
   const normalized: NormalizedWorkerRequest = {
     provider: request.provider,
     mode: request.mode,
-    repo: requireNonEmpty(request.repo, 'repo'),
+    repo,
     base_ref: requireNonEmpty(request.base_ref ?? 'HEAD', 'base_ref'),
     task: requireNonEmpty(request.task, 'task'),
     allowed_paths: allowedPaths,
@@ -117,4 +207,16 @@ export function normalizeRequest(
   if (request.run !== undefined)
     normalized.run = requireNonEmpty(request.run, 'run')
   return normalized
+}
+
+export function normalizeRequest(value: unknown): NormalizedWorkerRequest
+{
+  try
+  {
+    return normalizeParsedRequest(parseStartWorkerRequest(value))
+  }
+  catch (error)
+  {
+    throw requestValidationError(error)
+  }
 }

@@ -21,7 +21,7 @@ Run all five lenses unless the user narrows the set, and state the final lens se
 
 1. **Correctness / bug-hunt** - use the finder -> refute -> synthesize protocol in [references/usage.md](references/usage.md).
 2. **Simplification** - delegate behavior-preserving cleanup to `simplification-review`.
-3. **Consolidation / architecture** - delegate duplication, drift, and boundary analysis to `consolidation-audit`.
+3. **Consolidation** - delegate duplication and drift analysis to `consolidation-audit`. `architecture-review` is an optional sibling track outside this five-lens profile, not an implied part of consolidation.
 4. **Test gaps** - delegate major-test analysis to `test-coverage-audit`; do not pursue exhaustive coverage.
 5. **Performance** - use the hot-path checklist in [references/usage.md](references/usage.md), including React/TS guidance where relevant.
 
@@ -29,7 +29,7 @@ Run all five lenses unless the user narrows the set, and state the final lens se
 
 1. Read `AGENTS.md`, `CLAUDE.md`, `README`, and relevant project docs before reviewing. Treat repository conventions, gates, and compatibility policy as constraints.
 2. Confirm the target scope. Use the requested files, branch, diff, or codebase; do not expand a scoped review into a whole-repo pass.
-3. Create or update one concrete audit file, normally `dev-docs/mega-review-core-YYYY-MM-DD.md`, before synthesis. Use [assets/templates/mega-review-core-template.md](assets/templates/mega-review-core-template.md).
+3. Copy [the packaged template](assets/templates/mega-review-core-template.md) to a concrete dated audit file, normally `dev-docs/mega-review-core-YYYY-MM-DD.md`, before synthesis. Never edit or overwrite the packaged template; update an existing audit only when the user points to the same scope. The concrete audit is the sole permitted write during the otherwise source-read-only review.
 4. Fan out the five lens tracks when the harness supports parallel work. Give each track the exact scope, baseline, exclusions, read-only boundary, allowed commands, and output contract.
 5. Merge findings across lenses. Deduplicate by root cause, verify every survivor against live code, and preserve refuted or unverifiable claims in the appropriate audit sections.
 6. Group survivors into cohesive action groups by shared files, dependency chains, and change shape. Sequence low-risk independent work before cross-cutting work.

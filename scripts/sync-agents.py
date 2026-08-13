@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # scripts/sync-agents.py
-# install canonical Claude custom agents into one explicit personal target
+# validate, plan, and transactionally install canonical Claude custom agents
 
 from __future__ import annotations
 
 import argparse
-import os
 import re
-import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
+import sync_transaction
+import tooling_paths
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
@@ -17,21 +18,33 @@ AGENT_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 FRONTMATTER_NAME_RE = re.compile(r"^name:\s*(?P<name>[^\s]+)\s*$", re.MULTILINE)
 
 
+@dataclass(frozen=True)
+class AgentAction:
+	operation_id: str
+	source: Path
+	destination: Path
+	mode: str
+
+
+@dataclass(frozen=True)
+class AgentSyncPlan:
+	transaction: sync_transaction.RunPlan
+	actions: tuple[AgentAction, ...]
+
+
 def is_within(path: Path, parent: Path) -> bool:
-	path = path.resolve()
-	parent = parent.resolve()
-	return path == parent or parent in path.parents
+	return tooling_paths.is_within(path, parent)
 
 
 def assert_target_outside_repo(target: Path) -> None:
-	# never let --force turn the canonical agent source into its own destination
-	if is_within(target, ROOT):
-		raise SystemExit(f"refusing agent target {target}: it resolves inside this repo ({ROOT})")
+	try:
+		tooling_paths.require_outside_repo(target, ROOT, "agent target")
+	except ValueError as exc:
+		raise SystemExit(str(exc)) from exc
 
 
 def default_target() -> Path:
-	claude_home = Path(os.environ.get("CLAUDE_HOME", Path.home() / ".claude"))
-	return claude_home / "agents"
+	return tooling_paths.resolve_home("claude") / "agents"
 
 
 def agent_name(path: Path) -> str:
@@ -70,6 +83,88 @@ def same_install(source: Path, destination: Path, mode: str) -> bool:
 	return destination.read_bytes() == source.read_bytes()
 
 
+def build_plan(sources: list[Path], target: Path, mode: str, force: bool) -> AgentSyncPlan:
+	replacements: list[sync_transaction.Replacement] = []
+	actions: list[AgentAction] = []
+	noops: list[sync_transaction.PlanMessage] = []
+	skips: list[sync_transaction.PlanMessage] = []
+	for source in sources:
+		destination = target / source.name
+		copy_payload = sync_transaction.copy_file_payload(source) if mode == "copy" else None
+		if copy_payload is not None and copy_payload.unsupported_symlink is not None:
+			raise SystemExit(
+				"refusing agent sync:\n  copy source contains a symlink and cannot be "
+				f"snapshotted safely: {copy_payload.unsupported_symlink}"
+			)
+		if same_install(source, destination, mode):
+			noops.append(
+				sync_transaction.PlanMessage("claude-agents", f"ok existing {mode}: {destination}")
+			)
+			continue
+		if destination.exists() or destination.is_symlink():
+			if destination.is_dir() and not destination.is_symlink():
+				raise SystemExit(f"refusing to replace agent directory: {destination}")
+			if not force:
+				skips.append(
+					sync_transaction.PlanMessage(
+						"claude-agents",
+						f"skip existing (use --force): {destination}",
+					)
+				)
+				continue
+
+		payload: sync_transaction.Payload
+		if mode == "link":
+			payload = sync_transaction.SymlinkPayload(source)
+		else:
+			assert copy_payload is not None
+			payload = copy_payload
+		operation_id = f"agent:{source.stem}"
+		replacements.append(
+			sync_transaction.replacement(
+				operation_id,
+				destination,
+				payload,
+				additional_observed=(source,) if mode == "link" else (),
+				atomic_file=True,
+			)
+		)
+		actions.append(AgentAction(operation_id, source, destination, mode))
+
+	destination_plan = sync_transaction.DestinationPlan("claude-agents", tuple(replacements))
+	transaction = sync_transaction.RunPlan(
+		(destination_plan,),
+		tuple(noops),
+		tuple(skips),
+		(sync_transaction.ArtifactScan(target),),
+	)
+	issues = sync_transaction.plan_issues(transaction)
+	if issues:
+		raise SystemExit("refusing agent sync:\n  " + "\n  ".join(issues))
+	return AgentSyncPlan(transaction, tuple(actions))
+
+
+def _dry_run_lines(plan: AgentSyncPlan) -> tuple[str, ...]:
+	lines = [message.message for message in (*plan.transaction.noops, *plan.transaction.skips)]
+	for action in plan.actions:
+		verb = "link" if action.mode == "link" else "copy"
+		lines.append(f"would {verb}: {action.source} -> {action.destination}")
+	return tuple(lines)
+
+
+def _apply_lines(plan: AgentSyncPlan, report: sync_transaction.ApplyReport) -> tuple[str, ...]:
+	actions = {action.operation_id: action for action in plan.actions}
+	lines = [message.message for message in (*plan.transaction.noops, *plan.transaction.skips)]
+	for event in report.events:
+		action = actions.get(event.operation_id)
+		if event.status == "applied" and action is not None:
+			verb = "linked" if action.mode == "link" else "copied"
+			lines.append(f"{verb}: {action.source} -> {action.destination}")
+		else:
+			lines.append(f"{event.status}: {event.path}: {event.detail}")
+	return tuple(lines)
+
+
 def install_agent(
 	source: Path,
 	target: Path,
@@ -77,29 +172,14 @@ def install_agent(
 	force: bool,
 	dry_run: bool,
 ) -> str:
-	destination = target / source.name
-	if same_install(source, destination, mode):
-		return f"ok existing {mode}: {destination}"
-	if destination.exists() or destination.is_symlink():
-		if destination.is_dir() and not destination.is_symlink():
-			raise SystemExit(f"refusing to replace agent directory: {destination}")
-		if not force:
-			return f"skip existing (use --force): {destination}"
-
-	action = "link" if mode == "link" else "copy"
+	plan = build_plan([source], target, mode, force)
 	if dry_run:
-		return f"would {action}: {source} -> {destination}"
-
-	target.mkdir(parents=True, exist_ok=True)
-	temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
-	if temporary.exists() or temporary.is_symlink():
-		temporary.unlink()
-	if mode == "link":
-		temporary.symlink_to(source)
-	else:
-		shutil.copy2(source, temporary)
-	temporary.replace(destination)
-	return f"{action}ed: {source} -> {destination}"
+		return _dry_run_lines(plan)[0]
+	report = sync_transaction.apply_plan(plan.transaction)
+	lines = _apply_lines(plan, report)
+	if not report.success:
+		raise SystemExit("agent sync failed:\n  " + "\n  ".join(lines))
+	return lines[0]
 
 
 def main() -> int:
@@ -113,12 +193,19 @@ def main() -> int:
 	parser.add_argument("--dry-run", action="store_true")
 	args = parser.parse_args()
 
-	target = args.target.expanduser()
+	target = tooling_paths.resolve_path(args.target)
 	assert_target_outside_repo(target)
+	plan = build_plan(find_agents(args.agent), target, args.mode, args.force)
 	print(f"[claude-agents] {target}")
-	for source in find_agents(args.agent):
-		print("  " + install_agent(source, target, args.mode, args.force, args.dry_run))
-	return 0
+	if args.dry_run:
+		for line in _dry_run_lines(plan):
+			print("  " + line)
+		return 0
+
+	report = sync_transaction.apply_plan(plan.transaction)
+	for line in _apply_lines(plan, report):
+		print("  " + line)
+	return 0 if report.success else 1
 
 
 if __name__ == "__main__":

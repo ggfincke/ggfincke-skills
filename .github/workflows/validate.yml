@@ -40,6 +40,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install root tooling
         run: npm ci
+      - name: Run staged-hook regression
+        run: python3 -m unittest discover -s tests -p 'test_pre_commit_hook.py'
       - name: Prettier + ESLint format check
         run: npm run format:check
 

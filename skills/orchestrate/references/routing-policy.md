@@ -4,15 +4,17 @@ Choose providers at the work-package level. Do not route individual file reads o
 
 ## Current availability
 
-Use only providers exposed by `start_worker` in the live MCP tool schema. Codex, Cursor, and Coral are available.
+Use only providers exposed by `start_worker` in the live MCP tool schema. Codex, Cursor, Coral, and Claude are available.
 
 Keep model identifiers in broker configuration, `~/.config/worker-broker/profiles.json` stage bindings, or explicit assignments. Do not hardcode account-dependent model names in this skill. Stage-level bindings and the approval gate are defined in [model-plan.md](model-plan.md).
 
 - Prefer Codex for general implementation and repository-native coding work.
 - Prefer Cursor for independent review, frontend work, repositories with material `.cursor` rules, or deliberate harness diversity.
 - Prefer Coral for local/private exploration, repository mapping, log analysis, and bounded low-cost work through an installed Ollama model.
+- Prefer Claude for bounded implementation or review where Claude Code's native repository guidance and tool behavior are the best fit.
 - Encode Cursor reasoning effort in its model identifier; the generic `effort` field is rejected for Cursor.
 - Coral rejects generic effort overrides and nested agents. Its model must be supplied by broker configuration or the assignment.
+- Claude forwards `low`, `medium`, `high`, `xhigh`, and `max`; `ultra` stays assignment metadata because the native CLI does not accept it.
 
 ## Package selection
 

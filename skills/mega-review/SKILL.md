@@ -1,6 +1,6 @@
 ---
 name: mega-review
-description: Run an explicit multi-lens review/audit of a codebase, branch, or large diff into one durable mega audit document - orchestrate bug-hunt, simplification, consolidation, security, test-gap, and performance lenses, adversarially verify and dedupe findings, and produce integrated action groups, risk sequencing, and testing guidance, read-only until approved. Use when the user explicitly asks for mega-review, the works, all lenses, max-effort/everything audit, one multi-lens audit doc, or a scoped 2+ lens audit that includes security. For a security-free five-lens profile, use mega-review-core. Do not use for ordinary deep/full PR reviews unless they ask for multi-lens synthesis into one document; for one focused lens use that lens's own skill, and for a fast correctness or PR pass use /code-review.
+description: Run an explicit multi-lens review/audit of a codebase, branch, or large diff into one durable mega audit document - orchestrate bug-hunt, simplification, consolidation, security, test-gap, and performance lenses, adversarially verify and dedupe findings, and produce integrated action groups, risk sequencing, and testing guidance, read-only until approved. Use when the user explicitly asks for mega-review, the works, all lenses, max-effort/everything audit, one multi-lens audit doc, or a scoped 2+ lens audit that includes security. For a security-free five-lens profile, use mega-review-core. Do not use for ordinary deep/full PR reviews unless they ask for multi-lens synthesis into one document; for one focused lens use that lens's own skill, and for a fast correctness or PR pass use the host's ordinary review workflow.
 ---
 
 # Mega Review
@@ -15,15 +15,15 @@ This skill is an orchestrator, not a reimplementation. Each lens delegates to th
 - Do not use it for ordinary "deep review" or "full PR review" requests unless the user also asks for multi-lens synthesis or one audit document.
 - For a single lens, use that lens's skill directly - simplification-review, consolidation-audit, security-remediation, test-coverage-audit. They are sharper and cheaper for a focused pass, and they still exist on their own.
 - For the repeatable five-lens profile with security explicitly out of scope, use `mega-review-core`. Ad hoc lens scoping remains valid when the request calls for a different subset.
-- For a fast correctness pass or PR review, use /code-review. mega-review does not replace it; it is the slow, broad, document-producing counterpart.
+- For a fast correctness pass or PR review, use the host's ordinary review workflow. mega-review is the slow, broad, document-producing counterpart. `/code-review` is only an optional external host command when that host actually defines it; this package does not.
 
 ## The lenses
 
 Run all six by default. The user can scope them ("everything but security", "just bugs + simplification + perf") - honor that and say which you ran.
 
 1. **Correctness / bug-hunt** (owned here - no standalone skill). Hunt for real defects at maximum recall: logic errors, broken invariants, race conditions, error-handling gaps, off-by-one, null/None handling, contract violations, state desync. Use the finder -> refute -> synthesize protocol in `references/usage.md`.
-2. **Simplification** -> simplification-review. Behavior-preserving local cleanup, code quality, narrow reuse, and efficiency within the reviewed surface. For whole-repo dedupe/dead-code/architecture, let consolidation own the finding and tag simplification only when the same fix has a local behavior-preserving cleanup angle.
-3. **Consolidation / architecture** -> consolidation-audit. Duplication across files, parallel-implementation drift, architectural mismatch, abstractions that should exist. Apply its map -> find -> verify -> group flow.
+2. **Simplification** -> simplification-review. Behavior-preserving local cleanup, code quality, narrow reuse, and efficiency within the reviewed surface. For whole-repo dedupe, dead code, and implementation drift, let consolidation own the finding and tag simplification only when the same fix has a local behavior-preserving cleanup angle.
+3. **Consolidation** -> consolidation-audit. Duplication across files, parallel-implementation drift, and abstractions that should exist. Apply its map -> find -> verify -> group flow. Architecture review is a separate opt-in sibling track, never an implied default lens.
 4. **Security** -> security-remediation. Its five panels (threat model, auth/authz & tenancy, input-to-sink injection, secrets/crypto/config/logging, dependency/build/test), severity & confidence rubric, and hard rules.
 5. **Test gaps** -> test-coverage-audit. The few major, important tests worth adding - and what is deliberately not worth testing. Major-tests-only, never exhaustive coverage.
 6. **Performance** (owned here - no standalone skill). Real hot paths only: N+1 and over-fetching, repeated expensive lookups, unnecessary recomputation/allocations, wasteful renders/state updates, blocking I/O, missing batching/caching, query/index problems, payload size. Backend-platform limits count (e.g. Convex read/write ceilings). See the perf checklist in `references/usage.md`. Do not propose speculative micro-optimizations off the hot path.
@@ -35,7 +35,7 @@ In a React/TS repo, fold react-best-practices into the simplification and perfor
 Start by reading AGENTS.md / CLAUDE.md / README for conventions, build/test gates, architectural intent, and any pre-1.0 / breaking-change stance. Treat them as constraints throughout - a finding that fights an explicit project rule is not a finding.
 
 1. **Scope.** If a scope is given (files, a branch, a diff, a module), review that. If none is given, mega-review usually targets a whole branch (`git diff main...HEAD`) or the whole codebase - confirm which before a full-repo pass, since it is expensive.
-2. **Create the audit artifact.** Unless the user explicitly asks for chat-only output, create or update a concrete file for the mega doc before synthesis (for example `dev-docs/mega-review-YYYY-MM-DD.md`, or the repo's established review-doc location). Update an existing mega doc only when the user points to it or it clearly covers the same scope; otherwise create a new dated doc. Record the path in the final answer. This file is the living source of truth for phased implementation.
+2. **Create the audit artifact.** Unless the user explicitly asks for chat-only output, copy [the packaged template](assets/templates/mega-review-template.md) to a concrete dated file before synthesis, normally `dev-docs/mega-review-YYYY-MM-DD.md` or the repo's established review-doc location. Never edit or overwrite the packaged template. Update an existing audit only when the user points to it and it covers the same scope; otherwise choose a new dated path. The concrete audit is the sole permitted write during the otherwise source-read-only review and becomes the living source of truth for phased implementation.
 3. **Fan out, one track per lens.** When the harness supports parallel subagents, run the lenses concurrently; otherwise sequentially. Each track applies its owning skill's discipline and returns raw findings with evidence. Route by model tier (see below) and use the handoff contract below.
 4. **Merge across lenses.** This is the step that makes it one review, not six stapled together:
    - **Dedupe.** The same root cause often surfaces under multiple lenses (a duplicated helper is consolidation + simplification; an unbounded query is perf + security DoS). Collapse to one finding, tagged with every lens it came from.
@@ -43,7 +43,7 @@ Start by reading AGENTS.md / CLAUDE.md / README for conventions, build/test gate
    - **Considered & rejected.** Record what you checked and discarded, each with the evidence that settled it, so it is not re-raised next pass.
    - **Classify uniformly.** Give every survivor a severity, a confidence, and a behavior risk on one scale across all lenses, so the index is comparable.
 5. **Group and sequence.** Organize survivors into cross-lens action groups by file overlap, dependency chains, and shared change shape - each group a cohesive unit of work. Order groups into phases: independent/low-risk first, cross-cutting/high-risk later. Treat test coverage as a continuous concern across every group.
-6. **Write one mega doc.** Use `assets/templates/mega-review-template.md`. It is the single source of truth; do not spill into separate action-group or commit-plan files unless asked.
+6. **Write one mega doc.** Update the concrete audit document copied from [the packaged template](assets/templates/mega-review-template.md). The concrete document is the single source of truth; do not spill into separate action-group or commit-plan files unless asked.
 
 ## Lens subagent handoff contract
 
@@ -84,6 +84,6 @@ Once specific findings or action groups are approved, hand execution to the phas
 
 - The lens skills are the single source of truth for each lens and still run standalone; mega-review composes them, it does not fork them. Keep their rules there, not duplicated here.
 - consolidation-audit is the closest sibling: mega-review is consolidation-audit's structure widened from one lens to six, sharing the same doc shape and Considered & Rejected discipline.
-- /code-review is the fast correctness/PR pass; mega-review is the slow, broad, document-producing one. Different jobs.
+- The host's ordinary review workflow is the fast correctness/PR pass; mega-review is the slow, broad, document-producing one. Different jobs.
 - `references/usage.md` has invocation variants, lens-scoping phrases, the bug-hunt finder -> refute -> synthesize protocol, and the performance checklist.
-- `assets/templates/mega-review-template.md` is the single audit doc: cross-lens finding index, per-lens findings, considered/rejected, integrated action groups, risk-sequenced phases, test-suite analysis, and verification log.
+- `assets/templates/mega-review-template.md` is the packaged template to copy; the concrete audit document is the single source of truth, with the cross-lens finding index, per-lens findings, considered/rejected, integrated action groups, risk-sequenced phases, test-suite analysis, and verification log.

@@ -102,13 +102,13 @@ Three lists:
 - Needs your call: speculative and unverifiable findings, with what you would decide or supply.
 
 ### Approval request
-Ask which confirmed findings to act on. Do not edit until approval.
+Ask which confirmed findings to act on. Separately name each major regression test you propose and state that approving a finding does not approve test edits unless the user also approves that named test. Do not edit until approval.
 
 ## After approval
 
 Once I say which findings to address:
 
-- For a small, self-contained fix, apply it directly: keep the diff minimal and idiomatic, and add or update a regression test where the codebase has a pattern for it.
+- For a small, self-contained fix, apply it directly and keep the diff minimal and idiomatic. Add or update a regression test only when that named major test was approved; otherwise run the existing checks and propose a separate test plan.
 - For anything substantial, hand the confirmed finding to the skill that owns that kind of change: simplification-review for behavior-preserving cleanup, security-remediation for a vulnerability, consolidation-audit for a cross-file dedupe or refactor. Carry over the evidence you already gathered so the work is not re-derived.
 - For several confirmed findings approved together, work through them with the phased-implementation skill: one finding at a time, gate between, rather than fixing all at once.
 - After editing, summarize: which findings were addressed, files changed, tests added or updated and their result, and which findings were intentionally left (stale, incorrect, declined) so the original review can be closed out.

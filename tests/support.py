@@ -35,4 +35,5 @@ def run_script(
 		capture_output=True,
 		text=True,
 		env=env,
+		check=False,
 	)

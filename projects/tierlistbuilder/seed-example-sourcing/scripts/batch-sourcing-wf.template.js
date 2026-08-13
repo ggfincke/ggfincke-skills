@@ -3,6 +3,7 @@
 
 // copy into the session scratchpad, edit, and invoke via {scriptPath}. sourcing branches on t.modality:
 //   'logo'   -> png, transparent, uniform plate, labels hidden
+//   'render' -> png, meaningful alpha, plate off, labels shown
 //   'photo'  -> jpg, flatten white, plate off, labels shown
 //   'poster' -> jpg, full-bleed portrait, no plate, labels hidden
 
@@ -27,7 +28,7 @@ const ROOT = '/Users/ggfincke/Projects/Applications/tierlistbuilder'
 const UA = 'tierlistbuilder-seed/1.0 (garrettfincke@gmail.com)'
 
 // EDIT THIS: one entry per template in the batch.
-// modality: 'logo' | 'photo' | 'poster'. must = comma-separated must-include items.
+// modality: 'logo' | 'render' | 'photo' | 'poster'. must = comma-separated must-include items.
 const TEMPLATES = [
   {
     slug: 'example-slug',
@@ -47,6 +48,14 @@ const MODALITY = {
     reject:
       'photos of products, logos-with-tagline lockups when a clean logomark exists, tiny favicons, wrong brand',
     sourceKind: 'logo',
+  },
+  render: {
+    word: 'official transparent render / character art / illustration (original alpha asset)',
+    ext: 'png',
+    norm: 'open as RGBA, preserve meaningful source alpha, downscale long side to 1024 LANCZOS, save PNG; the template uses autoPlate off and labels shown',
+    reject:
+      'opaque or white-matte backgrounds, fake checkerboards baked into the image, full-bleed scenes, screenshots, watermarks, wrong character/item',
+    sourceKind: 'render',
   },
   photo: {
     word: 'clean, well-framed representative photo (single clear subject, plain background)',
@@ -73,7 +82,7 @@ const ROSTER_SCHEMA = {
   properties: {
     items: {
       type: 'array',
-      minItems: 3,
+      minItems: 1,
       items: {
         type: 'object',
         additionalProperties: false,

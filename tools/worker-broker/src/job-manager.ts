@@ -3,22 +3,32 @@
 
 import { EventEmitter } from 'node:events'
 import { randomBytes } from 'node:crypto'
+import { access, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { ActivityWriter } from './activity.js'
-import type {
-  ActivityPhase,
-  BrokerConfig,
-  NormalizedVerificationCommand,
-  ProviderOutcome,
-  StartWorkerRequest,
-  VerificationResult,
-  WorkerJob,
-  WorkerProvider,
-  WorkerResult,
-  WorkerStatus,
+import {
+  TERMINAL_WORKER_STATUSES,
+  workerEventLogFileName,
+  type ActivityPhase,
+  type BrokerConfig,
+  type EditSerializationConflict,
+  type FailureClass,
+  type NormalizedVerificationCommand,
+  type ProcessIdentity,
+  type ProviderOutcome,
+  type TerminalWorkerStatus,
+  type VerificationResult,
+  type WorkerAdmission,
+  type WorkerJob,
+  type WorkerProvider,
+  type WorkerResult,
+  type WorkerStatus,
+  type WorkerSummary,
 } from './contracts.js'
 import {
+  captureWorktreeBaseline,
   createWorktree,
+  diffWorktreeFromTree,
   removeWorktree,
   resolveBaseSha,
   resolveRepository,
@@ -32,18 +42,74 @@ import {
   scopeViolations,
 } from './path-scope.js'
 import {
-  processGroupExists,
   runProcess,
-  terminateProcessGroup,
+  terminateOwnedProcessGroup,
+  UnconfirmedProcessGroupExitError,
 } from './process-runner.js'
 import { normalizeRequest } from './request.js'
+import { summarizeWorkerJob } from './worker-summary.js'
 
-const TERMINAL_STATUSES = new Set<WorkerStatus>([
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-])
+export interface JobProgress
+{
+  phase?: ActivityPhase
+  last_message?: string
+  last_message_at?: string
+}
+
+/** Git evidence separated into post-setup attribution and base-relative output. */
+interface AttributedSnapshot
+{
+  snapshot: Awaited<ReturnType<typeof snapshotWorktree>>
+  setup_mutations: string[]
+  attribution_violations: string[]
+  attribution_error?: string
+}
+
+const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
+
+class ProcessOwnershipError extends Error
+{
+  constructor(message: string)
+  {
+    super(message)
+    this.name = 'ProcessOwnershipError'
+  }
+}
+
+class ProcessOwnershipClearError extends ProcessOwnershipError
+{
+  constructor(message: string)
+  {
+    super(message)
+    this.name = 'ProcessOwnershipClearError'
+  }
+}
+
+export type FailureSite =
+  'setup' | 'provider' | 'restart' | 'scope' | 'verification' | 'broker'
+
+export function classifyFailure(
+  site: FailureSite,
+  result?: Pick<VerificationResult, 'exit_code' | 'timed_out'>
+): FailureClass
+{
+  switch (site)
+  {
+    case 'setup':
+      return 'environment'
+    case 'provider':
+      return 'model'
+    case 'restart':
+    case 'broker':
+      return 'broker_fault'
+    case 'scope':
+      return 'scope'
+    case 'verification':
+      return result?.exit_code === 126 || result?.exit_code === 127
+        ? 'environment'
+        : 'verification'
+  }
+}
 
 function taskSlug(task: string): string
 {
@@ -95,9 +161,12 @@ export class JobManager
   private readonly controllers = new Map<string, AbortController>()
   private readonly activities = new Map<string, ActivityWriter>()
   private readonly setupResults = new Map<string, VerificationResult[]>()
+  private readonly terminalTransitions = new Map<string, Promise<void>>()
+  private readonly worktreeOperations = new Map<string, Promise<void>>()
   private readonly providers: Map<string, WorkerProvider>
   private readonly events = new EventEmitter()
   private initialization: Promise<void> | undefined
+  private admissionTail: Promise<void> = Promise.resolve()
   private scheduling = false
   private shuttingDown = false
 
@@ -119,9 +188,15 @@ export class JobManager
   private async initializeOnce(): Promise<void>
   {
     await this.store.initialize()
-    const interrupted = (await this.store.list())
-      .filter((job) => !TERMINAL_STATUSES.has(job.status))
+    const interruptedSummaries = (await this.store.listSummaries())
+      .filter((summary) => !TERMINAL_STATUSES.has(summary.status))
       .sort((left, right) => left.created_at.localeCompare(right.created_at))
+    const interrupted = await Promise.all(
+      interruptedSummaries.map(
+        async (summary) => await this.store.read(summary.job_id)
+      )
+    )
+    for (const job of interrupted) this.jobs.set(job.job_id, job)
     const reconciliations = await Promise.allSettled(
       interrupted.map(async (job) => await this.reconcileInterrupted(job))
     )
@@ -142,26 +217,47 @@ export class JobManager
 
   private async reconcileInterrupted(job: WorkerJob): Promise<void>
   {
-    // a live process group means a sibling broker instance still owns this
-    // job; reconcile only genuinely orphaned work
-    if (job.process_id !== undefined && processGroupExists(job.process_id))
+    const hasProcessId = job.process_id !== undefined
+    const hasProcessToken = job.process_token !== undefined
+    if (job.status === 'queued' && !hasProcessId && !hasProcessToken)
     {
+      const currentAttempt = job.restart_requeues ?? 0
+      await this.preserveInterruptedEventLog(
+        job,
+        currentAttempt > 0 ? currentAttempt - 1 : currentAttempt
+      )
       return
     }
-    this.jobs.set(job.job_id, job)
-    if (job.status === 'queued' && job.process_id === undefined) return
-    let cleanupError: unknown
-    if (job.process_id !== undefined)
+    if (hasProcessId !== hasProcessToken)
     {
+      throw new UnconfirmedProcessGroupExitError(
+        job.process_id ?? -1,
+        'the persisted process identity is incomplete; durable ownership was retained and no worktree snapshot was taken'
+      )
+    }
+    if (job.process_id !== undefined && job.process_token !== undefined)
+    {
+      const identity: ProcessIdentity = {
+        pid: job.process_id,
+        token: job.process_token,
+      }
+      await terminateOwnedProcessGroup(identity)
+      delete job.process_id
+      delete job.process_token
       try
       {
-        await terminateProcessGroup(job.process_id)
+        await this.store.write(job)
       }
       catch (error)
       {
-        cleanupError = error
+        job.process_id = identity.pid
+        job.process_token = identity.token
+        throw new Error(
+          `process group ${identity.pid} exited, but durable ownership could not be cleared; ownership was retained and no worktree snapshot was taken: ${errorMessage(error)}`
+        )
       }
     }
+    await this.preserveInterruptedEventLog(job, job.restart_requeues ?? 0)
     const priorStatus = job.status
     const message = `broker restarted before the job reached a terminal state (previous status: ${priorStatus})`
     const activity = this.activity(job)
@@ -174,11 +270,26 @@ export class JobManager
     {
       await this.phase(job, interruptedPhase, 'failed')
     }
-    // one automatic recovery: a restart-orphaned worker left no durable
-    // state behind, so a fresh worktree can re-run the same assignment
+    let interruptedSnapshot:
+      Awaited<ReturnType<typeof snapshotWorktree>> | undefined
+    let recoveryError: unknown
+    try
+    {
+      interruptedSnapshot = await this.snapshotInterruptedWorktree(job)
+    }
+    catch (error)
+    {
+      recoveryError ??= error
+    }
+    const interruptedWorktreeIsClean =
+      interruptedSnapshot !== undefined &&
+      interruptedSnapshot.changed_files.length === 0
+    // one automatic recovery is safe only when no interrupted edits exist;
+    // otherwise the durable patch is the sole authoritative salvage evidence
     if (
-      cleanupError === undefined &&
+      recoveryError === undefined &&
       priorStatus === 'running' &&
+      interruptedWorktreeIsClean &&
       (job.restart_requeues ?? 0) < 1
     )
     {
@@ -187,22 +298,165 @@ export class JobManager
         await this.requeueInterrupted(job)
         return
       }
-      catch
+      catch (error)
       {
-        // worktree or branch cleanup failed; fall through to terminal failure
+        recoveryError = error
       }
     }
+    const interruptedChangesMessage =
+      interruptedSnapshot !== undefined &&
+      interruptedSnapshot.changed_files.length > 0
+        ? `${message}; automatic retry was suppressed to preserve the interrupted change.patch as salvage evidence`
+        : message
+    const failureMessage =
+      recoveryError === undefined
+        ? interruptedChangesMessage
+        : `${interruptedChangesMessage}; reconciliation failed: ${errorMessage(recoveryError)}`
     await this.finish(
       job,
-      this.baseResult(
-        job,
-        'failed',
-        cleanupError === undefined
-          ? message
-          : `${message}; process cleanup failed: ${errorMessage(cleanupError)}`
-      )
+      interruptedSnapshot === undefined
+        ? this.baseResult(
+            job,
+            'failed',
+            failureMessage,
+            classifyFailure('restart')
+          )
+        : this.resultFromEvidence(
+            job,
+            'failed',
+            undefined,
+            interruptedSnapshot,
+            [],
+            [],
+            failureMessage,
+            classifyFailure('restart')
+          )
     )
-    if (cleanupError !== undefined) throw cleanupError
+  }
+
+  private async preserveInterruptedEventLog(
+    job: WorkerJob,
+    attempt: number
+  ): Promise<void>
+  {
+    if (job.request.provider !== 'codex') return
+    const legacyPath = this.artifact(job, 'events.jsonl')
+    const currentPath = this.artifact(
+      job,
+      workerEventLogFileName('codex', attempt)
+    )
+    try
+    {
+      await access(currentPath)
+      return
+    }
+    catch (error)
+    {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    try
+    {
+      await rename(legacyPath, currentPath)
+    }
+    catch (error)
+    {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+
+  private async snapshotInterruptedWorktree(
+    job: WorkerJob
+  ): Promise<Awaited<ReturnType<typeof snapshotWorktree>> | undefined>
+  {
+    const worktreePath = this.store.worktreePath(job.job_id)
+    try
+    {
+      await access(path.join(worktreePath, '.git'))
+    }
+    catch (error)
+    {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    }
+    return await snapshotWorktree(
+      worktreePath,
+      job.base_sha,
+      this.artifact(job, 'change.patch')
+    )
+  }
+
+  private async snapshotWithSetupAttribution(
+    job: WorkerJob,
+    worktree: string
+  ): Promise<AttributedSnapshot>
+  {
+    const setupPaths = job.setup_paths ?? []
+    if (setupPaths.length === 0)
+    {
+      return {
+        snapshot: await snapshotWorktree(
+          worktree,
+          job.base_sha,
+          this.artifact(job, 'change.patch')
+        ),
+        setup_mutations: [],
+        attribution_violations: [],
+      }
+    }
+
+    if (job.setup_tree_sha === undefined)
+    {
+      return {
+        snapshot: await snapshotWorktree(
+          worktree,
+          job.base_sha,
+          this.artifact(job, 'change.patch')
+        ),
+        setup_mutations: [],
+        attribution_violations: [],
+        attribution_error: 'the persisted post-setup tree is unavailable',
+      }
+    }
+
+    let attribution: Awaited<ReturnType<typeof diffWorktreeFromTree>>
+    try
+    {
+      attribution = await diffWorktreeFromTree(worktree, job.setup_tree_sha)
+    }
+    catch (error)
+    {
+      return {
+        snapshot: await snapshotWorktree(
+          worktree,
+          job.base_sha,
+          this.artifact(job, 'change.patch')
+        ),
+        setup_mutations: [],
+        attribution_violations: [],
+        attribution_error: `the post-setup tree could not be read: ${errorMessage(error)}`,
+      }
+    }
+
+    const setupMutations = [
+      ...new Set(
+        attribution.changes
+          .filter((change) => scopesOverlap(change.paths, setupPaths))
+          .flatMap((change) => change.paths)
+      ),
+    ].sort()
+    return {
+      snapshot: await snapshotWorktree(
+        worktree,
+        job.base_sha,
+        this.artifact(job, 'change.patch'),
+        setupMutations.length === 0 ? setupPaths : []
+      ),
+      setup_mutations: setupMutations,
+      attribution_violations: scopeViolations(
+        attribution.changed_files,
+        job.request.allowed_paths
+      ),
+    }
   }
 
   private async requeueInterrupted(job: WorkerJob): Promise<void>
@@ -210,15 +464,22 @@ export class JobManager
     // clean up by deterministic identity, not by what the record happens to
     // record: a crash between worktree creation and the next write leaves a
     // worktree or branch the job never learned about
-    await removeWorktree(
+    await this.runWorktreeOperation(
       job.request.repo,
-      this.store.worktreePath(job.job_id),
-      job.request.mode === 'edit' ? `agent/${job.job_id}` : undefined
+      async () =>
+        await removeWorktree(
+          job.request.repo,
+          this.store.worktreePath(job.job_id),
+          job.request.mode === 'edit' ? `agent/${job.job_id}` : undefined
+        )
     )
     delete job.worktree
     delete job.branch
     delete job.process_id
+    delete job.process_token
     delete job.started_at
+    delete job.setup_paths
+    delete job.setup_tree_sha
     job.restart_requeues = (job.restart_requeues ?? 0) + 1
     job.status = 'queued'
     await this.store.write(job)
@@ -231,7 +492,29 @@ export class JobManager
       {})
   }
 
-  async start(request: StartWorkerRequest): Promise<WorkerJob>
+  // serialize the durable-write -> visible-admission boundary so conflicts
+  // never name a job whose initial record can still fail
+  private async admit(job: WorkerJob): Promise<WorkerAdmission>
+  {
+    const admission = this.admissionTail.then(async () =>
+    {
+      await this.store.write(job)
+      const serializesBehind = this.editSerializationConflicts(job)
+      this.jobs.set(job.job_id, job)
+      void this.schedule()
+      return structuredClone({
+        job: summarizeWorkerJob(job),
+        serializes_behind: serializesBehind,
+      })
+    })
+    this.admissionTail = admission.then(
+      () => undefined,
+      () => undefined
+    )
+    return await admission
+  }
+
+  async start(request: unknown): Promise<WorkerAdmission>
   {
     if (this.shuttingDown) throw new Error('worker broker is shutting down')
     await this.initialize()
@@ -242,7 +525,7 @@ export class JobManager
       {
         try
         {
-          await this.get(jobId)
+          await this.getSummary(jobId)
         }
         catch
         {
@@ -259,10 +542,7 @@ export class JobManager
       base_sha: baseSha,
       created_at: new Date().toISOString(),
     }
-    this.jobs.set(jobId, job)
-    await this.store.write(job)
-    void this.schedule()
-    return structuredClone(job)
+    return await this.admit(job)
   }
 
   async get(jobId: string): Promise<WorkerJob>
@@ -272,49 +552,131 @@ export class JobManager
     return structuredClone(job)
   }
 
-  async list(): Promise<WorkerJob[]>
+  async getSummary(jobId: string): Promise<WorkerSummary>
   {
     await this.initialize()
-    const persisted = await this.store.list()
-    return persisted.map((job) =>
-      structuredClone(this.jobs.get(job.job_id) ?? job)
+    const active = this.jobs.get(jobId)
+    return structuredClone(
+      active === undefined
+        ? await this.store.readSummary(jobId)
+        : summarizeWorkerJob(active)
     )
   }
 
-  async cancel(jobId: string): Promise<WorkerJob>
+  async list(): Promise<WorkerSummary[]>
+  {
+    await this.initialize()
+    const activeJobs = [...this.jobs.values()]
+    const summaries = new Map(
+      (
+        await this.store.listSummaries(
+          new Set(activeJobs.map((job) => job.job_id))
+        )
+      ).map((summary) => [summary.job_id, summary])
+    )
+    for (const job of activeJobs)
+    {
+      summaries.set(job.job_id, summarizeWorkerJob(job))
+    }
+    return [...summaries.values()]
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      .map((summary) => structuredClone(summary))
+  }
+
+  // phase & newest prose for a job still in flight, read only from the writer
+  // this process already owns: activity() memoizes and finish() drops the entry
+  // (see finish), so constructing one here would re-open activity.jsonl for a
+  // job that is already done
+  async progress(jobId: string): Promise<JobProgress>
+  {
+    const summary = await this.getSummary(jobId)
+    if (TERMINAL_STATUSES.has(summary.status)) return {}
+    const writer = this.activities.get(jobId)
+    if (writer === undefined) return {}
+    const progress: JobProgress = {}
+    const phase = await writer.currentOpenPhase()
+    if (phase !== undefined) progress.phase = phase
+    const latest = await writer.latestMessage()
+    if (latest !== undefined)
+    {
+      progress.last_message = latest.summary
+      if (latest.recorded_at !== undefined)
+      {
+        progress.last_message_at = latest.recorded_at
+      }
+    }
+    return progress
+  }
+
+  async cancel(jobId: string): Promise<WorkerSummary>
   {
     await this.initialize()
     const job = this.jobs.get(jobId)
     if (job === undefined)
+    {
+      try
+      {
+        const persisted = await this.store.readSummary(jobId)
+        if (TERMINAL_STATUSES.has(persisted.status))
+          return structuredClone(persisted)
+      }
+      catch (error)
+      {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
       throw new Error(`job is not active in this broker process: ${jobId}`)
-    if (TERMINAL_STATUSES.has(job.status)) return structuredClone(job)
-
+    }
     if (job.status === 'queued')
     {
       await this.finish(
         job,
         this.baseResult(job, 'cancelled', 'job cancelled while queued')
       )
-      return structuredClone(job)
+      return structuredClone(summarizeWorkerJob(job))
     }
 
     this.controllers.get(jobId)?.abort()
-    return structuredClone(job)
+    return structuredClone(summarizeWorkerJob(job))
   }
 
-  async waitForTerminal(jobId: string): Promise<WorkerJob>
+  // signal lets a caller that lost a timeout race drop its listener; without it
+  // every timed-out wait leaked one 'terminal:<id>' listener per pending job
+  async waitForTerminal(
+    jobId: string,
+    signal?: AbortSignal
+  ): Promise<WorkerSummary>
   {
     await this.initialize()
+    // fall back to the store so a persisted job reports status instead of
+    // throwing once it has been evicted from the in-memory map
     const current = this.jobs.get(jobId)
-    if (current === undefined) throw new Error(`unknown active job: ${jobId}`)
-    if (TERMINAL_STATUSES.has(current.status)) return structuredClone(current)
+    const currentSummary =
+      current === undefined
+        ? await this.store.readSummary(jobId)
+        : summarizeWorkerJob(current)
+    if (TERMINAL_STATUSES.has(currentSummary.status))
+      return structuredClone(currentSummary)
 
-    return await new Promise<WorkerJob>((resolve) =>
+    return await new Promise<WorkerSummary>((resolve) =>
     {
       const eventName = `terminal:${jobId}`
-      this.events.once(eventName, (job: WorkerJob) =>
-        resolve(structuredClone(job))
-      )
+      const onTerminal = (summary: WorkerSummary): void =>
+      {
+        signal?.removeEventListener('abort', onAbort)
+        resolve(structuredClone(summary))
+      }
+      const onAbort = (): void =>
+      {
+        this.events.off(eventName, onTerminal)
+        const active = this.jobs.get(jobId)
+        resolve(
+          structuredClone(
+            active === undefined ? currentSummary : summarizeWorkerJob(active)
+          )
+        )
+      }
+      this.events.once(eventName, onTerminal)
+      signal?.addEventListener('abort', onAbort, { once: true })
     })
   }
 
@@ -331,19 +693,16 @@ export class JobManager
     await Promise.all(waits)
   }
 
-  // which active edit jobs a job will serialize behind, and via which paths;
-  // used to make scoping mistakes visible in the start_worker response
-  editSerialization(
-    jobId: string
-  ): { job_id: string; overlapping_paths: string[] }[]
+  private editSerializationConflicts(
+    job: WorkerJob
+  ): EditSerializationConflict[]
   {
-    const job = this.jobs.get(jobId)
-    if (job === undefined || job.request.mode !== 'edit') return []
-    const conflicts: { job_id: string; overlapping_paths: string[] }[] = []
+    if (job.request.mode !== 'edit') return []
+    // existing active edits are earlier because admission inserts afterward
+    const conflicts: EditSerializationConflict[] = []
     for (const other of this.jobs.values())
     {
       if (
-        other.job_id === job.job_id ||
         TERMINAL_STATUSES.has(other.status) ||
         other.request.mode !== 'edit' ||
         other.request.repo !== job.request.repo ||
@@ -405,7 +764,7 @@ export class JobManager
   {
     for (const jobId of job.request.depends_on ?? [])
     {
-      const dependency = await this.get(jobId)
+      const dependency = await this.getSummary(jobId)
       if (!TERMINAL_STATUSES.has(dependency.status)) return 'waiting'
       if (dependency.status !== 'completed')
       {
@@ -423,19 +782,86 @@ export class JobManager
     {
       for (const job of this.jobs.values())
       {
-        if (job.status !== 'queued') continue
+        if (job.status !== 'queued' || this.terminalTransitions.has(job.job_id))
+          continue
         const dependency = await this.dependencyFailure(job)
         if (dependency === 'waiting') continue
         if (dependency !== undefined)
         {
-          await this.finish(job, this.baseResult(job, 'rejected', dependency))
+          await this.finish(
+            job,
+            this.baseResult(
+              job,
+              'rejected',
+              dependency,
+              classifyFailure('broker')
+            )
+          )
           continue
         }
+        if (this.terminalTransitions.has(job.job_id)) continue
         if (!this.canRun(job)) continue
+        const controller = new AbortController()
+        this.controllers.set(job.job_id, controller)
         job.status = 'running'
         job.started_at = new Date().toISOString()
-        await this.store.write(job)
-        void this.execute(job)
+        try
+        {
+          await this.store.write(job)
+        }
+        catch (error)
+        {
+          if (this.controllers.get(job.job_id) === controller)
+          {
+            this.controllers.delete(job.job_id)
+          }
+          job.status = 'queued'
+          delete job.started_at
+          await this.finish(
+            job,
+            this.baseResult(
+              job,
+              'failed',
+              `failed to persist running state: ${errorMessage(error)}`,
+              classifyFailure('broker')
+            )
+          )
+          continue
+        }
+        if (controller.signal.aborted)
+        {
+          try
+          {
+            await this.finish(
+              job,
+              this.baseResult(
+                job,
+                'cancelled',
+                'job cancelled before execution started'
+              )
+            )
+          }
+          finally
+          {
+            if (this.controllers.get(job.job_id) === controller)
+            {
+              this.controllers.delete(job.job_id)
+            }
+          }
+          continue
+        }
+        void this.execute(job, controller).catch((error: unknown) =>
+        {
+          // unconfirmed ownership is process-fatal: only a fresh daemon may
+          // verify the durable supervisor identity and resume reconciliation
+          setImmediate(() =>
+          {
+            process.stderr.write(
+              `worker-broker process-ownership fail-stop: ${errorMessage(error)}\n`
+            )
+            process.exit(1)
+          })
+        })
       }
     }
     finally
@@ -472,31 +898,128 @@ export class JobManager
       {})
   }
 
-  private async execute(job: WorkerJob): Promise<void>
+  private async runWorktreeOperation<T>(
+    repo: string,
+    operation: () => Promise<T>
+  ): Promise<T>
   {
-    const controller = new AbortController()
-    this.controllers.set(job.job_id, controller)
+    const previous = this.worktreeOperations.get(repo) ?? Promise.resolve()
+    const result = previous.then(operation, operation)
+    const tail = result.then(
+      () => undefined,
+      () => undefined
+    )
+    this.worktreeOperations.set(repo, tail)
+    try
+    {
+      return await result
+    }
+    finally
+    {
+      if (this.worktreeOperations.get(repo) === tail)
+      {
+        this.worktreeOperations.delete(repo)
+      }
+    }
+  }
+
+  private async recordProcessStarted(
+    job: WorkerJob,
+    identity: ProcessIdentity
+  ): Promise<void>
+  {
+    if (job.process_id !== undefined || job.process_token !== undefined)
+    {
+      throw new ProcessOwnershipError(
+        `job ${job.job_id} already owns process group ${job.process_id ?? 'with an incomplete identity'}`
+      )
+    }
+    job.process_id = identity.pid
+    job.process_token = identity.token
+    try
+    {
+      await this.store.write(job)
+    }
+    catch (error)
+    {
+      if (
+        job.process_id === identity.pid &&
+        job.process_token === identity.token
+      )
+      {
+        delete job.process_id
+        delete job.process_token
+      }
+      throw new ProcessOwnershipError(
+        `failed to persist process group ${identity.pid} ownership: ${errorMessage(error)}`
+      )
+    }
+  }
+
+  private async recordProcessFinished(
+    job: WorkerJob,
+    identity: ProcessIdentity
+  ): Promise<void>
+  {
+    if (job.process_id === undefined && job.process_token === undefined) return
+    if (
+      job.process_id !== identity.pid ||
+      job.process_token !== identity.token
+    )
+    {
+      throw new ProcessOwnershipError(
+        `job ${job.job_id} does not own process group ${identity.pid} with the matching supervisor token`
+      )
+    }
+    delete job.process_id
+    delete job.process_token
+    try
+    {
+      await this.store.write(job)
+    }
+    catch (error)
+    {
+      throw new ProcessOwnershipClearError(
+        `failed to clear process group ${identity.pid} ownership: ${errorMessage(error)}`
+      )
+    }
+  }
+
+  private async execute(
+    job: WorkerJob,
+    controller: AbortController
+  ): Promise<void>
+  {
     let providerOutcome: ProviderOutcome | undefined
     let providerError: string | undefined
     let activePhase: ActivityPhase | undefined
+    let unexpectedFailureClass: FailureClass = classifyFailure('broker')
+    let processExitUnconfirmed = false
 
     try
     {
       activePhase = 'preparing'
       await this.phase(job, 'preparing', 'started')
-      const created = await createWorktree(
+      unexpectedFailureClass = classifyFailure('setup')
+      const created = await this.runWorktreeOperation(
         job.request.repo,
-        this.store.worktreePath(job.job_id),
-        job.base_sha,
-        job.request.mode,
-        job.job_id
+        async () =>
+          await createWorktree(
+            job.request.repo,
+            this.store.worktreePath(job.job_id),
+            job.base_sha,
+            job.request.mode,
+            job.job_id
+          )
       )
       job.worktree = created.path
       if (created.branch !== undefined) job.branch = created.branch
+      unexpectedFailureClass = classifyFailure('broker')
       await this.store.write(job)
 
       // environment preparation runs before the provider so a broken
       // worktree fails in seconds instead of after a full model run
+      unexpectedFailureClass = classifyFailure('setup')
       const setupResults = await this.runCommands(
         job,
         job.request.setup_commands,
@@ -519,6 +1042,7 @@ export class JobManager
       {
         await this.phase(job, 'preparing', 'failed')
         activePhase = undefined
+        unexpectedFailureClass = classifyFailure('broker')
         const setupSnapshot = await snapshotWorktree(
           created.path,
           job.base_sha,
@@ -533,11 +1057,20 @@ export class JobManager
             setupSnapshot,
             [],
             [],
-            commandFailureMessage('setup', failedSetup)
+            commandFailureMessage('setup', failedSetup),
+            classifyFailure('setup', failedSetup)
           )
         )
         return
       }
+      unexpectedFailureClass = classifyFailure('broker')
+      const setupBaseline = await captureWorktreeBaseline(
+        created.path,
+        job.base_sha
+      )
+      job.setup_paths = setupBaseline.changed_files
+      job.setup_tree_sha = setupBaseline.tree_sha
+      await this.store.write(job)
       await this.phase(job, 'preparing', 'completed')
       activePhase = undefined
 
@@ -550,18 +1083,28 @@ export class JobManager
       {
         providerOutcome = await provider.run({
           job_id: job.job_id,
+          provider_attempt: job.restart_requeues ?? 0,
           request: job.request,
           worktree: created.path,
           job_dir: this.store.jobDir(job.job_id),
           prompt_path: this.artifact(job, 'prompt.md'),
-          event_log_path: this.artifact(job, 'events.jsonl'),
+          event_log_path: this.artifact(
+            job,
+            workerEventLogFileName(
+              job.request.provider,
+              job.restart_requeues ?? 0
+            )
+          ),
           stderr_path: this.artifact(job, 'provider.stderr.log'),
           model_result_path: this.artifact(job, 'model-result.json'),
           signal: controller.signal,
-          on_process_started: async (pid) =>
+          on_process_started: async (identity) =>
           {
-            job.process_id = pid
-            await this.store.write(job)
+            await this.recordProcessStarted(job, identity)
+          },
+          on_process_finished: async (identity) =>
+          {
+            await this.recordProcessFinished(job, identity)
           },
           on_activity: (activity) =>
           {
@@ -574,6 +1117,13 @@ export class JobManager
       }
       catch (error)
       {
+        if (
+          error instanceof ProcessOwnershipError ||
+          error instanceof UnconfirmedProcessGroupExitError
+        )
+        {
+          throw error
+        }
         providerError = errorMessage(error)
       }
       await this.activity(job)
@@ -592,11 +1142,51 @@ export class JobManager
       activePhase = 'verifying'
       await this.phase(job, activePhase, 'started')
 
-      const providerSnapshot = await snapshotWorktree(
-        created.path,
-        job.base_sha,
-        this.artifact(job, 'change.patch')
+      unexpectedFailureClass = classifyFailure('broker')
+      const providerEvidence = await this.snapshotWithSetupAttribution(
+        job,
+        created.path
       )
+      const providerSnapshot = providerEvidence.snapshot
+      if (providerEvidence.attribution_error !== undefined)
+      {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
+        await this.finish(
+          job,
+          this.resultFromEvidence(
+            job,
+            'failed',
+            providerOutcome,
+            providerSnapshot,
+            [],
+            [],
+            `${providerEvidence.attribution_error}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            classifyFailure('broker')
+          )
+        )
+        return
+      }
+      if (providerEvidence.setup_mutations.length > 0)
+      {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
+        const attributionError = `worker changed setup-attributed paths: ${providerEvidence.setup_mutations.join(', ')}`
+        await this.finish(
+          job,
+          this.resultFromEvidence(
+            job,
+            'rejected',
+            providerOutcome,
+            providerSnapshot,
+            [],
+            providerEvidence.attribution_violations,
+            `${attributionError}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            classifyFailure('scope')
+          )
+        )
+        return
+      }
       const providerViolations = scopeViolations(
         providerSnapshot.changed_files,
         job.request.allowed_paths
@@ -615,7 +1205,8 @@ export class JobManager
             providerSnapshot,
             [],
             providerViolations,
-            `worker changed paths outside its assignment: ${providerViolations.join(', ')}`
+            `worker changed paths outside its assignment: ${providerViolations.join(', ')}`,
+            classifyFailure('scope')
           )
         )
         return
@@ -651,7 +1242,8 @@ export class JobManager
             providerSnapshot,
             [],
             [],
-            providerError
+            providerError,
+            classifyFailure('provider')
           )
         )
         return
@@ -669,23 +1261,65 @@ export class JobManager
             providerSnapshot,
             [],
             [],
-            `provider exited with ${providerOutcome?.signal ?? providerOutcome?.exit_code ?? 'unknown status'}`
+            `provider exited with ${providerOutcome?.signal ?? providerOutcome?.exit_code ?? 'unknown status'}`,
+            classifyFailure('provider')
           )
         )
         return
       }
 
+      unexpectedFailureClass = classifyFailure('verification')
       const verification = await this.runCommands(
         job,
         job.request.verification_commands,
         'verification',
         controller.signal
       )
-      const finalSnapshot = await snapshotWorktree(
-        created.path,
-        job.base_sha,
-        this.artifact(job, 'change.patch')
+      unexpectedFailureClass = classifyFailure('broker')
+      const finalEvidence = await this.snapshotWithSetupAttribution(
+        job,
+        created.path
       )
+      const finalSnapshot = finalEvidence.snapshot
+      if (finalEvidence.attribution_error !== undefined)
+      {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
+        await this.finish(
+          job,
+          this.resultFromEvidence(
+            job,
+            'failed',
+            providerOutcome,
+            finalSnapshot,
+            verification,
+            [],
+            `${finalEvidence.attribution_error}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            classifyFailure('broker')
+          )
+        )
+        return
+      }
+      if (finalEvidence.setup_mutations.length > 0)
+      {
+        await this.phase(job, 'verifying', 'failed')
+        activePhase = undefined
+        const attributionError = `verification changed setup-attributed paths: ${finalEvidence.setup_mutations.join(', ')}`
+        await this.finish(
+          job,
+          this.resultFromEvidence(
+            job,
+            'rejected',
+            providerOutcome,
+            finalSnapshot,
+            verification,
+            finalEvidence.attribution_violations,
+            `${attributionError}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            classifyFailure('scope')
+          )
+        )
+        return
+      }
       const finalViolations = scopeViolations(
         finalSnapshot.changed_files,
         job.request.allowed_paths
@@ -703,7 +1337,8 @@ export class JobManager
             finalSnapshot,
             verification,
             finalViolations,
-            `verification changed paths outside the assignment: ${finalViolations.join(', ')}`
+            `verification changed paths outside the assignment: ${finalViolations.join(', ')}`,
+            classifyFailure('scope')
           )
         )
         return
@@ -727,7 +1362,7 @@ export class JobManager
         return
       }
       const failedVerification = verification.find(verificationFailed)
-      const status: WorkerStatus =
+      const status: TerminalWorkerStatus =
         failedVerification === undefined ? 'completed' : 'failed'
       await this.phase(
         job,
@@ -746,27 +1381,106 @@ export class JobManager
           [],
           failedVerification === undefined
             ? undefined
-            : commandFailureMessage('verification', failedVerification)
+            : commandFailureMessage('verification', failedVerification),
+          failedVerification === undefined
+            ? undefined
+            : classifyFailure('verification', failedVerification)
         )
       )
     }
     catch (error)
     {
+      if (error instanceof UnconfirmedProcessGroupExitError)
+      {
+        processExitUnconfirmed = true
+        throw error
+      }
       if (activePhase !== undefined)
       {
         await this.phase(job, activePhase, 'failed').catch(() =>
         {})
       }
+      if (error instanceof ProcessOwnershipClearError)
+      {
+        await this.finishAfterProcessClearFailure(job, error)
+        return
+      }
       await this.finish(
         job,
-        this.baseResult(job, 'failed', errorMessage(error))
+        this.baseResult(
+          job,
+          'failed',
+          errorMessage(error),
+          error instanceof ProcessOwnershipError
+            ? classifyFailure('broker')
+            : unexpectedFailureClass
+        )
       )
     }
     finally
     {
-      this.controllers.delete(job.job_id)
-      void this.schedule()
+      if (this.controllers.get(job.job_id) === controller)
+      {
+        this.controllers.delete(job.job_id)
+      }
+      if (!processExitUnconfirmed) void this.schedule()
     }
+  }
+
+  private async finishAfterProcessClearFailure(
+    job: WorkerJob,
+    error: ProcessOwnershipClearError
+  ): Promise<void>
+  {
+    const salvageMessage = `${error.message}; process-group exit was confirmed, but phase attribution did not complete, so change.patch is the full base-to-current delta and salvage evidence only`
+    if (job.worktree === undefined)
+    {
+      await this.finish(
+        job,
+        this.baseResult(
+          job,
+          'failed',
+          salvageMessage,
+          classifyFailure('broker')
+        )
+      )
+      return
+    }
+    let snapshot: Awaited<ReturnType<typeof snapshotWorktree>>
+    try
+    {
+      snapshot = await snapshotWorktree(
+        job.worktree,
+        job.base_sha,
+        this.artifact(job, 'change.patch')
+      )
+    }
+    catch (snapshotError)
+    {
+      await this.finish(
+        job,
+        this.baseResult(
+          job,
+          'failed',
+          `${salvageMessage}; worktree salvage snapshot failed: ${errorMessage(snapshotError)}`,
+          classifyFailure('broker')
+        )
+      )
+      return
+    }
+    await this.finish(
+      job,
+      this.resultFromEvidence(
+        job,
+        'failed',
+        undefined,
+        snapshot,
+        [],
+        [],
+        salvageMessage,
+        classifyFailure('broker')
+      )
+    )
   }
 
   private async runCommands(
@@ -800,6 +1514,14 @@ export class JobManager
         stderr_path: stderrPath,
         signal,
         timeout_ms: command.timeout_seconds * 1_000,
+        on_process_started: async (identity) =>
+        {
+          await this.recordProcessStarted(job, identity)
+        },
+        on_process_finished: async (identity) =>
+        {
+          await this.recordProcessFinished(job, identity)
+        },
       })
       results.push({
         command: command.command,
@@ -817,8 +1539,9 @@ export class JobManager
 
   private baseResult(
     job: WorkerJob,
-    status: WorkerStatus,
-    error?: string
+    status: TerminalWorkerStatus,
+    error?: string,
+    failureClass?: FailureClass
   ): WorkerResult
   {
     const result: WorkerResult = {
@@ -837,7 +1560,10 @@ export class JobManager
       setup: [],
       verification: [],
       scope_violations: [],
-      event_log_path: this.artifact(job, 'events.jsonl'),
+      event_log_path: this.artifact(
+        job,
+        workerEventLogFileName(job.request.provider, job.restart_requeues ?? 0)
+      ),
       stderr_path: this.artifact(job, 'provider.stderr.log'),
       model_result_path: this.artifact(job, 'model-result.json'),
       created_at: job.created_at,
@@ -852,20 +1578,22 @@ export class JobManager
     if (job.worktree !== undefined) result.worktree = job.worktree
     if (job.branch !== undefined) result.branch = job.branch
     if (error !== undefined) result.error = error
+    if (failureClass !== undefined) result.failure_class = failureClass
     return result
   }
 
   private resultFromEvidence(
     job: WorkerJob,
-    status: WorkerStatus,
+    status: TerminalWorkerStatus,
     provider: ProviderOutcome | undefined,
     snapshot: Awaited<ReturnType<typeof snapshotWorktree>>,
     verification: VerificationResult[],
     violations: string[],
-    error?: string
+    error?: string,
+    failureClass?: FailureClass
   ): WorkerResult
   {
-    const result = this.baseResult(job, status, error)
+    const result = this.baseResult(job, status, error, failureClass)
     result.head_sha = snapshot.head_sha
     result.patch_path = snapshot.patch_path
     result.changed_files = snapshot.changed_files
@@ -895,22 +1623,61 @@ export class JobManager
 
   private async finish(job: WorkerJob, result: WorkerResult): Promise<void>
   {
+    const existing = this.terminalTransitions.get(job.job_id)
+    if (existing !== undefined)
+    {
+      await existing
+      return
+    }
+    const transition = this.commitTerminal(job, result)
+    this.terminalTransitions.set(job.job_id, transition)
+    try
+    {
+      await transition
+    }
+    finally
+    {
+      if (this.terminalTransitions.get(job.job_id) === transition)
+      {
+        this.terminalTransitions.delete(job.job_id)
+      }
+    }
+  }
+
+  private async commitTerminal(
+    job: WorkerJob,
+    result: WorkerResult
+  ): Promise<void>
+  {
     await this.phase(job, 'finalizing', 'started')
     const setup = this.setupResults.get(job.job_id)
     if (setup !== undefined) result.setup = setup
-    this.setupResults.delete(job.job_id)
     const completedAt = new Date().toISOString()
-    job.status = result.status
-    job.completed_at = completedAt
     result.completed_at = completedAt
     if (job.started_at !== undefined)
     {
       result.elapsed_ms = Date.parse(completedAt) - Date.parse(job.started_at)
     }
+    const terminal: WorkerJob = {
+      ...job,
+      status: result.status,
+      completed_at: completedAt,
+      result,
+    }
+    delete terminal.process_id
+    delete terminal.process_token
+    await this.store.write(terminal)
+
+    job.status = terminal.status
+    job.completed_at = completedAt
     job.result = result
-    await this.store.write(job)
+    delete job.process_id
+    delete job.process_token
+    this.setupResults.delete(job.job_id)
     await this.phase(job, 'finalizing', 'completed')
     this.activities.delete(job.job_id)
-    this.events.emit(`terminal:${job.job_id}`, job)
+    const summary = summarizeWorkerJob(terminal)
+    this.jobs.delete(job.job_id)
+    this.events.emit(`terminal:${job.job_id}`, summary)
   }
 }

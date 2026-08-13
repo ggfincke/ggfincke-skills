@@ -11,6 +11,12 @@ import type {
 
 const MAX_SUMMARY_CHARACTERS = 1_000
 
+export interface ActivityMessageSnapshot
+{
+  summary: string
+  recorded_at?: string
+}
+
 export function sanitizeActivitySummary(summary: string): string | undefined
 {
   const controlSafe = summary
@@ -44,6 +50,8 @@ export class ActivityWriter
   private sequence = 0
   private needsDelimiter = false
   private openPhase: ActivityPhase | undefined
+  private lastMessage: string | undefined
+  private lastMessageAt: string | undefined
   private pendingActions = 0
   private pending: Promise<void>
 
@@ -87,6 +95,17 @@ export class ActivityWriter
   private applyPriorRecord(record: Record<string, unknown>): void
   {
     if (record.schema_version !== 1) return
+    // the newest prose line is the other half of a useful progress report; a
+    // timed-out wait that carries only job ids is what drove the 5-minute poll
+    if (record.kind === 'message' && typeof record.summary === 'string')
+    {
+      this.lastMessage = record.summary
+      if (typeof record.recorded_at === 'string')
+      {
+        this.lastMessageAt = record.recorded_at
+      }
+      return
+    }
     if (record.kind === 'action')
     {
       if (record.status === 'started') this.pendingActions += 1
@@ -124,6 +143,19 @@ export class ActivityWriter
   {
     await this.pending.catch(() => undefined)
     return this.openPhase
+  }
+
+  // replayed by initialize(), so this survives a daemon restart w/o re-reading
+  async latestMessage(): Promise<ActivityMessageSnapshot | undefined>
+  {
+    await this.pending.catch(() => undefined)
+    if (this.lastMessage === undefined) return undefined
+    const latest: ActivityMessageSnapshot = { summary: this.lastMessage }
+    if (this.lastMessageAt !== undefined)
+    {
+      latest.recorded_at = this.lastMessageAt
+    }
+    return latest
   }
 
   async failPendingActions(): Promise<void>

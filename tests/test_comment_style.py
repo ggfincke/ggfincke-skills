@@ -69,16 +69,24 @@ class EncodingPreserved(unittest.TestCase):
 
 class OutsideRootRejected(unittest.TestCase):
 	# a scan root outside --root must be a clean CLI error, not a traceback
-	def test_python_root_outside_root(self) -> None:
+	def test_python_scope_outside_root(self) -> None:
 		with tempfile.TemporaryDirectory() as inside, tempfile.TemporaryDirectory() as outside:
-			(Path(outside) / "x.py").write_text("# x\nprint(1)\n")
-			result = support.run_script(
+			path = Path(outside) / "x.py"
+			body = "# x.py\n# outside fixture\n"
+			path.write_text(body, encoding="utf-8")
+			root_result = support.run_script(
 				CHECKER,
 				["--check", "--python", "--root", inside, "--python-root", outside],
 			)
-			self.assertEqual(result.returncode, 2)
-			self.assertIn("outside --root", result.stderr)
-			self.assertNotIn("Traceback", result.stderr)
+			file_result = support.run_script(
+				CHECKER,
+				["--fix", "--python", "--root", inside, "--python-file", str(path)],
+			)
+			for result in (root_result, file_result):
+				self.assertEqual(result.returncode, 2)
+				self.assertIn("outside --root", result.stderr)
+				self.assertNotIn("Traceback", result.stderr)
+			self.assertEqual(path.read_text(encoding="utf-8"), body)
 
 
 class SwiftToolingExemption(unittest.TestCase):

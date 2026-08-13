@@ -4,24 +4,28 @@
   "additionalProperties": false,
   "properties": {
     "summary": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 8000
     },
     "assumptions": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "maxLength": 500
       }
     },
     "risks": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "maxLength": 500
       }
     },
     "follow_ups": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "maxLength": 500
       }
     }
   },

@@ -2,7 +2,9 @@
 // protect path-prefix semantics & the safety-critical Codex invocation contract
 
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import test from 'node:test'
+import { combinedCodexHome } from '../src/ccusage.js'
 import type { BrokerConfig, ProviderRunContext } from '../src/contracts.js'
 import {
   normalizeAllowedPaths,
@@ -10,6 +12,46 @@ import {
   scopesOverlap,
 } from '../src/path-scope.js'
 import { buildCodexArgs } from '../src/providers/codex.js'
+
+test('Codex usage homes share absent, empty, and explicit multi-home semantics', () =>
+{
+  const userHome = path.join(path.sep, 'users', 'worker')
+  const defaultCodexHome = path.join(userHome, '.codex')
+  const sidecar = path.join(
+    path.sep,
+    'state',
+    'worker-broker',
+    'ccusage',
+    'codex'
+  )
+  for (const environment of [
+    { HOME: userHome },
+    { HOME: userHome, CODEX_HOME: '' },
+  ])
+  {
+    assert.equal(
+      combinedCodexHome(environment, sidecar),
+      [defaultCodexHome, sidecar].join(',')
+    )
+  }
+
+  const firstHome = path.join(path.sep, 'codex', 'one')
+  const secondHome = path.join(path.sep, 'codex', 'two')
+  assert.equal(
+    combinedCodexHome(
+      { HOME: userHome, CODEX_HOME: ` ${firstHome}, ${secondHome} ` },
+      sidecar
+    ),
+    [firstHome, secondHome, sidecar].join(',')
+  )
+  assert.equal(
+    combinedCodexHome(
+      { HOME: userHome, CODEX_HOME: `${firstHome},${sidecar}` },
+      sidecar
+    ),
+    [firstHome, sidecar].join(',')
+  )
+})
 
 test('path prefixes normalize, collapse children, and reject drift', () =>
 {
@@ -53,6 +95,7 @@ test('Codex arguments enforce the requested sandbox and nested-agent policy', ()
     model_result_path: '/job/result.json',
     signal: new AbortController().signal,
     on_process_started: () => undefined,
+    on_process_finished: () => undefined,
   }
   const config: BrokerConfig = {
     state_dir: '/state',

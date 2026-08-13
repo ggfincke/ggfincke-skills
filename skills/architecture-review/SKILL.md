@@ -7,7 +7,7 @@ description: Review a codebase's architecture and produce one evidence-based pla
 
 Produce one comprehensive, read-only architecture review. Determine whether the system's decomposition, dependencies, ownership, runtime flows, and physical layout fit its current responsibilities and likely evolution. Treat reorganization as a remedy, not the goal.
 
-Write the review as one self-contained document using `assets/templates/architecture-review-template.md`. Keep the current architecture, verified findings, target architecture, action groups, migration sequence, and implementation ledger together as the single source of truth. Do not create separate plan or action-group documents unless the user asks.
+Copy [the packaged template](assets/templates/architecture-review-template.md) to one concrete dated document, normally `dev-docs/architecture-review-YYYY-MM-DD.md`. Never edit or overwrite the packaged template; update an existing review only when the user points to the same scope. The concrete review is the sole permitted write during the otherwise source-read-only review. Keep the current architecture, verified findings, target architecture, action groups, migration sequence, and implementation ledger together there as the single source of truth. Do not create separate plan or action-group documents unless the user asks.
 
 ## Scope & boundaries
 
@@ -100,5 +100,4 @@ Do not confuse more proposed changes with greater thoroughness. A well-structure
 
 ## Template
 
-- `assets/templates/architecture-review-template.md` - one review artifact containing the current architecture, verified findings, rejected alternatives, target architecture, integrated action groups, migration sequence, test strategy, verification log, and implementation ledger.
-
+- [assets/templates/architecture-review-template.md](assets/templates/architecture-review-template.md) - copy this packaged resource to the concrete review path; never edit it in place.
