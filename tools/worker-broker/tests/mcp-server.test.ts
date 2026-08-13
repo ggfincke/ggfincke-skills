@@ -5,14 +5,22 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import type { WorkerJob, WorkerResult, WorkerStatus } from '../src/contracts.js'
 import type {
-  DaemonClient,
-  DaemonIdentity,
-  DaemonMethod,
-  DaemonMethods,
+  WorkerJob,
+  WorkerResult,
+  WorkerStatus,
+  WorkerSummary,
+} from '../src/contracts.js'
+import {
+  DAEMON_PROTOCOL_VERSION,
+  type DaemonClient,
+  type DaemonIdentity,
+  type DaemonMethod,
+  type DaemonMethods,
 } from '../src/daemon/protocol.js'
-import { createWorkerBrokerServer } from '../src/mcp-server.js'
+import { STATE_SCHEMA_VERSION } from '../src/job-store.js'
+import { clipToBytes, createWorkerBrokerServer } from '../src/mcp-server.js'
+import { summarizeWorkerJob } from '../src/worker-summary.js'
 
 interface CallRecord
 {
@@ -23,8 +31,8 @@ interface CallRecord
 const IDENTITY: DaemonIdentity = {
   pid: 123,
   build_id: 'test-build',
-  protocol_version: 1,
-  state_schema_version: 1,
+  protocol_version: DAEMON_PROTOCOL_VERSION,
+  state_schema_version: STATE_SCHEMA_VERSION,
   started_at: '2026-08-01T00:00:00.000Z',
   socket_path: '/tmp/worker-broker/daemon.sock',
   state_dir: '/tmp/worker-broker',
@@ -147,32 +155,9 @@ function worker(jobId: string, status: WorkerStatus): WorkerJob
   return job
 }
 
-function summary(job: WorkerJob): Record<string, unknown>
+function summary(job: WorkerJob): WorkerSummary
 {
-  return {
-    job_id: job.job_id,
-    status: job.status,
-    provider: 'codex',
-    mode: 'edit',
-    task_preview: 'create MCP fixture',
-    task_bytes: 18,
-    repo: '/repo',
-    allowed_paths: ['src'],
-    base_sha: 'base-sha',
-    stage: 'implementation',
-    workflow: 'standard',
-    run: 'run-1',
-    depends_on: [],
-    model: 'gpt-fixture',
-    effort: 'high',
-    branch: `agent/${job.job_id}`,
-    worktree: '/worktree',
-    created_at: '2026-08-01T00:00:00.000Z',
-    started_at: '2026-08-01T00:00:01.000Z',
-    ...(job.completed_at === undefined
-      ? {}
-      : { completed_at: job.completed_at }),
-  }
+  return summarizeWorkerJob(job)
 }
 
 function structured(result: unknown): Record<string, unknown>
@@ -224,18 +209,21 @@ test('MCP preserves schemas and translates every tool through the daemon client'
     truncated: true,
     byte_length: 128,
   }
-  daemon.set('start_worker', startedJob)
-  daemon.set('edit_serialization', conflicts)
-  daemon.set('list_workers', [completedJob])
+  daemon.set('start_worker', {
+    worker: summary(startedJob),
+    serializes_behind: conflicts,
+  })
+  daemon.set('list_workers', [summary(completedJob)])
   daemon.set('get_run_status', runStatus)
   daemon.set('wait_for_workers', {
     timed_out: false,
-    workers: [completedJob],
+    workers: [summary(completedJob)],
+    pending: [],
   })
   daemon.set('get_worker_artifact', artifact)
-  daemon.set('get_worker_status', completedJob)
+  daemon.set('get_worker_status', summary(completedJob))
   daemon.set('get_worker_result', completedJob)
-  daemon.set('cancel_worker', runningJob)
+  daemon.set('cancel_worker', summary(runningJob))
 
   const server = createWorkerBrokerServer(daemon)
   const client = new Client({ name: 'worker-broker-tests', version: '1.0.0' })
@@ -270,15 +258,16 @@ test('MCP preserves schemas and translates every tool through the daemon client'
     const invalid = await client.callTool({
       name: 'start_worker',
       arguments: {
-        provider: 'codex',
+        provider: 'cursor',
         mode: 'edit',
         repo: '/repo',
-        task: 'reject empty stage',
+        task: 'reject generic Cursor effort',
         allowed_paths: ['src'],
-        stage: '',
+        effort: 'high',
       },
     })
     assert.equal((invalid as { isError?: boolean }).isError, true)
+    assert.deepEqual(daemon.calls, [])
 
     const startRequest = {
       provider: 'codex',
@@ -390,10 +379,6 @@ test('MCP preserves schemas and translates every tool through the daemon client'
     assert.deepEqual(daemon.calls, [
       { method: 'start_worker', params: startRequest },
       {
-        method: 'edit_serialization',
-        params: { job_id: 'started-job' },
-      },
-      {
         method: 'list_workers',
         params: {
           status: 'completed',
@@ -460,4 +445,25 @@ test('MCP preserves schemas and translates every tool through the daemon client'
     await client.close()
     await server.close()
   }
+})
+
+test('MCP summary clipping reserves the UTF-8 ellipsis within every byte budget', () =>
+{
+  const cases = [
+    { budget: 1, expected: '' },
+    { budget: 2, expected: '' },
+    { budget: 3, expected: '…' },
+    { budget: 4, expected: 'a…' },
+    { budget: 5, expected: 'ab…' },
+    { budget: 6, expected: 'abc…' },
+    { budget: 7, expected: 'abcdefg' },
+  ]
+  for (const { budget, expected } of cases)
+  {
+    const clipped = clipToBytes('abcdefg', budget)
+    assert.equal(clipped, expected)
+    assert.ok(Buffer.byteLength(clipped, 'utf8') <= budget)
+  }
+  assert.equal(clipToBytes('😀x', 4), '…')
+  assert.equal(clipToBytes('😀x', 5), '😀x')
 })

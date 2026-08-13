@@ -15,8 +15,18 @@ checkouts, and orphaned in-flight work.
   A dead socket file (connect refused) is cleaned up and rebound.
 - On start the daemon writes `state_dir/daemon.json` (`DaemonIdentity`: pid,
   build id, protocol version, state schema version, started_at) and runs the
-  existing initialize/reconcile pass. Reconciliation snapshots any surviving
-  worktree to `change.patch` BEFORE cleanup so restarts never discard work.
+  existing initialize/reconcile pass. Reconciliation signals a recorded group
+  only after its PID and supervisor token positively identify broker-owned work,
+  then durably clears both before snapshotting the interrupted worktree. A
+  Git-dirty snapshot ends `failed` with a base-applicable salvage patch; only a
+  proven-clean snapshot may requeue once. If ownership or group exit cannot be
+  confirmed, or the cleared identity cannot be persisted, startup fail-stops
+  without snapshotting or changing the durable nonterminal owner record.
+- Every setup, provider, and verification process is a detached group whose exec
+  gate opens only after its PID and supervisor token are durable. The runner
+  terminates and awaits any descendants left after the group leader exits, then
+  the matching finish callback durably clears the identity before the next phase
+  may start.
 - Clients connect-or-spawn: try the socket; on failure spawn the daemon
   detached from the client's own dist and retry until hello succeeds.
 - Upgrade drain: hello carries the client's build id. On mismatch the client
@@ -31,8 +41,27 @@ checkouts, and orphaned in-flight work.
 One JSON object per line over the socket (`daemon/protocol.ts` is the pinned
 contract). Requests are multiplexed by numeric id and answered in completion
 order, so a long `wait_for_workers` does not block other calls on the same
-connection. First frame must be `hello`. No push events in v1; waits are plain
-requests with a server-side timeout clamp.
+connection. First frame must be `hello`. Protocol 3 carries bounded worker
+summaries on routine lifecycle methods; waits are plain requests with a
+server-side timeout clamp. Full records cross the wire only through the
+explicit `get_worker_result` method.
+
+## Persistence
+
+- `job.json` is the authoritative full record. The manager retains full jobs
+  only while they are nonterminal and evicts them after the terminal write.
+- Versioned `job.json` records serialize the reserved top-level
+  `state_schema_version` as the final property. The bounded cache fingerprint
+  treats true absence as an unversioned legacy record and rejects any detected
+  version newer than this build.
+- A terminal `summary.json` is an additive cache with its own schema version,
+  the writer's supported state-schema version, and the authoritative file's
+  stat fingerprint. It is trusted only when its structure, both versions, job
+  ID, terminal status, and fingerprint all match.
+- Missing, corrupt, newer, stale, or cache-only summaries fall back to
+  `job.json`; terminal fallback may repair the cache without rewriting the
+  authoritative record. The full write commits first, and a later summary
+  failure never rejects that durable mutation or leaves an older cache trusted.
 
 ## Concurrency
 
@@ -54,8 +83,11 @@ verification, so every classified failure preserves whatever the model built.
 ## Versioning
 
 - `DAEMON_PROTOCOL_VERSION` — wire compatibility, checked at hello.
-- `STATE_SCHEMA_VERSION` — stamped on persisted job records; the daemon
-  refuses to adopt a state dir stamped newer than itself and migrates older
-  records in place while holding ownership.
+- `STATE_SCHEMA_VERSION` — owned by `job-store.ts` and stamped on authoritative
+  job records. The store rejects newer records and normalizes absent legacy
+  list fields only in memory while reading; it never migrates `job.json` in
+  place.
+- `SUMMARY_SCHEMA_VERSION` — owned independently by `job-store.ts`; an
+  unsupported summary is discarded as cache and rebuilt from `job.json`.
 - `dist/build-id.json` — content hash emitted by the build; `readBuildId()`
   returns `dev` for unbuilt source runs.

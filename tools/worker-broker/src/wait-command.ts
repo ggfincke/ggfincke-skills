@@ -1,15 +1,18 @@
 // tools/worker-broker/src/wait-command.ts
 // block until a selected worker set is terminal & report the outcome once
 
-import type { WorkerJob, WorkerStatus } from './contracts.js'
-import type { DaemonClient, PendingWorker } from './daemon/protocol.js'
+import {
+  TERMINAL_WORKER_STATUSES,
+  type WorkerStatus,
+  type WorkerSummary,
+} from './contracts.js'
+import type {
+  DaemonClient,
+  PendingWorker,
+  WaitForWorkersResult,
+} from './daemon/protocol.js'
 
-const TERMINAL_STATUSES = new Set<WorkerStatus>([
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-])
+const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
 
 // long enough that a normal wave produces at most a handful of progress lines
 const MAX_LINE_MESSAGE_CHARACTERS = 120
@@ -22,12 +25,16 @@ export interface WaitSelector
 
 export interface WaitOutcome
 {
+  selected: number
   completed: number
   failed: number
+  rejected: number
+  cancelled: number
+  pending: 0
+  timed_out: false
   // false whenever terminality was never observed; the caller maps that to a
   // distinct exit code so a dead daemon is never read as a finished wave
   observed: boolean
-  jobs: WorkerJob[]
 }
 
 export interface WaitSink
@@ -58,26 +65,69 @@ function pendingLine(entry: PendingWorker): string
   return `${entry.job_id} ${entry.stage ?? '-'} ${entry.phase ?? '-'} ${seconds}s ${message}`
 }
 
-function terminalLine(job: WorkerJob): string
+function terminalLine(job: WorkerSummary): string
 {
-  const changed = job.result?.changed_files.length ?? 0
-  return `${job.job_id} ${job.status} ${job.result?.elapsed_ms ?? 0}ms ${changed} files ${job.result?.failure_class ?? '-'}`
+  return `${job.job_id} ${job.status} ${job.elapsed_ms ?? 0}ms ${job.changed_file_count} files ${job.failure_class ?? '-'}`
 }
 
-function terminalJson(selector: WaitSelector, jobs: WorkerJob[]): string
+function terminalCounts(jobs: WorkerSummary[]): Omit<WaitOutcome, 'observed'>
+{
+  return {
+    selected: jobs.length,
+    completed: jobs.filter((job) => job.status === 'completed').length,
+    failed: jobs.filter((job) => job.status === 'failed').length,
+    rejected: jobs.filter((job) => job.status === 'rejected').length,
+    cancelled: jobs.filter((job) => job.status === 'cancelled').length,
+    pending: 0,
+    timed_out: false,
+  }
+}
+
+function terminalJson(selector: WaitSelector, outcome: WaitOutcome): string
 {
   const payload: Record<string, unknown> = {}
   if (selector.run !== undefined) payload.run = selector.run
-  payload.completed = jobs.filter((job) => job.status === 'completed').length
-  payload.failed = jobs.filter((job) => job.status !== 'completed').length
-  payload.jobs = jobs.map((job) => ({
-    job_id: job.job_id,
-    status: job.status,
-    elapsed_ms: job.result?.elapsed_ms ?? null,
-    changed_files: job.result?.changed_files ?? [],
-    failure_class: job.result?.failure_class ?? null,
-  }))
+  payload.selected = outcome.selected
+  payload.completed = outcome.completed
+  payload.failed = outcome.failed
+  payload.rejected = outcome.rejected
+  payload.cancelled = outcome.cancelled
+  payload.pending = outcome.pending
+  payload.timed_out = outcome.timed_out
   return JSON.stringify(payload)
+}
+
+function terminalWorkers(
+  selectedIds: readonly string[],
+  result: WaitForWorkersResult
+): WorkerSummary[]
+{
+  if (result.timed_out) throw new Error('worker wait response was not terminal')
+  if (result.pending.length !== 0)
+    throw new Error('terminal worker wait response still contains pending jobs')
+
+  const expected = new Set(selectedIds)
+  const seen = new Set<string>()
+  for (const worker of result.workers)
+  {
+    if (!expected.has(worker.job_id))
+      throw new Error(
+        `terminal worker wait returned unexpected job ${worker.job_id}`
+      )
+    if (seen.has(worker.job_id))
+      throw new Error(
+        `terminal worker wait returned duplicate job ${worker.job_id}`
+      )
+    if (!TERMINAL_STATUSES.has(worker.status))
+      throw new Error(
+        `terminal worker wait returned nonterminal job ${worker.job_id}`
+      )
+    seen.add(worker.job_id)
+  }
+  const missing = selectedIds.find((jobId) => !seen.has(jobId))
+  if (missing !== undefined)
+    throw new Error(`terminal worker wait omitted selected job ${missing}`)
+  return result.workers
 }
 
 // resolved once up front: a run that matches nothing must be reported as a
@@ -109,7 +159,16 @@ export async function waitForSelection(
   const jobIds = await resolveSelection(client, selector)
   if (jobIds.length === 0)
   {
-    return { completed: 0, failed: 0, observed: false, jobs: [] }
+    return {
+      selected: 0,
+      completed: 0,
+      failed: 0,
+      rejected: 0,
+      cancelled: 0,
+      pending: 0,
+      timed_out: false,
+      observed: false,
+    }
   }
   while (true)
   {
@@ -119,21 +178,20 @@ export async function waitForSelection(
     })
     if (!result.timed_out)
     {
-      const jobs = result.workers
-      if (options.json) sink.line(terminalJson(selector, jobs))
-      else for (const job of jobs) sink.line(terminalLine(job))
-      return {
-        completed: jobs.filter((job) => job.status === 'completed').length,
-        failed: jobs.filter((job) => job.status !== 'completed').length,
+      const jobs = terminalWorkers(jobIds, result)
+      const outcome: WaitOutcome = {
+        ...terminalCounts(jobs),
         observed: true,
-        jobs,
       }
+      if (options.json) sink.line(terminalJson(selector, outcome))
+      else for (const job of jobs) sink.line(terminalLine(job))
+      return outcome
     }
     // the loop exists because the daemon clamps each blocking call at
     // MAX_WAIT_SECONDS; an unbounded wait is assembled from bounded ones
     if (!options.json)
     {
-      for (const entry of result.pending ?? []) sink.line(pendingLine(entry))
+      for (const entry of result.pending) sink.line(pendingLine(entry))
     }
   }
 }
@@ -143,7 +201,7 @@ export async function waitForOneTerminal(
   client: DaemonClient,
   jobId: string,
   pollSeconds: number
-): Promise<WorkerJob>
+): Promise<WorkerSummary>
 {
   while (true)
   {
@@ -151,7 +209,7 @@ export async function waitForOneTerminal(
       job_ids: [jobId],
       timeout_seconds: pollSeconds,
     })
-    const job = waited.workers.find((worker) => worker.job_id === jobId)
-    if (job !== undefined && TERMINAL_STATUSES.has(job.status)) return job
+    if (waited.timed_out) continue
+    return terminalWorkers([jobId], waited)[0] as WorkerSummary
   }
 }

@@ -23,14 +23,10 @@ import {
   securePrivateFile,
   writePrivateFile,
 } from './artifact.js'
+import { codexEventLogAttempt, TERMINAL_WORKER_STATUSES } from './contracts.js'
 import { readJson } from './json.js'
 
-const TERMINAL_STATUSES = new Set([
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-])
+const TERMINAL_STATUSES = new Set<string>(TERMINAL_WORKER_STATUSES)
 
 type UsageProvenance = 'captured' | 'backfilled'
 type PersistResult = 'written' | 'existing' | 'ignored'
@@ -374,6 +370,56 @@ function storedJobAttempt(job: StoredJob): number
     : 0
 }
 
+interface CodexEventLogSource
+{
+  attempt: number
+  path: string
+}
+
+async function codexEventLogSources(
+  jobDirectory: string,
+  currentAttempt: number
+): Promise<CodexEventLogSource[]>
+{
+  const entries = (await directoryEntries(jobDirectory)).filter((entry) =>
+    entry.isFile()
+  )
+  const sources = new Map<number, string>()
+  for (const entry of entries)
+  {
+    const attempt = codexEventLogAttempt(entry.name)
+    if (attempt === undefined) continue
+    sources.set(attempt, path.join(jobDirectory, entry.name))
+  }
+
+  const legacy = entries.find((entry) => entry.name === 'events.jsonl')
+  if (legacy !== undefined)
+  {
+    // a fixed-only record belongs to its stored current attempt; beside newer
+    // attempt logs it is the last pre-upgrade attempt immediately before them
+    if (sources.size === 0)
+    {
+      sources.set(currentAttempt, path.join(jobDirectory, legacy.name))
+    }
+    else
+    {
+      const earliestAttempt = Math.min(...sources.keys())
+      const legacyAttempt = earliestAttempt - 1
+      if (legacyAttempt >= 0 && !sources.has(legacyAttempt))
+      {
+        sources.set(legacyAttempt, path.join(jobDirectory, legacy.name))
+      }
+    }
+  }
+
+  return [...sources]
+    .sort(([left], [right]) => left - right)
+    .map(([attempt, eventLogPath]) => ({
+      attempt,
+      path: eventLogPath,
+    }))
+}
+
 async function backfillEventLog(
   stateDir: string,
   eventLogPath: string,
@@ -499,41 +545,45 @@ export async function materializeCodexUsageSidecar(
       continue
     }
     const jobId = nonEmptyString(job.job_id) ?? entry.name
-    const attempt = storedJobAttempt(job)
-    const markerPath = completionMarkerPath(stateDir, jobId, attempt)
-    if (await pathExists(markerPath)) continue
-
-    const eventLogPath = path.join(jobsDirectory, entry.name, 'events.jsonl')
-    let fallbackTimestamp: string
-    try
-    {
-      fallbackTimestamp = (await stat(eventLogPath)).mtime.toISOString()
-    }
-    catch (error)
-    {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      await writePrivateAtomic(markerPath, '')
-      continue
-    }
-    backfilledRecords += await backfillEventLog(
-      stateDir,
-      eventLogPath,
-      jobId,
-      attempt,
-      fallbackTimestamp,
-      storedJobModel(job)
+    const eventLogs = await codexEventLogSources(
+      path.join(jobsDirectory, entry.name),
+      storedJobAttempt(job)
     )
-    await writePrivateAtomic(markerPath, '')
+    for (const eventLog of eventLogs)
+    {
+      const markerPath = completionMarkerPath(stateDir, jobId, eventLog.attempt)
+      if (await pathExists(markerPath)) continue
+
+      let fallbackTimestamp: string
+      try
+      {
+        fallbackTimestamp = (await stat(eventLog.path)).mtime.toISOString()
+      }
+      catch (error)
+      {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+        throw error
+      }
+      backfilledRecords += await backfillEventLog(
+        stateDir,
+        eventLog.path,
+        jobId,
+        eventLog.attempt,
+        fallbackTimestamp,
+        storedJobModel(job)
+      )
+      await writePrivateAtomic(markerPath, '')
+    }
   }
   return await summarizeSidecar(sidecarDirectory, backfilledRecords)
 }
 
-function combinedCodexHome(
+export function combinedCodexHome(
   environment: NodeJS.ProcessEnv,
   sidecarDirectory: string
 ): string
 {
-  const configured = environment.CODEX_HOME
+  const configured = nonEmptyString(environment.CODEX_HOME)
   const homes =
     configured === undefined
       ? [path.join(nonEmptyString(environment.HOME) ?? os.homedir(), '.codex')]
@@ -629,7 +679,28 @@ async function resolveCcusageBinary(
 ): Promise<string>
 {
   const configured = nonEmptyString(environment.WORKER_BROKER_CCUSAGE_BINARY)
-  if (configured !== undefined) return configured
+  if (configured !== undefined)
+  {
+    if (!path.isAbsolute(configured))
+    {
+      throw new Error(
+        'WORKER_BROKER_CCUSAGE_BINARY must be an absolute path to the stock binary'
+      )
+    }
+    if (!(await isExecutableFile(configured)))
+    {
+      throw new Error(
+        `WORKER_BROKER_CCUSAGE_BINARY is not an executable file: ${configured}`
+      )
+    }
+    if (await reentersWorkerBroker(configured))
+    {
+      throw new Error(
+        `WORKER_BROKER_CCUSAGE_BINARY re-enters worker-broker: ${configured}`
+      )
+    }
+    return configured
+  }
   const skipped: string[] = []
   for (const directory of (nonEmptyString(environment.PATH) ?? '').split(
     path.delimiter

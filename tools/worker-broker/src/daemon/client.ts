@@ -61,7 +61,8 @@ class SocketDaemonClient implements DaemonClient
 
   constructor(private readonly socket: Socket)
   {
-    socket.on('data', (chunk: Buffer) => this.receive(chunk))
+    socket.setEncoding('utf8')
+    socket.on('data', (chunk: string) => this.receive(chunk))
     socket.on('error', (error) =>
       this.fail(
         new DaemonTransportError(`daemon socket error: ${error.message}`, error)
@@ -143,9 +144,9 @@ class SocketDaemonClient implements DaemonClient
     })
   }
 
-  private receive(chunk: Buffer): void
+  private receive(chunk: string): void
   {
-    this.buffer += chunk.toString('utf8')
+    this.buffer += chunk
     while (true)
     {
       const newline = this.buffer.indexOf('\n')

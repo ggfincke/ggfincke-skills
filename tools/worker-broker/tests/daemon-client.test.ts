@@ -11,11 +11,11 @@ import type { BrokerConfig } from '../src/contracts.js'
 import { connectDaemon, ensureDaemonClient } from '../src/daemon/client.js'
 import {
   DAEMON_PROTOCOL_VERSION,
-  STATE_SCHEMA_VERSION,
   daemonSocketPath,
   readBuildId,
   type DaemonIdentity,
 } from '../src/daemon/protocol.js'
+import { STATE_SCHEMA_VERSION } from '../src/job-store.js'
 
 interface FakeRequest
 {
@@ -62,6 +62,23 @@ function identity(stateDir: string, buildId = readBuildId()): DaemonIdentity
 function reply(socket: Socket, request: FakeRequest, result: unknown): void
 {
   socket.write(`${JSON.stringify({ id: request.id, ok: true, result })}\n`)
+}
+
+function replyWithSplitCodePoint(
+  socket: Socket,
+  request: FakeRequest,
+  result: unknown,
+  codePoint: string
+): void
+{
+  const frame = Buffer.from(
+    `${JSON.stringify({ id: request.id, ok: true, result })}\n`
+  )
+  const codePointStart = frame.indexOf(Buffer.from(codePoint))
+  assert.notEqual(codePointStart, -1)
+  const splitAt = codePointStart + 2
+  socket.write(frame.subarray(0, splitAt))
+  setTimeout(() => socket.write(frame.subarray(splitAt)), 25)
 }
 
 function reject(
@@ -218,7 +235,11 @@ test('request ids multiplex out-of-order responses independently', async () =>
     })
     assert.ok(waitingRequest)
     assert.ok(waitingSocket)
-    reply(waitingSocket, waitingRequest, { timed_out: false, workers: [] })
+    reply(waitingSocket, waitingRequest, {
+      timed_out: false,
+      workers: [],
+      pending: [],
+    })
   })
 
   try
@@ -239,8 +260,54 @@ test('request ids multiplex out-of-order responses independently', async () =>
     })
 
     assert.equal((await status).identity.build_id, readBuildId())
-    assert.deepEqual(await wait, { timed_out: false, workers: [] })
+    assert.deepEqual(await wait, {
+      timed_out: false,
+      workers: [],
+      pending: [],
+    })
     assert.deepEqual(completionOrder, ['status', 'wait'])
+    await client.close()
+  }
+  finally
+  {
+    await daemon.close()
+    await rm(stateDir, { recursive: true, force: true })
+  }
+})
+
+test('response framing preserves UTF-8 split across socket chunks', async () =>
+{
+  const stateDir = await mkdtemp(
+    path.join(os.tmpdir(), 'broker-client-unicode-')
+  )
+  const currentIdentity = identity(stateDir)
+  const daemon = await startFakeDaemon(stateDir, (request, socket) =>
+  {
+    if (request.method === 'hello')
+    {
+      reply(socket, request, currentIdentity)
+      return
+    }
+    assert.equal(request.method, 'daemon_status')
+    replyWithSplitCodePoint(
+      socket,
+      request,
+      {
+        identity: currentIdentity,
+        active_jobs: ['job-😀'],
+        queued_jobs: [],
+        draining: false,
+      },
+      '😀'
+    )
+  })
+
+  try
+  {
+    const client = await connectDaemon(brokerConfig(stateDir))
+    assert.deepEqual((await client.call('daemon_status', {})).active_jobs, [
+      'job-😀',
+    ])
     await client.close()
   }
   finally

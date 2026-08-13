@@ -6,19 +6,22 @@ import path from 'node:path'
 import test from 'node:test'
 import type {
   BrokerConfig,
-  StartWorkerRequest,
   WorkerJob,
   WorkerResult,
   WorkerStatus,
+  WorkerSummary,
 } from '../src/contracts.js'
 import { parseCli, runCli, type CliDependencies } from '../src/cli.js'
-import type {
-  DaemonClient,
-  DaemonIdentity,
-  DaemonMethod,
-  DaemonMethods,
-  DaemonStatusResult,
+import {
+  DAEMON_PROTOCOL_VERSION,
+  type DaemonClient,
+  type DaemonIdentity,
+  type DaemonMethod,
+  type DaemonMethods,
+  type DaemonStatusResult,
 } from '../src/daemon/protocol.js'
+import { STATE_SCHEMA_VERSION } from '../src/job-store.js'
+import { summarizeWorkerJob } from '../src/worker-summary.js'
 
 interface CallRecord
 {
@@ -29,8 +32,8 @@ interface CallRecord
 const IDENTITY: DaemonIdentity = {
   pid: 123,
   build_id: 'test-build',
-  protocol_version: 1,
-  state_schema_version: 1,
+  protocol_version: DAEMON_PROTOCOL_VERSION,
+  state_schema_version: STATE_SCHEMA_VERSION,
   started_at: '2026-08-01T00:00:00.000Z',
   socket_path: '/tmp/worker-broker/daemon.sock',
   state_dir: '/tmp/worker-broker',
@@ -124,8 +127,22 @@ function worker(jobId: string, status: WorkerStatus): WorkerJob
     base_sha: 'base-sha',
     created_at: '2026-08-01T00:00:00.000Z',
   }
-  if (status === 'completed') job.result = workerResult(jobId)
+  if (status !== 'queued' && status !== 'running')
+  {
+    job.completed_at = '2026-08-01T00:00:02.000Z'
+    job.result = { ...workerResult(jobId), status }
+    if (status !== 'completed')
+    {
+      job.result.error = `${status} fixture`
+      job.result.failure_class = 'model'
+    }
+  }
   return job
+}
+
+function workerSummary(jobId: string, status: WorkerStatus): WorkerSummary
+{
+  return summarizeWorkerJob(worker(jobId, status))
 }
 
 function status(
@@ -145,13 +162,14 @@ function dependencies(
   client: StubDaemonClient,
   output: string[],
   configs: BrokerConfig[],
-  request: StartWorkerRequest = {
+  request: unknown = {
     provider: 'codex',
     mode: 'edit',
     repo: '/repo',
     task: 'CLI fixture',
     allowed_paths: ['src'],
-  }
+  },
+  errors: string[] = []
 ): CliDependencies
 {
   return {
@@ -160,7 +178,13 @@ function dependencies(
       configs.push(config)
       return client
     },
+    connectExisting: async (config) =>
+    {
+      configs.push(config)
+      return client
+    },
     writeStdout: (value) => output.push(value),
+    writeStderr: (value) => errors.push(value),
     readRequest: async () => request,
   }
 }
@@ -242,18 +266,25 @@ test('CLI daemon commands route arguments and report active-job refusal', async 
 
 test('CLI run, list, and result are daemon-backed', async () =>
 {
-  const queued = worker('cli-job', 'queued')
-  const completed = worker('cli-job', 'completed')
+  const queued = workerSummary('cli-job', 'queued')
+  const completedJob = worker('cli-job', 'completed')
+  const completed = summarizeWorkerJob(completedJob)
   const runClient = new StubDaemonClient()
-  runClient.enqueue('start_worker', queued)
+  runClient.enqueue('start_worker', {
+    worker: queued,
+    serializes_behind: [],
+  })
   runClient.enqueue('wait_for_workers', {
     timed_out: true,
     workers: [queued],
+    pending: [],
   })
   runClient.enqueue('wait_for_workers', {
     timed_out: false,
     workers: [completed],
+    pending: [],
   })
+  runClient.enqueue('get_worker_result', completedJob)
   const runOutput: string[] = []
   const exitCode = await runCli(
     ['run', '--request', './request.json'],
@@ -279,8 +310,12 @@ test('CLI run, list, and result are daemon-backed', async () =>
       method: 'wait_for_workers',
       params: { job_ids: ['cli-job'], timeout_seconds: 900 },
     },
+    {
+      method: 'get_worker_result',
+      params: { job_id: 'cli-job' },
+    },
   ])
-  assert.equal(runOutput[0], `${JSON.stringify(completed.result)}\n`)
+  assert.equal(runOutput[0], `${JSON.stringify(completedJob.result)}\n`)
   assert.equal(runClient.closeCount, 1)
 
   const listClient = new StubDaemonClient()
@@ -291,7 +326,7 @@ test('CLI run, list, and result are daemon-backed', async () =>
   assert.equal(listOutput[0], `${JSON.stringify([completed])}\n`)
 
   const resultClient = new StubDaemonClient()
-  resultClient.enqueue('get_worker_result', completed)
+  resultClient.enqueue('get_worker_result', completedJob)
   const resultOutput: string[] = []
   await runCli(
     ['result', 'cli-job'],
@@ -300,5 +335,260 @@ test('CLI run, list, and result are daemon-backed', async () =>
   assert.deepEqual(resultClient.calls, [
     { method: 'get_worker_result', params: { job_id: 'cli-job' } },
   ])
-  assert.equal(resultOutput[0], `${JSON.stringify(completed.result)}\n`)
+  assert.equal(resultOutput[0], `${JSON.stringify(completedJob.result)}\n`)
+})
+
+test('CLI rejects a malformed request without starting a worker', async () =>
+{
+  const client = new StubDaemonClient()
+  const errors: string[] = []
+  const configs: BrokerConfig[] = []
+  assert.equal(
+    await runCli(
+      ['run', '--request', './request.json'],
+      dependencies(
+        client,
+        [],
+        configs,
+        {
+          provider: 'codex',
+          mode: 'read',
+          repo: '/repo',
+          task: 'malformed CLI assignment',
+          allowed_paths: [],
+          allow_nested_agents: 'yes',
+        },
+        errors
+      )
+    ),
+    1
+  )
+  assert.equal(errors.length, 1)
+  assert.match(errors[0] ?? '', /expected boolean/iu)
+  assert.deepEqual(configs, [])
+  assert.deepEqual(client.calls, [])
+  assert.equal(client.closeCount, 0)
+})
+
+test('CLI grammar rejects misuse before connecting and separates operational failures', async () =>
+{
+  const invalidInvocations = [
+    ['run', '--request', 'one.json', '--request', 'two.json'],
+    ['run', '--request', '--pretty'],
+    ['run', '--request', 'one.json', '--timeout', '1abc'],
+    ['list', '--json'],
+    ['list', '--state-dir', '--bogus'],
+    ['list', 'extra'],
+    ['wait', '--run', 'wave', '--job-id', 'job-1'],
+    ['result', 'job-1', 'job-2'],
+    ['ccusage', 'tokens'],
+    ['daemon', 'status', '--when-idle'],
+    ['unknown'],
+  ]
+  for (const argv of invalidInvocations)
+  {
+    const client = new StubDaemonClient()
+    const output: string[] = []
+    const errors: string[] = []
+    const configs: BrokerConfig[] = []
+    assert.equal(
+      await runCli(
+        argv,
+        dependencies(client, output, configs, undefined, errors)
+      ),
+      2,
+      argv.join(' ')
+    )
+    assert.deepEqual(output, [], argv.join(' '))
+    assert.equal(errors.length, 1, argv.join(' '))
+    assert.deepEqual(configs, [], argv.join(' '))
+    assert.deepEqual(client.calls, [], argv.join(' '))
+    assert.equal(client.closeCount, 0, argv.join(' '))
+  }
+
+  const errors: string[] = []
+  let connectCount = 0
+  const operational = await runCli(['list'], {
+    connect: async () =>
+    {
+      connectCount += 1
+      throw new Error('injected daemon transport failure')
+    },
+    writeStdout: () => undefined,
+    writeStderr: (value) => errors.push(value),
+    readRequest: async () => ({}),
+  })
+  assert.equal(operational, 1)
+  assert.equal(connectCount, 1)
+  assert.deepEqual(errors, ['injected daemon transport failure\n'])
+
+  assert.equal(
+    await runCli(['ccusage', '--', '--json'], {
+      connect: async () =>
+      {
+        throw new Error('ccusage must not connect to the daemon')
+      },
+      writeStdout: () => undefined,
+      writeStderr: () => undefined,
+      readRequest: async () => ({}),
+      runCcusage: async () => 7,
+    }),
+    1
+  )
+})
+
+test('wait loops across timeouts and emits only bounded terminal counts', async () =>
+{
+  const client = new StubDaemonClient()
+  client.enqueue('wait_for_workers', {
+    timed_out: true,
+    workers: [],
+    pending: [
+      {
+        job_id: 'complete-job',
+        status: 'running',
+        elapsed_ms: 1_000,
+      },
+    ],
+  })
+  const terminal = [
+    workerSummary('complete-job', 'completed'),
+    workerSummary('failed-job', 'failed'),
+    workerSummary('rejected-job', 'rejected'),
+    workerSummary('cancelled-job', 'cancelled'),
+  ]
+  client.enqueue('wait_for_workers', {
+    timed_out: false,
+    workers: terminal,
+    pending: [],
+  })
+  const output: string[] = []
+  const errors: string[] = []
+  const exitCode = await runCli(
+    [
+      'wait',
+      '--job-id',
+      'complete-job',
+      '--job-id',
+      'failed-job',
+      '--job-id',
+      'rejected-job',
+      '--job-id',
+      'cancelled-job',
+      '--timeout',
+      '7',
+      '--json',
+    ],
+    dependencies(client, output, [], undefined, errors)
+  )
+  assert.equal(exitCode, 1)
+  assert.deepEqual(errors, [])
+  assert.deepEqual(client.calls, [
+    {
+      method: 'wait_for_workers',
+      params: {
+        job_ids: [
+          'complete-job',
+          'failed-job',
+          'rejected-job',
+          'cancelled-job',
+        ],
+        timeout_seconds: 7,
+      },
+    },
+    {
+      method: 'wait_for_workers',
+      params: {
+        job_ids: [
+          'complete-job',
+          'failed-job',
+          'rejected-job',
+          'cancelled-job',
+        ],
+        timeout_seconds: 7,
+      },
+    },
+  ])
+  assert.deepEqual(JSON.parse(output[0] ?? ''), {
+    selected: 4,
+    completed: 1,
+    failed: 1,
+    rejected: 1,
+    cancelled: 1,
+    pending: 0,
+    timed_out: false,
+  })
+  assert.equal(client.closeCount, 1)
+})
+
+test('wait rejects incomplete or contradictory terminal observations', async () =>
+{
+  const complete = workerSummary('selected-job', 'completed')
+  const malformed = [
+    {
+      label: 'missing',
+      workers: [],
+      pending: [],
+    },
+    {
+      label: 'extra',
+      workers: [complete, workerSummary('extra-job', 'completed')],
+      pending: [],
+    },
+    {
+      label: 'duplicate',
+      workers: [complete, complete],
+      pending: [],
+    },
+    {
+      label: 'nonterminal',
+      workers: [workerSummary('selected-job', 'running')],
+      pending: [],
+    },
+    {
+      label: 'pending',
+      workers: [complete],
+      pending: [
+        {
+          job_id: 'selected-job',
+          status: 'running' as const,
+          elapsed_ms: 1,
+        },
+      ],
+    },
+  ]
+  for (const response of malformed)
+  {
+    const client = new StubDaemonClient()
+    client.enqueue('wait_for_workers', {
+      timed_out: false,
+      workers: response.workers,
+      pending: response.pending,
+    })
+    const output: string[] = []
+    const errors: string[] = []
+    assert.equal(
+      await runCli(
+        ['wait', '--job-id', 'selected-job', '--json'],
+        dependencies(client, output, [], undefined, errors)
+      ),
+      2,
+      response.label
+    )
+    assert.deepEqual(output, [], response.label)
+    assert.equal(errors.length, 1, response.label)
+    assert.equal(client.closeCount, 1, response.label)
+  }
+
+  const noMatch = new StubDaemonClient()
+  noMatch.enqueue('list_workers', [])
+  const noMatchErrors: string[] = []
+  assert.equal(
+    await runCli(
+      ['wait', '--run', 'missing-run'],
+      dependencies(noMatch, [], [], undefined, noMatchErrors)
+    ),
+    2
+  )
+  assert.deepEqual(noMatchErrors, ['no workers matched the selector\n'])
 })

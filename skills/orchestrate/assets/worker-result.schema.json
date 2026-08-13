@@ -8,14 +8,19 @@
     "status": {
       "enum": ["completed", "failed", "rejected", "cancelled"]
     },
-    "provider": { "type": "string" },
-    "model": { "type": ["string", "null"] },
-    "effort": { "type": ["string", "null"] },
+    "provider": { "enum": ["codex", "cursor", "coral", "claude"] },
+    "model": { "type": "string" },
+    "effort": {
+      "enum": ["low", "medium", "high", "xhigh", "max", "ultra"]
+    },
     "effective_model": { "type": "string" },
     "mode": { "enum": ["read", "edit"] },
     "repo": { "type": "string" },
     "base_ref": { "type": "string" },
     "base_sha": { "type": "string" },
+    "stage": { "type": "string" },
+    "workflow": { "type": "string" },
+    "run": { "type": "string" },
     "head_sha": { "type": "string" },
     "worktree": { "type": "string" },
     "branch": { "type": "string" },
@@ -113,6 +118,15 @@
     "process_exit_code": { "type": ["integer", "null"] },
     "process_signal": { "type": ["string", "null"] },
     "error": { "type": "string" },
+    "failure_class": {
+      "enum": [
+        "environment",
+        "model",
+        "broker_fault",
+        "scope",
+        "verification"
+      ]
+    },
     "created_at": { "type": "string", "format": "date-time" },
     "started_at": { "type": "string", "format": "date-time" },
     "completed_at": { "type": "string", "format": "date-time" },
@@ -122,8 +136,6 @@
     "job_id",
     "status",
     "provider",
-    "model",
-    "effort",
     "mode",
     "repo",
     "base_ref",

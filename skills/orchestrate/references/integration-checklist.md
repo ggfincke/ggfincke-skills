@@ -16,8 +16,9 @@ Complete this checklist for every terminal implementation result.
 
 The blanket rule “reject failed, rejected, or unverified results” is superseded for terminal jobs by this evidence gate. Before canceling, relaunching, or discarding any non-completed job, call `get_worker_result` and inspect `status`, `error`, `failure_class`, setup and verification exit codes, `changed_files`, `patch_path`, and the `patch` artifact when needed.
 
-- If `failure_class` is `environment`, or a scope violation is demonstrably caused by setup effects, and the captured patch is intact, salvage the patch. Fix or account for the environment, verify the patch centrally, and never re-run the model merely to recover verification.
-- Relaunch only when no usable patch exists or the failure invalidates the patch. A `model`, `broker_fault`, genuine `scope`, or genuine `verification` failure needs lead judgment against the captured evidence; do not infer discard or relaunch from the status alone.
+- If `failure_class` is `environment` and the captured patch is intact, salvage the patch. Fix or account for the environment, verify the patch centrally, and never re-run the model merely to recover verification.
+- A setup-attribution `scope` rejection proves that a later Git-visible delta overlapped a setup-attributed path. Its full base-to-final patch is salvage-only and may include setup effects; isolate and review the applicable changes centrally instead of treating that artifact as an ordinary worker patch.
+- Relaunch only when no usable patch exists or the failure invalidates the patch. A `model`, `broker_fault`, `scope`, or genuine `verification` failure needs lead judgment against the captured evidence; do not infer discard or relaunch from the status alone. An attribution-unavailable `broker_fault` likewise preserves only a full salvage patch.
 - Integrate a salvaged patch only after lead review and central validation. Record it as salvaged work; never relabel it `completed`.
 
 On the first terminal failure in a wave, pause new launches, record the `failure_class`, evidence, and chosen action, then continue after triage. Unrelated read-only jobs may proceed.
@@ -40,7 +41,7 @@ On the first terminal failure in a wave, pause new launches, record the `failure
 
 Worker-local success is necessary evidence, not release or merge readiness.
 
-For a daemon restart, inventory with `list_workers` before relaunching anything. The daemon has already snapshotted interrupted worktrees before cleanup and attempted one automatic requeue; never launch a replacement while the original is queued or being requeued. Use `worker-broker daemon status` and `worker-broker daemon stop --when-idle` when coordinating a build upgrade.
+For a daemon restart, inventory with `list_workers` before relaunching anything. The daemon verifies the recorded PID and supervisor token, then terminates and durably clears that exact process identity before snapshotting: interrupted worktrees with Git-visible changes fail with a preserved salvage patch, while only a proven-clean snapshot may requeue once. If ownership or group exit cannot be confirmed, or the cleared identity cannot be persisted, daemon initialization fail-stops without snapshotting. Never launch a replacement while the original is queued or being requeued. Use `worker-broker daemon status` and `worker-broker daemon stop --when-idle` when coordinating a build upgrade.
 
 ## Attribution
 

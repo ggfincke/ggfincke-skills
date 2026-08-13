@@ -5,13 +5,14 @@
 import path from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
-import type { BrokerConfig, StartWorkerRequest } from './contracts.js'
+import type { BrokerConfig } from './contracts.js'
 import { runCcusage as runCcusageCommand } from './ccusage.js'
 import { defaultBrokerConfig } from './config.js'
 import { connectDaemon, ensureDaemonClient } from './daemon/client.js'
 import type { DaemonClient } from './daemon/protocol.js'
 import { errorMessage } from './errors.js'
 import { readJson } from './json.js'
+import { parseStartWorkerRequest } from './request.js'
 import {
   waitForOneTerminal,
   waitForSelection,
@@ -40,8 +41,18 @@ export interface CliDependencies
   // from the lead's shell would pick up a different provider config
   connectExisting?(config: BrokerConfig): Promise<DaemonClient>
   writeStdout(value: string): void
-  readRequest(path: string): Promise<StartWorkerRequest>
+  writeStderr(value: string): void
+  readRequest(path: string): Promise<unknown>
   runCcusage?(stateDir: string, args: string[]): Promise<number>
+}
+
+export class CliUsageError extends Error
+{
+  constructor(message: string)
+  {
+    super(message)
+    this.name = 'CliUsageError'
+  }
 }
 
 // matches the daemon's MAX_WAIT_SECONDS, so no blocking call is re-clamped
@@ -83,54 +94,160 @@ export function parseCli(argv: string[]): ParsedCli
     pretty: false,
     when_idle: false,
   }
+  const seenOptions = new Set<string>()
+  const markOption = (option: string): void =>
+  {
+    if (option !== '--job-id' && seenOptions.has(option))
+    {
+      throw new CliUsageError(`duplicate option: ${option}`)
+    }
+    seenOptions.add(option)
+  }
+  const optionValue = (option: string, index: number): string =>
+  {
+    const value = rest[index]
+    if (value === undefined || value.trim() === '' || value.startsWith('-'))
+    {
+      throw new CliUsageError(`${option} requires a value`)
+    }
+    return value
+  }
   for (let index = 0; index < rest.length; index += 1)
   {
     const argument = rest[index]
     if (argument === '--')
     {
-      if (command !== 'ccusage') throw new Error('unknown option: --')
+      if (command !== 'ccusage') throw new CliUsageError('unknown option: --')
       parsed.passthrough = rest.slice(index + 1)
       break
     }
     if (argument === '--request')
     {
-      const value = rest[++index]
-      if (value === undefined) throw new Error('--request requires a value')
-      parsed.request_path = value
+      markOption(argument)
+      parsed.request_path = optionValue(argument, ++index)
     }
     else if (argument === '--state-dir')
     {
-      const value = rest[++index]
-      if (value === undefined) throw new Error('--state-dir requires a value')
-      parsed.state_dir = value
+      markOption(argument)
+      parsed.state_dir = optionValue(argument, ++index)
     }
     else if (argument === '--run')
     {
-      const value = rest[++index]
-      if (value === undefined) throw new Error('--run requires a value')
-      parsed.run = value
+      markOption(argument)
+      parsed.run = optionValue(argument, ++index)
     }
     else if (argument === '--job-id')
     {
-      const value = rest[++index]
-      if (value === undefined) throw new Error('--job-id requires a value')
+      markOption(argument)
+      const value = optionValue(argument, ++index)
+      if (parsed.job_ids?.includes(value) === true)
+      {
+        throw new CliUsageError(`duplicate --job-id value: ${value}`)
+      }
       ;(parsed.job_ids ??= []).push(value)
     }
     else if (argument === '--timeout')
     {
-      const value = rest[++index]
-      const seconds =
-        value === undefined ? Number.NaN : Number.parseInt(value, 10)
+      markOption(argument)
+      const value = optionValue(argument, ++index)
+      const seconds = /^[0-9]+$/u.test(value) ? Number(value) : Number.NaN
       if (!Number.isSafeInteger(seconds) || seconds <= 0)
-        throw new Error('--timeout requires a positive integer')
+        throw new CliUsageError('--timeout requires a positive integer')
       parsed.timeout = seconds
     }
-    else if (argument === '--json') parsed.json = true
-    else if (argument === '--pretty') parsed.pretty = true
-    else if (argument === '--when-idle') parsed.when_idle = true
+    else if (argument === '--json')
+    {
+      markOption(argument)
+      parsed.json = true
+    }
+    else if (argument === '--pretty')
+    {
+      markOption(argument)
+      parsed.pretty = true
+    }
+    else if (argument === '--when-idle')
+    {
+      markOption(argument)
+      parsed.when_idle = true
+    }
     else if (argument?.startsWith('-'))
-      throw new Error(`unknown option: ${argument}`)
+      throw new CliUsageError(`unknown option: ${argument}`)
     else if (argument !== undefined) parsed.positionals.push(argument)
+  }
+
+  const allowOnly = (...allowed: string[]): void =>
+  {
+    const permitted = new Set(allowed)
+    const unsupported = [...seenOptions].find(
+      (option) => !permitted.has(option)
+    )
+    if (unsupported !== undefined)
+    {
+      throw new CliUsageError(`${unsupported} is not valid for ${command}`)
+    }
+  }
+  const requireNoPositionals = (): void =>
+  {
+    if (parsed.positionals.length > 0)
+    {
+      throw new CliUsageError(`${command} does not accept positional arguments`)
+    }
+  }
+
+  if (command === 'help' || command === '--help' || command === '-h')
+  {
+    allowOnly()
+    requireNoPositionals()
+  }
+  else if (command === 'run')
+  {
+    allowOnly('--request', '--state-dir', '--timeout', '--pretty')
+    requireNoPositionals()
+    if (parsed.request_path === undefined)
+      throw new CliUsageError('run requires --request <file>')
+  }
+  else if (command === 'wait')
+  {
+    allowOnly('--run', '--job-id', '--state-dir', '--timeout', '--json')
+    requireNoPositionals()
+    if ((parsed.run === undefined) === (parsed.job_ids === undefined))
+    {
+      throw new CliUsageError(
+        'wait requires exactly one of --run <run> or --job-id <id>...'
+      )
+    }
+  }
+  else if (command === 'list')
+  {
+    allowOnly('--state-dir', '--pretty')
+    requireNoPositionals()
+  }
+  else if (command === 'result')
+  {
+    allowOnly('--state-dir', '--pretty')
+    if (parsed.positionals.length !== 1)
+      throw new CliUsageError('result requires exactly one job id')
+  }
+  else if (command === 'ccusage')
+  {
+    allowOnly('--state-dir')
+    requireNoPositionals()
+  }
+  else if (command === 'daemon')
+  {
+    if (parsed.positionals.length !== 1)
+      throw new CliUsageError(
+        'daemon requires exactly one action: status or stop'
+      )
+    const action = parsed.positionals[0]
+    if (action === 'status') allowOnly('--state-dir', '--pretty')
+    else if (action === 'stop')
+      allowOnly('--state-dir', '--pretty', '--when-idle')
+    else throw new CliUsageError('daemon requires status or stop')
+  }
+  else
+  {
+    throw new CliUsageError(`unknown command: ${command}`)
   }
   return parsed
 }
@@ -158,8 +275,6 @@ async function runWait(
   dependencies: CliDependencies
 ): Promise<number>
 {
-  if (parsed.run === undefined && parsed.job_ids === undefined)
-    throw new Error('wait requires --run <run> or --job-id <id>')
   const connectExisting =
     dependencies.connectExisting ??
     (async (target: BrokerConfig) =>
@@ -171,10 +286,9 @@ async function runWait(
   }
   catch
   {
-    process.stderr.write(
-      'no worker-broker daemon is listening; nothing was waited on\n'
+    throw new Error(
+      'no worker-broker daemon is listening; nothing was waited on'
     )
-    return 2
   }
   try
   {
@@ -192,16 +306,9 @@ async function runWait(
     )
     if (!outcome.observed)
     {
-      process.stderr.write('no workers matched the selector\n')
-      return 2
+      throw new Error('no workers matched the selector')
     }
-    return outcome.failed === 0 ? 0 : 1
-  }
-  catch (error)
-  {
-    // a lost socket must not read as "the wave finished with failures"
-    process.stderr.write(`${errorMessage(error)}\n`)
-    return 2
+    return outcome.failed + outcome.rejected + outcome.cancelled === 0 ? 0 : 1
   }
   finally
   {
@@ -227,42 +334,42 @@ async function dispatchCli(
   }
   if (parsed.command === 'ccusage')
   {
-    if (
-      parsed.positionals.length > 0 ||
-      parsed.request_path !== undefined ||
-      parsed.pretty ||
-      parsed.when_idle
-    )
-    {
-      throw new Error('ccusage arguments must follow --')
-    }
     const runCcusage = dependencies.runCcusage ?? runCcusageCommand
-    return await runCcusage(config.state_dir, parsed.passthrough ?? [])
+    return (await runCcusage(config.state_dir, parsed.passthrough ?? [])) === 0
+      ? 0
+      : 1
   }
   if (parsed.command === 'wait')
   {
     return await runWait(parsed, config, dependencies)
+  }
+  let request: ReturnType<typeof parseStartWorkerRequest> | undefined
+  if (parsed.command === 'run')
+  {
+    request = parseStartWorkerRequest(
+      await dependencies.readRequest(path.resolve(parsed.request_path ?? ''))
+    )
   }
   const client = await dependencies.connect(config)
   try
   {
     if (parsed.command === 'run')
     {
-      if (parsed.request_path === undefined)
-        throw new Error('run requires --request <file>')
-      const request = await dependencies.readRequest(
-        path.resolve(parsed.request_path)
-      )
+      if (request === undefined)
+        throw new Error('validated run request missing')
       const started = await client.call('start_worker', request)
-      const job = await waitForOneTerminal(
+      const summary = await waitForOneTerminal(
         client,
-        started.job_id,
+        started.worker.job_id,
         parsed.timeout ?? DEFAULT_WAIT_POLL_SECONDS
       )
+      const job = await client.call('get_worker_result', {
+        job_id: summary.job_id,
+      })
       dependencies.writeStdout(
         serializeOutput(job.result ?? job, parsed.pretty)
       )
-      return job.status === 'completed' ? 0 : 1
+      return summary.status === 'completed' ? 0 : 1
     }
 
     if (parsed.command === 'list')
@@ -274,8 +381,7 @@ async function dispatchCli(
     }
     if (parsed.command === 'result')
     {
-      const jobId = parsed.positionals[0]
-      if (jobId === undefined) throw new Error('result requires a job id')
+      const jobId = parsed.positionals[0] as string
       const job = await client.call('get_worker_result', { job_id: jobId })
       dependencies.writeStdout(
         serializeOutput(job.result ?? job, parsed.pretty)
@@ -300,9 +406,9 @@ async function dispatchCli(
         dependencies.writeStdout(serializeOutput(status, parsed.pretty))
         return !parsed.when_idle && status.active_jobs.length > 0 ? 1 : 0
       }
-      throw new Error('daemon requires status or stop')
+      throw new Error('validated daemon action missing')
     }
-    throw new Error(`unknown command: ${parsed.command}\n\n${usage()}`)
+    throw new Error(`validated command missing: ${parsed.command}`)
   }
   finally
   {
@@ -315,8 +421,8 @@ export async function runCli(
   dependencies: CliDependencies = {
     connect: ensureDaemonClient,
     writeStdout: (value) => process.stdout.write(value),
-    readRequest: async (requestPath) =>
-      await readJson<StartWorkerRequest>(requestPath),
+    writeStderr: (value) => process.stderr.write(value),
+    readRequest: async (requestPath) => await readJson<unknown>(requestPath),
   }
 ): Promise<number>
 {
@@ -326,12 +432,9 @@ export async function runCli(
   }
   catch (error)
   {
-    // an invocation error is not an observed wave: exit 1 is reserved for a
-    // terminal wave with failures, so a bad flag or a missing selector reports
-    // 2 rather than waking the caller into triage
-    if (argv[0] !== 'wait') throw error
-    process.stderr.write(`${errorMessage(error)}\n`)
-    return 2
+    dependencies.writeStderr(`${errorMessage(error)}\n`)
+    if (error instanceof CliUsageError || argv[0] === 'wait') return 2
+    return 1
   }
 }
 

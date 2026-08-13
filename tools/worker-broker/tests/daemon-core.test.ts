@@ -6,8 +6,10 @@ import {
   access,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
@@ -18,12 +20,12 @@ import type { BrokerConfig, WorkerJob } from '../src/contracts.js'
 import { startDaemon } from '../src/daemon/daemon.js'
 import {
   DAEMON_PROTOCOL_VERSION,
-  STATE_SCHEMA_VERSION,
   daemonIdentityPath,
   daemonSocketPath,
   type DaemonRequestFrame,
   type DaemonResponseFrame,
 } from '../src/daemon/protocol.js'
+import { STATE_SCHEMA_VERSION } from '../src/job-store.js'
 import { classifyFailure } from '../src/job-manager.js'
 import { JobStore } from '../src/job-store.js'
 import { waitUntil } from './helpers.js'
@@ -143,6 +145,7 @@ test('daemon answers hello and status over its unix socket', async () =>
       ? (responses[0].result as Record<string, unknown>)
       : undefined
     assert.equal(identity?.protocol_version, DAEMON_PROTOCOL_VERSION)
+    assert.equal(DAEMON_PROTOCOL_VERSION, 3)
     assert.equal(identity?.state_schema_version, STATE_SCHEMA_VERSION)
     assert.equal(identity?.state_dir, stateDir)
     assert.equal(responses[1]?.ok, true)
@@ -161,16 +164,263 @@ test('daemon answers hello and status over its unix socket', async () =>
   }
 })
 
-test('daemon rejects a mismatched protocol during hello', async () =>
+test('daemon rejects a result read before the worker is terminal', async () =>
+{
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-daemon-'))
+  const jobId = 'queued-result-fixture'
+  const store = new JobStore(stateDir)
+  await store.write({
+    job_id: jobId,
+    status: 'queued',
+    request: {
+      provider: 'codex',
+      mode: 'read',
+      repo: '/tmp/repo',
+      base_ref: 'HEAD',
+      task: 'remain queued while result access is checked',
+      allowed_paths: [],
+      acceptance_criteria: [],
+      setup_commands: [],
+      verification_commands: [],
+      depends_on: [jobId],
+      allow_nested_agents: false,
+    },
+    base_sha: 'base-sha',
+    created_at: new Date().toISOString(),
+  })
+  const daemon = await startDaemon(fixtureConfig(stateDir))
+  const socket = await connect(daemonSocketPath(stateDir))
+  try
+  {
+    await exchange(socket, [hello()])
+    const [result] = await exchange(socket, [
+      {
+        id: 2,
+        method: 'get_worker_result',
+        params: { job_id: jobId },
+      },
+    ])
+    assert.equal(result?.ok, false)
+    if (result?.ok === false)
+    {
+      assert.equal(result.error.code, 'invalid_request')
+      assert.match(result.error.message, /no terminal result yet/u)
+    }
+  }
+  finally
+  {
+    socket.destroy()
+    await daemon.close()
+    await rm(stateDir, { recursive: true, force: true })
+  }
+})
+
+test('daemon range reads a sparse artifact without corrupting UTF-8 edges', async () =>
+{
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-daemon-'))
+  const jobId = 'sparse-artifact-fixture'
+  const byteLength = 96 * 1024 * 1024
+  const store = new JobStore(stateDir)
+  await store.write({
+    job_id: jobId,
+    status: 'queued',
+    request: {
+      provider: 'codex',
+      mode: 'read',
+      repo: '/tmp/repo',
+      base_ref: 'HEAD',
+      task: 'remain queued while sparse artifact excerpts are checked',
+      allowed_paths: [],
+      acceptance_criteria: [],
+      setup_commands: [],
+      verification_commands: [],
+      depends_on: [jobId],
+      allow_nested_agents: false,
+    },
+    base_sha: 'base-sha',
+    created_at: new Date().toISOString(),
+  })
+  const artifact = await open(
+    path.join(store.jobDir(jobId), 'activity.jsonl'),
+    'w',
+    0o600
+  )
+  try
+  {
+    const head = Buffer.from('A😀')
+    const tail = Buffer.from('😀Z')
+    await artifact.write(head, 0, head.length, 0)
+    await artifact.write(tail, 0, tail.length, byteLength - tail.length)
+  }
+  finally
+  {
+    await artifact.close()
+  }
+
+  const daemon = await startDaemon(fixtureConfig(stateDir))
+  const socket = await connect(daemonSocketPath(stateDir))
+  try
+  {
+    await exchange(socket, [hello()])
+    const responses = await exchange(socket, [
+      {
+        id: 2,
+        method: 'get_worker_artifact',
+        params: { job_id: jobId, artifact: 'activity', max_bytes: 4 },
+      },
+      {
+        id: 3,
+        method: 'get_worker_artifact',
+        params: {
+          job_id: jobId,
+          artifact: 'activity',
+          max_bytes: 4,
+          tail: true,
+        },
+      },
+    ])
+    for (const response of responses) assert.equal(response.ok, true)
+    const responsesById = new Map(
+      responses.map((response) => [response.id, response])
+    )
+    const headResponse = responsesById.get(2)
+    const tailResponse = responsesById.get(3)
+    const head = headResponse?.ok
+      ? (headResponse.result as Record<string, unknown>)
+      : undefined
+    const tail = tailResponse?.ok
+      ? (tailResponse.result as Record<string, unknown>)
+      : undefined
+    assert.deepEqual(head, {
+      job_id: jobId,
+      artifact: 'activity',
+      content: 'A',
+      truncated: true,
+      byte_length: byteLength,
+    })
+    assert.deepEqual(tail, {
+      job_id: jobId,
+      artifact: 'activity',
+      content: 'Z',
+      truncated: true,
+      byte_length: byteLength,
+    })
+    assert.doesNotMatch(String(head?.content), /�/u)
+    assert.doesNotMatch(String(tail?.content), /�/u)
+  }
+  finally
+  {
+    socket.destroy()
+    await daemon.close()
+    await rm(stateDir, { recursive: true, force: true })
+  }
+})
+
+test('daemon classifies assignment validation without masking repo failure', async () =>
 {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-daemon-'))
   const daemon = await startDaemon(fixtureConfig(stateDir))
   const socket = await connect(daemonSocketPath(stateDir))
   try
   {
-    const [response] = await exchange(socket, [
-      hello(1, DAEMON_PROTOCOL_VERSION + 1),
+    await exchange(socket, [hello()])
+    const invalidAssignments: Array<{
+      params: Record<string, unknown>
+      message: RegExp
+    }> = [
+      {
+        params: {
+          provider: 'codex',
+          mode: 'read',
+          repo: '/repo',
+          task: 'malformed assignment',
+          allowed_paths: [],
+          allow_nested_agents: 'yes',
+        },
+        message: /expected boolean/iu,
+      },
+      {
+        params: {
+          provider: 'codex',
+          mode: 'edit',
+          repo: '/repo',
+          task: 'empty edit scope',
+          allowed_paths: [],
+        },
+        message: /edit workers require at least one allowed path prefix/iu,
+      },
+      {
+        params: {
+          provider: 'codex',
+          mode: 'edit',
+          repo: '/repo',
+          task: 'traversal edit scope',
+          allowed_paths: ['../outside'],
+        },
+        message: /allowed path is not normalized/iu,
+      },
+    ]
+    let requestId = 2
+    for (const assignment of invalidAssignments)
+    {
+      const [rejected] = await exchange(socket, [
+        {
+          id: requestId,
+          method: 'start_worker',
+          params: assignment.params,
+        } as unknown as DaemonRequestFrame,
+      ])
+      requestId += 1
+      assert.equal(rejected?.ok, false)
+      if (rejected?.ok === false)
+      {
+        assert.equal(rejected.error.code, 'invalid_request')
+        assert.match(rejected.error.message, assignment.message)
+      }
+    }
+
+    const [operational] = await exchange(socket, [
+      {
+        id: requestId,
+        method: 'start_worker',
+        params: {
+          provider: 'codex',
+          mode: 'read',
+          repo: path.join(stateDir, 'missing-repo'),
+          task: 'valid assignment for a missing repository',
+          allowed_paths: [],
+        },
+      },
     ])
+    requestId += 1
+    assert.equal(operational?.ok, false)
+    if (operational?.ok === false)
+    {
+      assert.equal(operational.error.code, undefined)
+      assert.match(operational.error.message, /spawn git ENOENT/u)
+    }
+    const [listed] = await exchange(socket, [
+      { id: requestId, method: 'list_workers', params: {} },
+    ])
+    assert.equal(listed?.ok, true)
+    if (listed?.ok === true) assert.deepEqual(listed.result, [])
+  }
+  finally
+  {
+    socket.destroy()
+    await daemon.close()
+    await rm(stateDir, { recursive: true, force: true })
+  }
+})
+
+test('protocol 3 daemon rejects a protocol 2 hello', async () =>
+{
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-daemon-'))
+  const daemon = await startDaemon(fixtureConfig(stateDir))
+  const socket = await connect(daemonSocketPath(stateDir))
+  try
+  {
+    const [response] = await exchange(socket, [hello(1, 2)])
     assert.equal(response?.ok, false)
     if (response?.ok === false)
     {
@@ -235,13 +485,12 @@ test('idle draining shutdown removes the socket and identity', async () =>
   }
 })
 
-test('job store stamps records and rejects a newer schema version', async () =>
+test('job store normalizes old state only in memory and never rewrites records', async () =>
 {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-store-'))
   const store = new JobStore(stateDir)
-  const jobId = 'schema-fixture'
-  const job: WorkerJob = {
-    job_id: jobId,
+  const current: WorkerJob = {
+    job_id: 'current-schema-fixture',
     status: 'queued',
     request: {
       provider: 'codex',
@@ -261,20 +510,59 @@ test('job store stamps records and rejects a newer schema version', async () =>
   }
   try
   {
-    await store.write(job)
+    await store.write(current)
     const persisted = JSON.parse(
-      await readFile(store.jobPath(jobId), 'utf8')
+      await readFile(store.jobPath(current.job_id), 'utf8')
     ) as Record<string, unknown>
     assert.equal(persisted.state_schema_version, STATE_SCHEMA_VERSION)
-    await mkdir(store.jobDir(jobId), { recursive: true })
+
+    const old = structuredClone(current) as WorkerJob
+    old.job_id = 'old-schema-fixture'
+    const oldRequest = old.request as Partial<WorkerJob['request']>
+    delete oldRequest.acceptance_criteria
+    delete oldRequest.setup_commands
+    delete oldRequest.verification_commands
+    delete oldRequest.depends_on
+    await mkdir(store.jobDir(old.job_id), { recursive: true })
+    await writeFile(store.jobPath(old.job_id), `${JSON.stringify(old)}\n`)
+
+    const newer = structuredClone(current)
+    newer.job_id = 'newer-schema-fixture'
+    await mkdir(store.jobDir(newer.job_id), { recursive: true })
     await writeFile(
-      store.jobPath(jobId),
-      `${JSON.stringify({ ...job, state_schema_version: STATE_SCHEMA_VERSION + 1 })}\n`
+      store.jobPath(newer.job_id),
+      `${JSON.stringify({
+        ...newer,
+        state_schema_version: STATE_SCHEMA_VERSION + 1,
+      })}\n`
     )
-    await assert.rejects(
-      store.read(jobId),
-      /state schema version 2.*supports only version 1/
-    )
+
+    for (const jobId of [current.job_id, old.job_id, newer.job_id])
+    {
+      const file = store.jobPath(jobId)
+      const beforeBytes = await readFile(file)
+      const beforeStat = await stat(file, { bigint: true })
+      if (jobId === newer.job_id)
+      {
+        await assert.rejects(
+          store.read(jobId),
+          /state schema version 2.*supports only version 1/
+        )
+      }
+      else
+      {
+        const read = await store.read(jobId)
+        assert.deepEqual(read.request.acceptance_criteria, [])
+        assert.deepEqual(read.request.setup_commands, [])
+        assert.deepEqual(read.request.verification_commands, [])
+        assert.deepEqual(read.request.depends_on, [])
+      }
+      const afterStat = await stat(file, { bigint: true })
+      assert.deepEqual(await readFile(file), beforeBytes)
+      assert.equal(afterStat.mtimeNs, beforeStat.mtimeNs)
+      assert.equal(afterStat.size, beforeStat.size)
+      assert.equal(afterStat.ino, beforeStat.ino)
+    }
   }
   finally
   {

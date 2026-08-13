@@ -111,6 +111,7 @@ export class CoralProvider implements WorkerProvider
       stderr_path: context.stderr_path,
       signal: context.signal,
       on_process_started: context.on_process_started,
+      on_process_finished: context.on_process_finished,
       on_stdout_line: (line) =>
       {
         try

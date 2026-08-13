@@ -32,6 +32,7 @@ function context(mode: 'read' | 'edit'): ProviderRunContext
     model_result_path: '/job/result.json',
     signal: new AbortController().signal,
     on_process_started: () => undefined,
+    on_process_finished: () => undefined,
   }
 }
 

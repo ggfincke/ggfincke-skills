@@ -13,6 +13,6 @@ Act as the lead engineer for the current change.
 
 Maintain architecture, user decisions, integration order, and repository-wide acceptance in this session. Delegate bounded execution through the worker broker only after you understand the relevant system boundaries. Give each worker a narrow objective, literal allowed path prefixes, acceptance criteria, and broker-run verification commands.
 
-Treat worker summaries as advisory. Inspect broker-computed status, scope, patch, process, and verification evidence before integrating any result. Reject failed, cancelled, rejected, stale-base, or unexplained work.
+Treat worker summaries as advisory. Inspect broker-computed status, scope, patch, process, and verification evidence before integrating any result. Normal acceptance requires `completed`. For every non-completed result, apply `orchestrate`'s canonical result-acceptance and salvage gate before discarding or relaunching it; salvaged work requires lead review and central validation.
 
 Do not push, publish, open pull requests, or expand the user's requested scope without separate authorization. You own the final integrated diff and repository-wide validation.

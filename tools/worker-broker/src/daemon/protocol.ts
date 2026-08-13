@@ -5,16 +5,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
+  EditSerializationConflict,
   StartWorkerRequest,
   WorkerJob,
   WorkerStatus,
+  WorkerSummary,
 } from '../contracts.js'
 
 // bump only on incompatible wire changes; a mismatched hello is rejected outright
-export const DAEMON_PROTOCOL_VERSION = 1
-
-// stamped onto persisted job records; the daemon refuses state dirs stamped newer than itself
-export const STATE_SCHEMA_VERSION = 1
+export const DAEMON_PROTOCOL_VERSION = 3
 
 export const DAEMON_SOCKET_NAME = 'daemon.sock'
 export const DAEMON_IDENTITY_NAME = 'daemon.json'
@@ -116,9 +115,8 @@ export interface PendingWorker
 export interface WaitForWorkersResult
 {
   timed_out: boolean
-  workers: WorkerJob[]
-  // optional so a client built against an older daemon still parses the frame
-  pending?: PendingWorker[]
+  workers: WorkerSummary[]
+  pending: PendingWorker[]
 }
 
 export interface RunStatusParams
@@ -171,10 +169,11 @@ export interface ArtifactResult
   byte_length: number
 }
 
-export interface EditSerializationConflict
+/** Atomic start response projected from one daemon admission. */
+export interface StartWorkerResult
 {
-  job_id: string
-  overlapping_paths: string[]
+  worker: WorkerSummary
+  serializes_behind: EditSerializationConflict[]
 }
 
 export interface ListWorkersParams
@@ -198,13 +197,9 @@ export interface DaemonMethods
   hello: { params: DaemonHelloParams; result: DaemonIdentity }
   daemon_status: { params: Record<string, never>; result: DaemonStatusResult }
   shutdown: { params: ShutdownParams; result: DaemonStatusResult }
-  start_worker: { params: StartWorkerRequest; result: WorkerJob }
-  edit_serialization: {
-    params: JobIdParams
-    result: EditSerializationConflict[]
-  }
-  list_workers: { params: ListWorkersParams; result: WorkerJob[] }
-  get_worker_status: { params: JobIdParams; result: WorkerJob }
+  start_worker: { params: StartWorkerRequest; result: StartWorkerResult }
+  list_workers: { params: ListWorkersParams; result: WorkerSummary[] }
+  get_worker_status: { params: JobIdParams; result: WorkerSummary }
   get_worker_result: { params: JobIdParams; result: WorkerJob }
   get_worker_artifact: { params: ArtifactParams; result: ArtifactResult }
   get_run_status: { params: RunStatusParams; result: RunStatusResult }
@@ -212,7 +207,7 @@ export interface DaemonMethods
     params: WaitForWorkersParams
     result: WaitForWorkersResult
   }
-  cancel_worker: { params: JobIdParams; result: WorkerJob }
+  cancel_worker: { params: JobIdParams; result: WorkerSummary }
 }
 
 export type DaemonMethod = keyof DaemonMethods
