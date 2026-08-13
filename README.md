@@ -12,13 +12,14 @@ This repo is the source of truth. Skills live here in a portable format, then ge
 - `tools/worker-broker/`: local stdio MCP broker for isolated native-harness workers.
 - `prompts/`: reusable prompts that are not ready to become skills yet.
 - `workflows/`: longer playbooks, checklists, and process notes.
+- [`workflows/review-chain.md`](workflows/review-chain.md): the audit -> approval -> implementation -> re-verification handoff.
 - `templates/skill/`: starter structure for a new portable skill.
 - `scripts/validate-skills.py`: validates local skill folders.
 - `scripts/sync-skills.py`: copies or symlinks skills into the shared Agents root, Claude Code, or a target project, and emits always-on rules into each agent's global instruction file.
 - `scripts/sync-agents.py`: copies or symlinks canonical Claude custom agents into `~/.claude/agents`.
-- `scripts/always_on.py`: shared helper that extracts skills' always-on blocks and manages the generated region.
-- `scripts/hooks/`: git hooks; `pre-commit` runs validation + tests before each commit.
-- `tests/`: regression tests for the sync, always-on parser, and comment-style checker.
+- `scripts/always_on.py`, `scripts/skill_inventory.py`, `scripts/sync_transaction.py`, and `scripts/tooling_paths.py`: canonical seams for always-on extraction, skill inventory/validation, transactional sync, and external tooling paths.
+- `scripts/hooks/`: git hooks; `pre-commit` formats staged files, then validates and tests the resulting index snapshot.
+- `tests/`: regression tests for sync, always-on parsing, comment style, branch sweep, pre-commit hook behavior, inventory/path resolution, and sync transactions.
 - `Makefile`: convenience wrappers around the scripts (`make help` lists targets).
 - `docs/interop.md`: notes on how Codex and Claude Code source skills.
 
@@ -35,24 +36,26 @@ Agent-specific behavior can be added later, but it should be explicit because it
 
 ## Quick Start
 
-Validate all canonical skills, then run the regression tests:
+Use Node.js 24+, Python 3.9+, and `uv` (or Ruff 0.16.2 already on `PATH`). Install both Node dependency trees in a fresh checkout, then run the full repository gate:
 
 ```bash
+npm ci
+npm --prefix tools/worker-broker ci
 python3 scripts/validate-skills.py   # or: make validate
-make check                            # validate + tests
+make check                            # validation + tests + broker + format checks
 ```
 
 Validation is strict by default: frontmatter beyond `name`/`description` fails
 unless you pass `--lenient-frontmatter`.
 
-Enable the pre-commit hook so validation + tests run automatically before each commit:
+Enable the pre-commit hook so staged JS/TS and root-formatter-owned Python files are formatted and the resulting index snapshot is validated and tested before each commit:
 
 ```bash
 make install-hooks
 ```
 
-CI runs the same skill, sync, and worker-broker validation on every push and pull request
-(`.github/workflows/validate.yml`).
+CI runs the full gate's skill validation, regression tests, worker-broker checks, and
+root format checks on every push and pull request (`.github/workflows/validate.yml`).
 
 Install all skills into the personal Agents and Claude locations by symlink for active development. Codex discovers personal skills from the shared Agents location:
 
@@ -75,7 +78,7 @@ claude mcp add --transport stdio --scope user worker-broker \
   -- /absolute/path/to/node /absolute/path/to/ggfincke-skills/tools/worker-broker/dist/src/server.js
 ```
 
-The broker exposes native Codex, Cursor, and Coral workers. Override their executable paths or defaults with `WORKER_BROKER_CODEX_BINARY`, `WORKER_BROKER_CODEX_MODEL`, `WORKER_BROKER_CURSOR_BINARY`, `WORKER_BROKER_CURSOR_MODEL`, `WORKER_BROKER_CORAL_BINARY`, `WORKER_BROKER_CORAL_MODEL`, and `WORKER_BROKER_CORAL_HOST`. Cursor effort belongs in the Cursor model identifier rather than the broker's generic `effort` field. Coral rejects generic effort and nested-agent overrides.
+The broker exposes native Codex, Cursor, Coral, and Claude workers. Override their executable paths or defaults with `WORKER_BROKER_CODEX_BINARY`, `WORKER_BROKER_CODEX_MODEL`, `WORKER_BROKER_CURSOR_BINARY`, `WORKER_BROKER_CURSOR_MODEL`, `WORKER_BROKER_CORAL_BINARY`, `WORKER_BROKER_CORAL_MODEL`, `WORKER_BROKER_CORAL_HOST`, `WORKER_BROKER_CLAUDE_BINARY`, and `WORKER_BROKER_CLAUDE_MODEL`. Cursor effort belongs in the Cursor model identifier rather than the broker's generic `effort` field. Coral rejects generic effort and nested-agent overrides. Claude forwards `low`, `medium`, `high`, `xhigh`, and `max`; `ultra` remains assignment metadata because the Claude CLI does not accept it.
 
 Claude Code is the orchestration UI. Worker jobs remain isolated broker records surfaced through MCP tool output and job artifacts; they do not appear as native Claude Code child conversations. T3 is not part of this setup.
 
@@ -85,7 +88,7 @@ Launch the model-inheriting orchestrator after the `orchestrate` skill and `fabl
 claude --model haiku --agent fable-orchestrator
 ```
 
-The parent plans and integrates the change in the interactive Claude Code session. It starts native Codex, Cursor, or Coral jobs through `worker-broker`, follows their status with `list_workers` or `get_worker_status`, and retrieves terminal evidence with `get_worker_result`. The broker creates the isolated worktrees and owns lifecycle, scope validation, verification, and final patch capture.
+The parent plans and integrates the change in the interactive Claude Code session. It starts native Codex, Cursor, Coral, or Claude jobs through `worker-broker`, follows their status with `list_workers` or `get_worker_status`, and retrieves terminal evidence with `get_worker_result`. The broker creates the isolated worktrees and owns lifecycle, scope validation, verification, and final patch capture.
 
 Install a specific skill into one Claude Code project:
 

@@ -24,7 +24,7 @@
 - [Cross-lens merge: how duplicates were collapsed, how findings were verified]
 - [Verification discipline: every included claim checked against live code; refuted claims below]
 
-## Architecture Snapshot
+## Codebase Snapshot
 
 _Brief - enough to ground the findings. Lean on consolidation-audit's fuller map only if the consolidation lens needed it._
 
@@ -90,16 +90,16 @@ _Grouped by lens for readability; cross-lens findings appear once, under their p
 **Validation:** [focused tests/checks/manual comparison needed]
 **Considered and rejected:** [nearby simplifications checked but not recommended, with reason]
 
-### Consolidation / Architecture
+### Consolidation
 
 #### F[n]. [Finding title]
 
 **Status:** Confirmed
-**Lens(es):** consolidation / architecture
+**Lens(es):** consolidation
 **Severity / Confidence / Risk:** [..] / [..] / [..]
 **Action Group:** [A]
 
-**Issue:** [duplication, drift, architectural mismatch, or missing abstraction]
+**Issue:** [duplication, drift, or missing abstraction]
 **Evidence:** [parallel implementations/files/symbols; why they are behavior-identical or intentionally divergent]
 **Impact:** [drift risk, maintenance cost, boundary confusion, bug risk, performance impact]
 **Recommendation:** [shared abstraction, deletion, relocation, or documented divergence]

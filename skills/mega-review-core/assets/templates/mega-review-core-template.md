@@ -25,7 +25,7 @@
 - [Cross-lens merge and dedupe method]
 - [Verification discipline and limitations]
 
-## Architecture Snapshot
+## Codebase Snapshot
 
 - `[path/to/entrypoint]` ([X] lines) - [what it does]
 - [Core service stacks, UI/presentation layer, utilities, config/types - key files + counts]
@@ -73,16 +73,16 @@ _One row per root cause. Tag every lens that surfaced the finding._
 **Validation:** [Focused checks or comparison]
 **Considered and rejected:** [Nearby candidates and why they were not recommended]
 
-### Consolidation / Architecture
+### Consolidation
 
 #### F[n]. [Finding title]
 
 **Status:** Confirmed
-**Lens(es):** consolidation / architecture
+**Lens(es):** consolidation
 **Severity / Confidence / Risk:** [..] / [..] / [..]
 **Action Group:** [A]
 
-**Issue:** [Duplication, drift, architectural mismatch, or missing abstraction]
+**Issue:** [Duplication, drift, or missing abstraction]
 **Evidence:** [Parallel implementations or boundaries, with proof of sameness or intentional divergence]
 **Impact:** [Drift, maintenance cost, bug risk, or boundary confusion]
 **Recommendation:** [Shared abstraction, deletion, relocation, or documented divergence]

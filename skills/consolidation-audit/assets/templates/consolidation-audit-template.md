@@ -15,49 +15,34 @@
 
 ## Approach
 
-- [Describe first area: e.g., traced bootstrap/initialization to understand how system components wire together]
-- [Describe second area: e.g., walked main interaction/request flow to follow data flow, permissions, routing, and historical patterns]
-- [Describe third area: e.g., reviewed core service stacks for duplication & drift]
-- [Describe fourth area: e.g., mapped UI/presentation layer for repeated patterns & execution flows]
-- [Describe cross-cutting hunts: dead exports, duplicate modules, dependency boundaries, constants/schema drift, test duplication]
-- [Describe testing: checked test suite to align coverage gaps with the above systems]
+- [Describe first area: e.g., traced bootstrap/initialization only enough to locate overlapping implementation paths]
+- [Describe second area: e.g., walked the relevant interaction/request flow to compare equivalent behavior]
+- [Describe third area: e.g., reviewed parallel service or UI implementations for duplication, drift, and ownership inconsistencies]
+- [Describe cross-cutting hunts: dead exports, duplicate modules, constants/schema drift, dependency surface, test duplication]
+- [Describe testing: checked the relevant test suite to align coverage gaps with the audited surfaces]
 - [Describe verification discipline: every included claim was checked against live code; false positives are listed below]
 
-## Current Architecture Snapshot
+## Relevant System Map
 
-### Core Components ([X] files)
+_Map only the files and flows needed to establish a consolidation claim. System decomposition, dependency direction, responsibility boundaries, and target architecture belong in a separate `architecture-review`._
+
+### Entry Points and Shared Paths ([X] files)
 
 - `[path/to/entrypoint.ts]` ([X] lines) - [Brief description of what it does]
-- `[path/to/main.ts]` ([X] lines) - [Brief description: initialization, dependency wiring, etc.]
-- `[path/to/other-core.ts]` ([X] lines) - [Brief description]
+- `[path/to/main.ts]` ([X] lines) - [Brief description of the relevant initialization or shared flow]
+- `[path/to/other-core.ts]` ([X] lines) - [Brief description of the relevant context]
 
-### Services and [Domain Area] ([X]+ files)
+### Parallel Implementation Areas ([X]+ files)
 
-- **[Service Category 1]**: [List key files with line counts and brief descriptions]
+- **[Equivalent behavior or helper family]**: [List the key paths and what each owns]
   - `path/file1.ts` ([X] lines) - [Description]
   - `path/file2.ts` ([X] lines) - [Description]
-- **[Service Category 2]**: [List files]
-- **[Service Category 3]**: [List files]
+- **[Another overlap candidate]**: [List paths]
 
-### [Another Major Component Area] ([X] files)
+### Supporting Shared Surfaces ([X] files)
 
-- [List and describe key files in this area]
-- [Group related functionality]
-
-### [UI/Presentation/API Layer] ([X]+ files)
-
-- [Describe organization of presentation layer]
-- [List key directories and file counts]
-
-### Utilities and Helpers ([X]+ files)
-
-- **[Category 1]**: [List utility files]
-- **[Category 2]**: [List utility files]
-- **[Category 3]**: [List utility files]
-
-### Configuration and Types ([X] files)
-
-- [List configuration and type definition files]
+- `[path/to/shared-helper.ts]` - [Shared surface that confirms or refutes overlap]
+- `[path/to/types-or-config.ts]` - [Relevant type, config, or test support]
 
 ---
 
@@ -72,7 +57,7 @@
 
 ## Findings and Consolidation Opportunities
 
-### F1. [Finding Title: Describe the architectural mismatch or duplication]
+### F1. [Finding Title: Describe the duplication, drift, or ownership inconsistency]
 
 **Status:** Confirmed
 **Risk:** [Low/Medium/High]
@@ -92,7 +77,7 @@
 
 **Impact:**
 
-- [Why this matters: drift, review cost, bug risk, performance, boundary confusion]
+- [Why this matters: drift, review cost, bug risk, performance, unclear ownership]
 
 **Recommendation:**
 
@@ -307,7 +292,7 @@ This replaces the old separate commit-plan artifact. Include phases and gates, n
 ## Verification Performed
 
 - [Command/read/trace performed]
-- [Boundary scan performed]
+- [Targeted duplication, drift, or ownership scan performed]
 - [Tool output inspected]
 - [Manual source trace completed]
 

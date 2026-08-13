@@ -23,7 +23,7 @@ For the current phase only:
 
 - Implement just that phase. Keep the diff scoped to it; do not pull later-phase work forward, and do not add drive-by cleanup.
 - Follow the repo's conventions and the constraints the plan was approved under - no new dependencies, no API or behavior changes, whatever the originating review set.
-- Add or update tests for this phase where the codebase has a pattern for it.
+- Run the phase's existing checks. Edit tests only when the approved phase explicitly names the major tests to add or change; otherwise propose a separate test plan instead of expanding the phase.
 
 ## Gating between phases
 
@@ -51,5 +51,5 @@ Claim only what you implemented and verified. Do not assert the whole plan is fi
 
 ## Notes
 
-- This skill is the execution half of the review skills. simplification-review, security-remediation, consolidation-audit, and verify-review-findings each produce an approved plan; this is how you carry that plan out without scope drift.
+- This skill executes approved phased plans or action groups from plan mode or review skills without scope drift.
 - To create the plan in the first place, use plan mode or the relevant review skill - not this skill.

@@ -7,6 +7,8 @@ description: "Audit an existing test suite and flag the tests that should not ex
 
 You audit an existing test suite for the tests that do not earn their place - the low-value, redundant, exhaustive, tautological, brittle, over-mocked, vacuous, or coverage-gate-filler tests that cost maintenance without protecting real, breakable behavior. You classify each with a verdict and cited evidence, aggregate into one findings doc, and stay read-only until I approve which to remove. This is non-destructive: you propose removals, you do not delete during the audit.
 
+Copy [the packaged template](assets/templates/test-pruning-audit-template.md) to one concrete dated document, normally `dev-docs/test-pruning-audit-YYYY-MM-DD.md`. Never edit or overwrite the packaged template; update an existing audit only when the user points to the same scope. That concrete audit is the sole permitted write during the review; tests remain untouched until approval.
+
 This is the prune direction. It is the INVERSE of test-coverage-audit: that skill finds the few MAJOR tests that are MISSING; this one finds the EXCESS tests that should not exist. Together they right-size a suite. If the ask is really about missing tests, gaps, improving coverage, what to test, or writing/running tests, that is test-coverage-audit - say so and stop. Do not drift into hunting for missing tests here.
 
 It is also not simplification-review. Trimming an over-parametrized or over-mocked test in place is a behavior-preserving cleanup that simplification-review can own. The call that a test should not exist at all - that it protects nothing worth protecting - is a VALUE judgment, and that judgment is this skill's job. Do not restate simplification-review.
@@ -75,7 +77,7 @@ Detect the setup first (above), then:
 5. **Safety check.** Run two confirmations on every Delete and Merge:
    - (a) **Only-coverage.** Confirm it does not drop the ONLY coverage of important behavior. If it would, downgrade to Keep-or-improve and record it as a tradeoff. This is the cross-check against the gaps direction.
    - (b) **Gate / mandate.** Confirm it does not break a coverage gate or a mandated test. If it would, note the conflict and do not recommend the removal.
-6. **Aggregate.** Write one findings doc (use the template) and present it. Stay read-only until I approve which to remove.
+6. **Aggregate.** Write one concrete findings document copied from the packaged template and present it. That concrete document is the findings record and source of truth. Stay read-only until I approve which to remove.
 7. **After approval, act** (see After approval). Never change source behavior to make a test removable.
 
 ## Classification
@@ -104,7 +106,7 @@ A questionable-looking test you verified DOES protect real, breakable behavior (
 
 ## Required output before edits
 
-One findings doc (use `assets/templates/test-pruning-audit-template.md`). Do not edit until I pick which to remove. It must contain:
+One concrete findings document, copied from `assets/templates/test-pruning-audit-template.md`. Do not edit the tests until I pick which to remove. It must contain:
 
 - **Summary** - N tests/cases flagged: D delete / M merge / S simplify / K keep; estimated cases the suite would shed.
 - **Setup detected** - framework, runner, conventions, fixture/mock patterns, any coverage gate or mandated test.
@@ -131,4 +133,4 @@ Claim only what you pruned. Do not call the surviving suite well-shaped beyond t
 - This produces a findings doc first; wait for approval before removing anything. Approve with phrases like "delete the D's", "do the merges only", "remove findings 2, 5, 7", "trim the over-mocked ones", "re-justify that Keep", or "hand it to phased-implementation".
 - Siblings: test-coverage-audit is the inverse - it finds the few MAJOR tests that are MISSING and what is deliberately not worth testing; defer all missing-coverage / test-gap / "what should we test" / write-tests work there. simplification-review owns behavior-preserving in-place test trims (a Simplify borrows its mechanics), but the value call that a test should not exist is only this skill's. verify-review-findings supplies the evidence-before-verdict discipline applied here to hold Delete to the highest bar. mega-review is the multi-lens orchestrator; its test-gaps lens delegates to test-coverage-audit, and a pruning pass is not one of its default lenses. phased-implementation is the after-approval handoff for many removals.
 - references/usage.md has first-turn variants (a whole suite, one test file/module, a diff's new tests, "our tests are too brittle", a pre-refactor prune, a post-merge bloat sweep) and follow-ups (approve a subset, hand to phased-implementation, re-justify a Keep).
-- assets/templates/test-pruning-audit-template.md is the findings doc: summary, setup, per-test table, keep/verified, safety check, and removal sequence.
+- assets/templates/test-pruning-audit-template.md is the packaged template to copy; the concrete audit document is the findings record and source of truth, with the summary, setup, per-test table, keep/verified, safety check, and removal sequence.
