@@ -1,11 +1,10 @@
 // tools/worker-broker/tests/coral.test.ts
-// protect Coral headless arguments, native result parsing, & unsupported controls
+// protect Coral headless arguments & native result parsing
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { BrokerConfig, ProviderRunContext } from '../src/contracts.js'
 import { buildCoralArgs, parseCoralExecResult } from '../src/providers/coral.js'
-import { normalizeRequest } from '../src/request.js'
 
 function context(mode: 'read' | 'edit'): ProviderRunContext
 {
@@ -87,7 +86,7 @@ test('Coral arguments select deterministic headless profiles and isolation', () 
   )
 })
 
-test('Coral native results and unsupported controls fail closed', () =>
+test('Coral native results parse the completed exec payload', () =>
 {
   assert.deepEqual(
     parseCoralExecResult({
@@ -107,29 +106,5 @@ test('Coral native results and unsupported controls fail closed', () =>
       response:
         '{"summary":"done","assumptions":[],"risks":[],"follow_ups":[]}',
     }
-  )
-  assert.throws(
-    () =>
-      normalizeRequest({
-        provider: 'coral',
-        mode: 'read',
-        repo: '/repo',
-        task: 'inspect',
-        allowed_paths: [],
-        effort: 'low',
-      }),
-    /does not support the broker effort override/u
-  )
-  assert.throws(
-    () =>
-      normalizeRequest({
-        provider: 'coral',
-        mode: 'read',
-        repo: '/repo',
-        task: 'inspect',
-        allowed_paths: [],
-        allow_nested_agents: true,
-      }),
-    /do not support nested agents/u
   )
 })

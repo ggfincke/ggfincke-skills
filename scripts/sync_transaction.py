@@ -376,21 +376,6 @@ def plan_issues(plan: RunPlan) -> tuple[str, ...]:
 	return tuple(issues)
 
 
-def describe_plan(plan: RunPlan) -> tuple[str, ...]:
-	lines: list[str] = []
-	for destination in plan.destinations:
-		lines.append(f"[{destination.label}]")
-		for item in destination.replacements:
-			lines.append(f"  would replace {item.logical_destination}")
-		for item in destination.prunes:
-			lines.append(f"  would prune {item.destination}")
-	for item in plan.noops:
-		lines.append(f"[{item.label}] {item.message}")
-	for item in plan.skips:
-		lines.append(f"[{item.label}] {item.message}")
-	return tuple(lines)
-
-
 def _artifact_path(destination: Path, run_id: str, suffix: str) -> Path:
 	return destination.with_name(f".{destination.name}.ggfincke-sync.{run_id}.{suffix}")
 

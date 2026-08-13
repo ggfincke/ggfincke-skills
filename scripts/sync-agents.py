@@ -32,10 +32,6 @@ class AgentSyncPlan:
 	actions: tuple[AgentAction, ...]
 
 
-def is_within(path: Path, parent: Path) -> bool:
-	return tooling_paths.is_within(path, parent)
-
-
 def assert_target_outside_repo(target: Path) -> None:
 	try:
 		tooling_paths.require_outside_repo(target, ROOT, "agent target")

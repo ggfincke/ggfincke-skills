@@ -9,7 +9,7 @@ import type { BrokerConfig } from './contracts.js'
 import { runCcusage as runCcusageCommand } from './ccusage.js'
 import { defaultBrokerConfig } from './config.js'
 import { connectDaemon, ensureDaemonClient } from './daemon/client.js'
-import type { DaemonClient } from './daemon/protocol.js'
+import { MAX_WAIT_SECONDS, type DaemonClient } from './daemon/protocol.js'
 import { errorMessage } from './errors.js'
 import { readJson } from './json.js'
 import { parseStartWorkerRequest } from './request.js'
@@ -46,7 +46,7 @@ export interface CliDependencies
   runCcusage?(stateDir: string, args: string[]): Promise<number>
 }
 
-export class CliUsageError extends Error
+class CliUsageError extends Error
 {
   constructor(message: string)
   {
@@ -55,10 +55,7 @@ export class CliUsageError extends Error
   }
 }
 
-// matches the daemon's MAX_WAIT_SECONDS, so no blocking call is re-clamped
-const DEFAULT_WAIT_POLL_SECONDS = 900
-
-export function usage(): string
+function usage(): string
 {
   return `worker-broker <command> [options]
 
@@ -301,7 +298,7 @@ async function runWait(
       { line: (text) => dependencies.writeStdout(`${text}\n`) },
       {
         json: parsed.json ?? false,
-        pollSeconds: parsed.timeout ?? DEFAULT_WAIT_POLL_SECONDS,
+        pollSeconds: parsed.timeout ?? MAX_WAIT_SECONDS,
       }
     )
     if (!outcome.observed)
@@ -361,7 +358,7 @@ async function dispatchCli(
       const summary = await waitForOneTerminal(
         client,
         started.worker.job_id,
-        parsed.timeout ?? DEFAULT_WAIT_POLL_SECONDS
+        parsed.timeout ?? MAX_WAIT_SECONDS
       )
       const job = await client.call('get_worker_result', {
         job_id: summary.job_id,

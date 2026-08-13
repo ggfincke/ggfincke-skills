@@ -15,12 +15,19 @@ import {
 import { errorMessage } from './errors.js'
 import { normalizeAllowedPaths } from './path-scope.js'
 
+export const MAX_VERIFICATION_TIMEOUT_SECONDS = 86_400
+
 const VerificationSchema = z.union([
   z.string().min(1),
   z
     .object({
       command: z.string().min(1),
-      timeout_seconds: z.number().int().positive().max(86_400).optional(),
+      timeout_seconds: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_VERIFICATION_TIMEOUT_SECONDS)
+        .optional(),
     })
     .strict(),
 ])
@@ -153,7 +160,11 @@ function normalizeVerification(
   }
 
   const timeout = input.timeout_seconds ?? DEFAULT_VERIFICATION_TIMEOUT_SECONDS
-  if (!Number.isInteger(timeout) || timeout <= 0 || timeout > 86_400)
+  if (
+    !Number.isInteger(timeout) ||
+    timeout <= 0 ||
+    timeout > MAX_VERIFICATION_TIMEOUT_SECONDS
+  )
   {
     throw new Error(
       'verification timeout_seconds must be an integer from 1 through 86400'

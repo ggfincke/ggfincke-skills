@@ -23,10 +23,8 @@ import {
   securePrivateFile,
   writePrivateFile,
 } from './artifact.js'
-import { codexEventLogAttempt, TERMINAL_WORKER_STATUSES } from './contracts.js'
+import { codexEventLogAttempt, isTerminalWorkerStatus } from './contracts.js'
 import { readJson } from './json.js'
-
-const TERMINAL_STATUSES = new Set<string>(TERMINAL_WORKER_STATUSES)
 
 type UsageProvenance = 'captured' | 'backfilled'
 type PersistResult = 'written' | 'existing' | 'ignored'
@@ -539,7 +537,7 @@ export async function materializeCodexUsageSidecar(
     if (
       job.request?.provider !== 'codex' ||
       job.status === undefined ||
-      !TERMINAL_STATUSES.has(job.status)
+      !isTerminalWorkerStatus(job.status)
     )
     {
       continue

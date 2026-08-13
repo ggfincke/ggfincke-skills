@@ -7,7 +7,7 @@ import { access, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { ActivityWriter } from './activity.js'
 import {
-  TERMINAL_WORKER_STATUSES,
+  isTerminalWorkerStatus,
   workerEventLogFileName,
   type ActivityPhase,
   type BrokerConfig,
@@ -22,7 +22,6 @@ import {
   type WorkerJob,
   type WorkerProvider,
   type WorkerResult,
-  type WorkerStatus,
   type WorkerSummary,
 } from './contracts.js'
 import {
@@ -65,7 +64,9 @@ interface AttributedSnapshot
   attribution_error?: string
 }
 
-const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
+// identical suffix on the four setup-attribution salvage failures
+const SETUP_ATTRIBUTION_SALVAGE_SUFFIX =
+  '; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only'
 
 class ProcessOwnershipError extends Error
 {
@@ -189,7 +190,7 @@ export class JobManager
   {
     await this.store.initialize()
     const interruptedSummaries = (await this.store.listSummaries())
-      .filter((summary) => !TERMINAL_STATUSES.has(summary.status))
+      .filter((summary) => !isTerminalWorkerStatus(summary.status))
       .sort((left, right) => left.created_at.localeCompare(right.created_at))
     const interrupted = await Promise.all(
       interruptedSummaries.map(
@@ -390,15 +391,17 @@ export class JobManager
     worktree: string
   ): Promise<AttributedSnapshot>
   {
+    const snapshotFullDelta = async () =>
+      await snapshotWorktree(
+        worktree,
+        job.base_sha,
+        this.artifact(job, 'change.patch')
+      )
     const setupPaths = job.setup_paths ?? []
     if (setupPaths.length === 0)
     {
       return {
-        snapshot: await snapshotWorktree(
-          worktree,
-          job.base_sha,
-          this.artifact(job, 'change.patch')
-        ),
+        snapshot: await snapshotFullDelta(),
         setup_mutations: [],
         attribution_violations: [],
       }
@@ -407,11 +410,7 @@ export class JobManager
     if (job.setup_tree_sha === undefined)
     {
       return {
-        snapshot: await snapshotWorktree(
-          worktree,
-          job.base_sha,
-          this.artifact(job, 'change.patch')
-        ),
+        snapshot: await snapshotFullDelta(),
         setup_mutations: [],
         attribution_violations: [],
         attribution_error: 'the persisted post-setup tree is unavailable',
@@ -426,11 +425,7 @@ export class JobManager
     catch (error)
     {
       return {
-        snapshot: await snapshotWorktree(
-          worktree,
-          job.base_sha,
-          this.artifact(job, 'change.patch')
-        ),
+        snapshot: await snapshotFullDelta(),
         setup_mutations: [],
         attribution_violations: [],
         attribution_error: `the post-setup tree could not be read: ${errorMessage(error)}`,
@@ -590,7 +585,7 @@ export class JobManager
   async progress(jobId: string): Promise<JobProgress>
   {
     const summary = await this.getSummary(jobId)
-    if (TERMINAL_STATUSES.has(summary.status)) return {}
+    if (isTerminalWorkerStatus(summary.status)) return {}
     const writer = this.activities.get(jobId)
     if (writer === undefined) return {}
     const progress: JobProgress = {}
@@ -617,7 +612,7 @@ export class JobManager
       try
       {
         const persisted = await this.store.readSummary(jobId)
-        if (TERMINAL_STATUSES.has(persisted.status))
+        if (isTerminalWorkerStatus(persisted.status))
           return structuredClone(persisted)
       }
       catch (error)
@@ -654,7 +649,7 @@ export class JobManager
       current === undefined
         ? await this.store.readSummary(jobId)
         : summarizeWorkerJob(current)
-    if (TERMINAL_STATUSES.has(currentSummary.status))
+    if (isTerminalWorkerStatus(currentSummary.status))
       return structuredClone(currentSummary)
 
     return await new Promise<WorkerSummary>((resolve) =>
@@ -686,7 +681,7 @@ export class JobManager
     await this.initialize()
     this.shuttingDown = true
     const active = [...this.jobs.values()].filter(
-      (job) => !TERMINAL_STATUSES.has(job.status)
+      (job) => !isTerminalWorkerStatus(job.status)
     )
     const waits = active.map((job) => this.waitForTerminal(job.job_id))
     await Promise.all(active.map((job) => this.cancel(job.job_id)))
@@ -703,7 +698,7 @@ export class JobManager
     for (const other of this.jobs.values())
     {
       if (
-        TERMINAL_STATUSES.has(other.status) ||
+        isTerminalWorkerStatus(other.status) ||
         other.request.mode !== 'edit' ||
         other.request.repo !== job.request.repo ||
         !scopesOverlap(other.request.allowed_paths, job.request.allowed_paths)
@@ -765,7 +760,7 @@ export class JobManager
     for (const jobId of job.request.depends_on ?? [])
     {
       const dependency = await this.getSummary(jobId)
-      if (!TERMINAL_STATUSES.has(dependency.status)) return 'waiting'
+      if (!isTerminalWorkerStatus(dependency.status)) return 'waiting'
       if (dependency.status !== 'completed')
       {
         return `dependency ${jobId} ended ${dependency.status}`
@@ -1161,7 +1156,7 @@ export class JobManager
             providerSnapshot,
             [],
             [],
-            `${providerEvidence.attribution_error}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            `${providerEvidence.attribution_error}${SETUP_ATTRIBUTION_SALVAGE_SUFFIX}`,
             classifyFailure('broker')
           )
         )
@@ -1181,7 +1176,7 @@ export class JobManager
             providerSnapshot,
             [],
             providerEvidence.attribution_violations,
-            `${attributionError}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            `${attributionError}${SETUP_ATTRIBUTION_SALVAGE_SUFFIX}`,
             classifyFailure('scope')
           )
         )
@@ -1294,7 +1289,7 @@ export class JobManager
             finalSnapshot,
             verification,
             [],
-            `${finalEvidence.attribution_error}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            `${finalEvidence.attribution_error}${SETUP_ATTRIBUTION_SALVAGE_SUFFIX}`,
             classifyFailure('broker')
           )
         )
@@ -1314,7 +1309,7 @@ export class JobManager
             finalSnapshot,
             verification,
             finalEvidence.attribution_violations,
-            `${attributionError}; change.patch contains the full base-to-final delta including setup effects and is salvage evidence only`,
+            `${attributionError}${SETUP_ATTRIBUTION_SALVAGE_SUFFIX}`,
             classifyFailure('scope')
           )
         )

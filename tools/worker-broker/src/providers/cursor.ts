@@ -15,6 +15,19 @@ import { serializePrettyJson } from '../json.js'
 import { parseModelResultText } from '../model-result.js'
 import { runProcess } from '../process-runner.js'
 
+// malformed ndjson is ignored; the raw log still has the line
+function parseJsonRecord(line: string): Record<string, unknown> | undefined
+{
+  try
+  {
+    return JSON.parse(line) as Record<string, unknown>
+  }
+  catch
+  {
+    return undefined
+  }
+}
+
 function textFromAssistantEvent(
   event: Record<string, unknown>
 ): string | undefined
@@ -43,19 +56,9 @@ interface CursorEventData
   result_text?: string
 }
 
-export function parseCursorEventLine(
-  line: string
-): CursorEventData | undefined
+// session, model, and result text from a parsed cursor event
+function eventFromRecord(event: Record<string, unknown>): CursorEventData
 {
-  let event: Record<string, unknown>
-  try
-  {
-    event = JSON.parse(line) as Record<string, unknown>
-  }
-  catch
-  {
-    return undefined
-  }
   const data: CursorEventData = {}
   if (typeof event.session_id === 'string') data.session_id = event.session_id
   if (typeof event.model === 'string') data.model = event.model
@@ -71,17 +74,11 @@ export function parseCursorEventLine(
   return data
 }
 
-export function parseCursorActivity(line: string): ActivityInput | undefined
+// abstract tool/message activity from a parsed cursor event
+function activityFromRecord(
+  value: Record<string, unknown>
+): ActivityInput | undefined
 {
-  let value: Record<string, unknown>
-  try
-  {
-    value = JSON.parse(line) as Record<string, unknown>
-  }
-  catch
-  {
-    return undefined
-  }
   if (value.type === 'tool_call')
   {
     if (value.subtype === 'started')
@@ -127,13 +124,29 @@ export function parseCursorActivity(line: string): ActivityInput | undefined
     const summary = parseActivitySummary(value.result)
     return summary === undefined ? undefined : { kind: 'message', summary }
   }
-  const event = parseCursorEventLine(line)
-  if (event?.assistant_text !== undefined)
+  const event = eventFromRecord(value)
+  if (event.assistant_text !== undefined)
   {
     const summary = parseActivitySummary(event.assistant_text)
     return summary === undefined ? undefined : { kind: 'message', summary }
   }
   return undefined
+}
+
+// test entry: parse once, then eventFromRecord
+export function parseCursorEventLine(
+  line: string
+): CursorEventData | undefined
+{
+  const event = parseJsonRecord(line)
+  return event === undefined ? undefined : eventFromRecord(event)
+}
+
+// test entry: parse once, then activityFromRecord
+export function parseCursorActivity(line: string): ActivityInput | undefined
+{
+  const value = parseJsonRecord(line)
+  return value === undefined ? undefined : activityFromRecord(value)
 }
 
 export function parseCursorResultText(text: string)
@@ -191,13 +204,15 @@ export class CursorProvider implements WorkerProvider
       on_process_finished: context.on_process_finished,
       on_stdout_line: (line) =>
       {
-        const event = parseCursorEventLine(line)
-        const activity = parseCursorActivity(line)
-        if (event?.session_id !== undefined) workerSessionId = event.session_id
-        if (event?.model !== undefined) effectiveModel = event.model
-        if (event?.assistant_text !== undefined)
+        const value = parseJsonRecord(line)
+        if (value === undefined) return
+        const event = eventFromRecord(value)
+        const activity = activityFromRecord(value)
+        if (event.session_id !== undefined) workerSessionId = event.session_id
+        if (event.model !== undefined) effectiveModel = event.model
+        if (event.assistant_text !== undefined)
           assistantText = event.assistant_text
-        if (event?.result_text !== undefined) resultText = event.result_text
+        if (event.result_text !== undefined) resultText = event.result_text
         if (activity !== undefined) context.on_activity?.(activity)
       },
     })

@@ -82,6 +82,7 @@ INLINE_RAW_HTML_TOKEN_RE = re.compile(
 )
 MARKDOWN_ESCAPE_RE = re.compile(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~])")
 PARAGRAPH_BREAK_RE = re.compile(r"(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)")
+ORDERED_LIST_START_RE = re.compile(r"(?P<start>\d{1,9})[.)](?=[ \t])")
 SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 MAX_LINK_LABEL_DEPTH = 128
 
@@ -290,10 +291,6 @@ def select_inventory(
 
 def blocking_issues(inventory: SkillInventory) -> tuple[SkillIssue, ...]:
 	return tuple(issue for issue in inventory.issues if not issue.is_warning)
-
-
-def parse_frontmatter(path: Path) -> dict[str, str]:
-	return parse_frontmatter_text(path.read_text(encoding="utf-8"))
 
 
 def parse_frontmatter_text(text: str) -> dict[str, str]:
@@ -682,13 +679,6 @@ def _mask_explicit_links(text: str) -> str:
 	return _mask_spans(text, spans)
 
 
-def _mask_reference_definitions(text: str) -> str:
-	return _mask_spans(
-		text,
-		((definition.start, definition.end) for definition in _scan_reference_definitions(text)),
-	)
-
-
 def _scan_markdown_links(
 	text: str, reference_labels: frozenset[str] = frozenset()
 ) -> tuple[_MarkdownLink, ...]:
@@ -888,7 +878,7 @@ def _link_title_end(text: str, start: int) -> int | None:
 		if text[start] == "(" and text[index] == "(":
 			return None
 		if text[index] == closing:
-			if re.search(r"(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)", text[start + 1 : index]):
+			if PARAGRAPH_BREAK_RE.search(text, start + 1, index):
 				return None
 			return index + 1
 		index += 1
@@ -1170,13 +1160,6 @@ def _is_valid_reference_label(label: str) -> bool:
 	return True
 
 
-def _container_prefix(line: str) -> tuple[int, tuple[str, ...], bool]:
-	parts = _container_prefix_parts(line)
-	end = parts[-1].end if parts else 0
-	container = tuple(part.kind for part in parts)
-	return end, container, "list" in container
-
-
 def _container_prefix_parts(line: str) -> tuple[_ContainerPart, ...]:
 	index = 0
 	parts: list[_ContainerPart] = []
@@ -1276,7 +1259,8 @@ def _mask_container_prefixes(text: str) -> str:
 	characters = list(text)
 	position = 0
 	for line in text.splitlines(keepends=True):
-		prefix_end, _, _ = _container_prefix(line.rstrip("\r\n"))
+		parts = _container_prefix_parts(line.rstrip("\r\n"))
+		prefix_end = parts[-1].end if parts else 0
 		for index in range(position, position + prefix_end):
 			if characters[index] not in {"\r", "\n"}:
 				characters[index] = " "
@@ -1356,7 +1340,7 @@ def _noninterrupting_ordered_list(line: str, parts: tuple[_ContainerPart, ...]) 
 	if not parts or parts[0].kind != "list":
 		return False
 	marker = line[parts[0].start : parts[0].end]
-	match = re.search(r"(?P<start>\d{1,9})[.)](?=[ \t])", marker)
+	match = ORDERED_LIST_START_RE.search(marker)
 	return match is not None and int(match.group("start")) != 1
 
 
@@ -1773,17 +1757,6 @@ def _mask_escaped_html(text: str) -> str:
 	for index, character in enumerate(text):
 		if character == "<" and _is_escaped(text, index):
 			characters[index] = " "
-	return "".join(characters)
-
-
-def _mask_inline_raw_html_tokens(text: str) -> str:
-	characters = list(text)
-	for match in INLINE_RAW_HTML_TOKEN_RE.finditer(text):
-		if _is_escaped(text, match.start()):
-			continue
-		for index in range(match.start(), match.end()):
-			if characters[index] != "\n":
-				characters[index] = " "
 	return "".join(characters)
 
 

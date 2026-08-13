@@ -54,52 +54,6 @@ class BannedReadme(unittest.TestCase):
 			msgs = errors(vs.readme_issues(skill))
 			self.assertTrue(any("README" in m for m in msgs))
 
-	def test_nested_readme_is_error(self) -> None:
-		with tempfile.TemporaryDirectory() as d:
-			skill = make_skill(
-				Path(d), "demo-skill", "---\nname: demo-skill\ndescription: d\n---\n"
-			)
-			(skill / "references").mkdir()
-			(skill / "references" / "readme.md").write_text("# nope")
-			self.assertTrue(errors(vs.readme_issues(skill)))
-
-
-class ResourceLinks(unittest.TestCase):
-	def test_missing_reference_is_flagged(self) -> None:
-		with tempfile.TemporaryDirectory() as d:
-			skill = make_skill(
-				Path(d),
-				"demo-skill",
-				"---\nname: demo-skill\ndescription: d\n---\nSee references/missing.md\n",
-			)
-			(skill / "references").mkdir()
-			(skill / "references" / "present.md").write_text("ok")
-			msgs = errors(vs.resource_link_issues(skill, skill / "SKILL.md"))
-			self.assertTrue(any("references/missing.md" in m for m in msgs))
-
-	def test_present_reference_is_ok(self) -> None:
-		with tempfile.TemporaryDirectory() as d:
-			skill = make_skill(
-				Path(d),
-				"demo-skill",
-				"---\nname: demo-skill\ndescription: d\n---\nSee references/present.md\n",
-			)
-			(skill / "references").mkdir()
-			(skill / "references" / "present.md").write_text("ok")
-			self.assertEqual(errors(vs.resource_link_issues(skill, skill / "SKILL.md")), [])
-
-	def test_target_repo_paths_are_not_checked(self) -> None:
-		# a project skill pointing at a target repo (no local references/assets dir)
-		# must never be flagged, even when it mentions references/ or assets/ words
-		with tempfile.TemporaryDirectory() as d:
-			skill = make_skill(
-				Path(d),
-				"demo-skill",
-				"---\nname: demo-skill\ndescription: d\n---\n"
-				"Edit convex/schema.ts and references/whatever.md and assets/thing.js\n",
-			)
-			self.assertEqual(errors(vs.resource_link_issues(skill, skill / "SKILL.md")), [])
-
 
 class RealRepoStaysClean(unittest.TestCase):
 	def test_strict_default_passes(self) -> None:

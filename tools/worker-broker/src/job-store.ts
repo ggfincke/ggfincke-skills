@@ -11,9 +11,8 @@ import {
   securePrivateFile,
 } from './artifact.js'
 import {
-  TERMINAL_WORKER_STATUSES,
+  isTerminalWorkerStatus,
   type WorkerJob,
-  type WorkerStatus,
   type WorkerSummary,
 } from './contracts.js'
 import { readJson, serializePrettyJson } from './json.js'
@@ -40,7 +39,6 @@ function assertSafeJobId(jobId: string): void
 }
 
 type StoredWorkerJob = WorkerJob & { state_schema_version?: number }
-const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
 const StoredWorkerSummarySchema = WorkerSummarySchema.extend({
   summary_schema_version: z.number().int(),
   state_schema_version: z.number().int(),
@@ -190,7 +188,7 @@ export class JobStore
   {
     await this.initialize()
     const jobId = job.job_id
-    const terminal = TERMINAL_STATUSES.has(job.status)
+    const terminal = isTerminalWorkerStatus(job.status)
     let summary: WorkerSummary | undefined
     if (terminal)
     {
@@ -377,7 +375,7 @@ export class JobStore
         fingerprint.authoritative_state_schema_version
       ) ||
       stored.job_id !== jobId ||
-      !TERMINAL_STATUSES.has(stored.status) ||
+      !isTerminalWorkerStatus(stored.status) ||
       stored.job_mtime_ns !== fingerprint.job_mtime_ns ||
       stored.job_size !== fingerprint.job_size ||
       stored.job_ino !== fingerprint.job_ino
@@ -405,7 +403,7 @@ export class JobStore
       if (cached !== undefined) return cached
       const job = await this.read(jobId)
       const summary = summarizeWorkerJob(job)
-      if (TERMINAL_STATUSES.has(job.status))
+      if (isTerminalWorkerStatus(job.status))
       {
         await this.writeSummaryBestEffort(jobId, summary)
       }

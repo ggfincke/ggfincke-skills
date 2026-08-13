@@ -1,18 +1,12 @@
 // tools/worker-broker/src/wait-command.ts
 // block until a selected worker set is terminal & report the outcome once
 
-import {
-  TERMINAL_WORKER_STATUSES,
-  type WorkerStatus,
-  type WorkerSummary,
-} from './contracts.js'
+import { isTerminalWorkerStatus, type WorkerSummary } from './contracts.js'
 import type {
   DaemonClient,
   PendingWorker,
   WaitForWorkersResult,
 } from './daemon/protocol.js'
-
-const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
 
 // long enough that a normal wave produces at most a handful of progress lines
 const MAX_LINE_MESSAGE_CHARACTERS = 120
@@ -118,7 +112,7 @@ function terminalWorkers(
       throw new Error(
         `terminal worker wait returned duplicate job ${worker.job_id}`
       )
-    if (!TERMINAL_STATUSES.has(worker.status))
+    if (!isTerminalWorkerStatus(worker.status))
       throw new Error(
         `terminal worker wait returned nonterminal job ${worker.job_id}`
       )

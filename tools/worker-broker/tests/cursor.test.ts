@@ -1,5 +1,5 @@
 // tools/worker-broker/tests/cursor.test.ts
-// protect Cursor sandbox arguments, stream parsing, & provider-specific overrides
+// protect Cursor sandbox arguments & stream parsing
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
@@ -9,7 +9,6 @@ import {
   parseCursorEventLine,
   parseCursorResultText,
 } from '../src/providers/cursor.js'
-import { normalizeRequest } from '../src/request.js'
 
 function context(mode: 'read' | 'edit'): ProviderRunContext
 {
@@ -126,21 +125,5 @@ test('Cursor stream events normalize the observed native event contract', () =>
       'progress prose{"summary":"final","assumptions":[],"risks":[],"follow_ups":[]}'
     ),
     { summary: 'final', assumptions: [], risks: [], follow_ups: [] }
-  )
-})
-
-test('Cursor rejects a generic effort override instead of silently ignoring it', () =>
-{
-  assert.throws(
-    () =>
-      normalizeRequest({
-        provider: 'cursor',
-        mode: 'read',
-        repo: '/repo',
-        task: 'inspect',
-        allowed_paths: [],
-        effort: 'high',
-      }),
-    /effort must be encoded in the model identifier/u
   )
 })

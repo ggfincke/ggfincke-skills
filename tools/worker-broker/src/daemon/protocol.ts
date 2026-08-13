@@ -15,8 +15,22 @@ import type {
 // bump only on incompatible wire changes; a mismatched hello is rejected outright
 export const DAEMON_PROTOCOL_VERSION = 3
 
-export const DAEMON_SOCKET_NAME = 'daemon.sock'
-export const DAEMON_IDENTITY_NAME = 'daemon.json'
+const DAEMON_SOCKET_NAME = 'daemon.sock'
+const DAEMON_IDENTITY_NAME = 'daemon.json'
+
+export const ARTIFACT_NAMES = [
+  'prompt',
+  'events',
+  'stderr',
+  'patch',
+  'model_result',
+  'verification',
+  'activity',
+] as const
+
+export const MAX_WAIT_SECONDS = 900
+export const DEFAULT_ARTIFACT_BYTES = 65_536
+export const MAX_ARTIFACT_BYTES = 262_144
 
 export function daemonSocketPath(stateDirectory: string): string
 {
@@ -148,14 +162,7 @@ export interface ArtifactParams
 {
   job_id: string
   // activity is the only name readable before the job is terminal
-  artifact:
-    | 'prompt'
-    | 'events'
-    | 'stderr'
-    | 'patch'
-    | 'model_result'
-    | 'verification'
-    | 'activity'
+  artifact: (typeof ARTIFACT_NAMES)[number]
   max_bytes?: number
   tail?: boolean
 }

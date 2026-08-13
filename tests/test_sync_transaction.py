@@ -74,6 +74,11 @@ def file_replacement(operation_id: str, source: Path, destination: Path):
 	)
 
 
+# leftover transactional staging files under a temp root
+def sync_residue(root: Path) -> list[Path]:
+	return list(root.rglob(".*.ggfincke-sync.*"))
+
+
 class AllRunStaging(unittest.TestCase):
 	def test_copy_stage_failure_preserves_every_destination(self) -> None:
 		with tempfile.TemporaryDirectory() as directory:
@@ -182,9 +187,6 @@ class DestinationRollback(unittest.TestCase):
 
 
 class InFlightMutationRollback(unittest.TestCase):
-	def assert_no_residue(self, root: Path) -> None:
-		self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
-
 	def test_directory_promote_and_post_rename_fsync_failures_restore_exact_state(self) -> None:
 		with tempfile.TemporaryDirectory() as directory:
 			root = Path(directory)
@@ -209,7 +211,7 @@ class InFlightMutationRollback(unittest.TestCase):
 				)
 				self.assertFalse(report.success)
 				self.assertEqual(transaction.fingerprint_path(destination), before)
-				self.assert_no_residue(root)
+				self.assertFalse(sync_residue(root))
 
 			with self.subTest("replacement fsync after promote"):
 				source = root / "file-source"
@@ -230,7 +232,7 @@ class InFlightMutationRollback(unittest.TestCase):
 				)
 				self.assertFalse(report.success)
 				self.assertEqual(transaction.fingerprint_path(destination), before)
-				self.assert_no_residue(root)
+				self.assertFalse(sync_residue(root))
 
 			with self.subTest("prune fsync after quarantine"):
 				orphan = root / "orphan"
@@ -249,13 +251,10 @@ class InFlightMutationRollback(unittest.TestCase):
 				)
 				self.assertFalse(report.success)
 				self.assertEqual(transaction.fingerprint_path(orphan), before)
-				self.assert_no_residue(root)
+				self.assertFalse(sync_residue(root))
 
 
 class BackupStateValidation(unittest.TestCase):
-	def assert_no_residue(self, root: Path) -> None:
-		self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
-
 	def test_atomic_backup_rechecks_destination_and_captured_bytes(self) -> None:
 		with tempfile.TemporaryDirectory() as directory:
 			root = Path(directory)
@@ -286,7 +285,7 @@ class BackupStateValidation(unittest.TestCase):
 					self.assertFalse(report.success)
 					self.assertEqual(destination.read_bytes(), expected)
 					self.assertTrue(any(detail in event.detail for event in report.events))
-					self.assert_no_residue(root)
+					self.assertFalse(sync_residue(root))
 
 	def test_moved_directory_and_prune_backups_are_validated_before_continue(self) -> None:
 		with tempfile.TemporaryDirectory() as directory:
@@ -314,7 +313,7 @@ class BackupStateValidation(unittest.TestCase):
 				self.assertTrue(
 					any("backup does not match" in event.detail for event in report.events)
 				)
-				self.assert_no_residue(root)
+				self.assertFalse(sync_residue(root))
 
 			with self.subTest("prune quarantine"):
 				orphan = root / "orphan"
@@ -336,7 +335,7 @@ class BackupStateValidation(unittest.TestCase):
 				self.assertTrue(
 					any("backup does not match" in event.detail for event in report.events)
 				)
-				self.assert_no_residue(root)
+				self.assertFalse(sync_residue(root))
 
 
 class TreeSymlinkSemantics(unittest.TestCase):
@@ -368,7 +367,7 @@ class TreeSymlinkSemantics(unittest.TestCase):
 					for event in report.events
 				)
 			)
-			self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
+			self.assertFalse(sync_residue(root))
 
 
 class RollbackDurabilityReporting(unittest.TestCase):
@@ -428,7 +427,7 @@ class RollbackDurabilityReporting(unittest.TestCase):
 					self.assertFalse(
 						any("backup retained" in event.detail for event in report.events)
 					)
-					self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
+					self.assertFalse(sync_residue(root))
 
 
 class PartialApplicationIsExplicit(unittest.TestCase):
@@ -460,7 +459,7 @@ class PartialApplicationIsExplicit(unittest.TestCase):
 			self.assertFalse((root / "target-a").exists())
 			self.assertFalse((root / "target-b").exists())
 			self.assertEqual({path: transaction.fingerprint_path(path) for path in before}, before)
-			self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
+			self.assertFalse(sync_residue(root))
 
 	def test_later_destination_failure_reports_prior_destination_applied(self) -> None:
 		with tempfile.TemporaryDirectory() as directory:

@@ -154,18 +154,7 @@ def _inspect_source(
 			"refusing skill sync; source validation failed:\n" + _format_inventory_issues(issues)
 		)
 	selected_inventory = skill_inventory.select_inventory(inspected, selected, base_dir)
-	if selection_issues:
-		selected_inventory = skill_inventory.SkillInventory(
-			selected_inventory.candidates,
-			selected_inventory.packages,
-			selected_inventory.issues + selection_issues,
-		)
 	return inspected, selected_inventory
-
-
-def find_skills(base_dir: Path, selected: list[str]) -> list[Path]:
-	_, chosen = _inspect_source(base_dir, selected, require_all=False)
-	return [package.candidate.directory for package in chosen.packages]
 
 
 def marker_source(entry: Path) -> Path | None:

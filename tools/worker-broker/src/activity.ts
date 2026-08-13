@@ -17,7 +17,7 @@ export interface ActivityMessageSnapshot
   recorded_at?: string
 }
 
-export function sanitizeActivitySummary(summary: string): string | undefined
+function sanitizeActivitySummary(summary: string): string | undefined
 {
   const controlSafe = summary
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu, '')

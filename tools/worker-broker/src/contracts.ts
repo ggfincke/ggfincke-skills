@@ -3,19 +3,16 @@
 
 export const PROVIDER_NAMES = ['codex', 'cursor', 'coral', 'claude'] as const
 export const WORKER_MODES = ['read', 'edit'] as const
-export const WORKER_STATUSES = [
-  'queued',
-  'running',
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-] as const
 export const TERMINAL_WORKER_STATUSES = [
   'completed',
   'failed',
   'rejected',
   'cancelled',
+] as const
+export const WORKER_STATUSES = [
+  'queued',
+  'running',
+  ...TERMINAL_WORKER_STATUSES,
 ] as const
 export const FAILURE_CLASSES = [
   'environment',
@@ -37,6 +34,11 @@ export type ProviderName = (typeof PROVIDER_NAMES)[number]
 export type WorkerMode = (typeof WORKER_MODES)[number]
 export type WorkerStatus = (typeof WORKER_STATUSES)[number]
 export type TerminalWorkerStatus = (typeof TERMINAL_WORKER_STATUSES)[number]
+
+export function isTerminalWorkerStatus(status: string): boolean
+{
+  return (TERMINAL_WORKER_STATUSES as readonly string[]).includes(status)
+}
 
 const CODEX_EVENT_LOG_PATTERN = /^events\.attempt-(0|[1-9]\d*)\.jsonl$/u
 

@@ -17,8 +17,6 @@ PROJECTS_DIR = ROOT / "projects"
 
 # compatibility exports keep focused callers on the canonical implementation
 SkillIssue = skill_inventory.SkillIssue
-parse_frontmatter = skill_inventory.parse_frontmatter
-parse_frontmatter_value = skill_inventory.parse_frontmatter_value
 
 
 def display_path(path: Path) -> str:
@@ -37,17 +35,6 @@ def source_lanes() -> tuple[skill_inventory.SourceLane, ...]:
 	return tuple(lanes)
 
 
-def skill_dirs_in(base: Path) -> list[Path]:
-	lane = skill_inventory.SourceLane("portable", base)
-	return [candidate.directory for candidate in skill_inventory.discover_candidates((lane,))]
-
-
-def discover_skills() -> list[Path]:
-	return [
-		candidate.directory for candidate in skill_inventory.discover_candidates(source_lanes())
-	]
-
-
 def _candidate_for(path: Path) -> skill_inventory.SkillCandidate:
 	if tooling_paths.is_within(path, PROJECTS_DIR):
 		try:
@@ -60,22 +47,6 @@ def _candidate_for(path: Path) -> skill_inventory.SkillCandidate:
 	return skill_inventory.SkillCandidate(key, path, path / "SKILL.md")
 
 
-def find_skills(selected: list[str]) -> tuple[list[Path], list[SkillIssue]]:
-	if not SKILLS_DIR.exists():
-		return [], [
-			SkillIssue(
-				None,
-				SKILLS_DIR,
-				None,
-				"missing-root",
-				"skills directory does not exist",
-			)
-		]
-	candidates = skill_inventory.discover_candidates(source_lanes())
-	chosen, issues = skill_inventory.select_candidates(candidates, selected, SKILLS_DIR)
-	return [candidate.directory for candidate in chosen], list(issues)
-
-
 def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
 	result = skill_inventory.inspect_candidates((_candidate_for(path),), strict_frontmatter)
 	return list(result.issues)
@@ -83,17 +54,6 @@ def validate_skill(path: Path, strict_frontmatter: bool) -> list[SkillIssue]:
 
 def readme_issues(path: Path) -> list[SkillIssue]:
 	return [issue for issue in validate_skill(path, True) if issue.code == "banned-readme"]
-
-
-def resource_link_issues(path: Path, _skill_file: Path) -> list[SkillIssue]:
-	codes = {
-		"broken-local-link",
-		"legacy-resource",
-		"link-escape",
-		"markdown-read",
-		"missing-anchor",
-	}
-	return [issue for issue in validate_skill(path, True) if issue.code in codes]
 
 
 def main() -> int:

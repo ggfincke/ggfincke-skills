@@ -16,7 +16,7 @@ import { secureDirectory, writePrivateFile } from '../artifact.js'
 import { defaultBrokerConfig } from '../config.js'
 import {
   codexEventLogAttempt,
-  TERMINAL_WORKER_STATUSES,
+  isTerminalWorkerStatus,
   WORKER_STATUSES,
   workerEventLogFileName,
   type BrokerConfig,
@@ -25,6 +25,7 @@ import {
   type WorkerSummary,
 } from '../contracts.js'
 import { errorMessage } from '../errors.js'
+import { serializePrettyJson } from '../json.js'
 import { JobManager } from '../job-manager.js'
 import { isSafeJobId, STATE_SCHEMA_VERSION } from '../job-store.js'
 import { ClaudeProvider } from '../providers/claude.js'
@@ -33,7 +34,11 @@ import { CoralProvider } from '../providers/coral.js'
 import { CursorProvider } from '../providers/cursor.js'
 import { RequestValidationError } from '../request.js'
 import {
+  ARTIFACT_NAMES,
   DAEMON_PROTOCOL_VERSION,
+  DEFAULT_ARTIFACT_BYTES,
+  MAX_ARTIFACT_BYTES,
+  MAX_WAIT_SECONDS,
   daemonIdentityPath,
   daemonSocketPath,
   readBuildId,
@@ -51,7 +56,6 @@ import {
   type WaitForWorkersResult,
 } from './protocol.js'
 
-const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
 const DAEMON_METHODS = new Set<DaemonMethod>([
   'hello',
   'daemon_status',
@@ -65,21 +69,7 @@ const DAEMON_METHODS = new Set<DaemonMethod>([
   'wait_for_workers',
   'cancel_worker',
 ])
-const ARTIFACT_NAMES: ArtifactParams['artifact'][] = [
-  'prompt',
-  'events',
-  'stderr',
-  'patch',
-  'model_result',
-  'verification',
-  'activity',
-]
-const DEFAULT_ARTIFACT_BYTES = 65_536
-const MAX_ARTIFACT_BYTES = 262_144
 const DEFAULT_WAIT_SECONDS = 60
-// matches the MCP schema max exactly, so a model-facing wait is never silently
-// re-clamped to a shorter timeout than the one it asked for
-const MAX_WAIT_SECONDS = 900
 
 type HandshakeState = 'pending' | 'processing' | 'complete' | 'rejected'
 
@@ -340,7 +330,7 @@ async function knownTerminalJob(
 ): Promise<WorkerJob>
 {
   const summary = await knownSummary(manager, jobId)
-  if (!TERMINAL_STATUSES.has(summary.status))
+  if (!isTerminalWorkerStatus(summary.status))
   {
     requestError(
       `worker ${summary.job_id} is ${summary.status}; no terminal result yet`
@@ -576,7 +566,7 @@ async function workerArtifact(
   const job = await knownJob(manager, jobId)
   if (
     ['patch', 'model_result', 'verification'].includes(artifactName) &&
-    !TERMINAL_STATUSES.has(job.status)
+    !isTerminalWorkerStatus(job.status)
   )
   {
     requestError(`artifact ${artifactName} requires a terminal worker job`)
@@ -586,9 +576,7 @@ async function workerArtifact(
   if (artifactName === 'verification')
   {
     excerpt = excerptBuffer(
-      Buffer.from(
-        `${JSON.stringify(job.result?.verification ?? [], null, 2)}\n`
-      ),
+      Buffer.from(serializePrettyJson(job.result?.verification ?? [])),
       maxBytes,
       tail
     )
@@ -702,7 +690,7 @@ async function waitForWorkers(
   // validated before the early-exit branch so a malformed timeout is still
   // rejected when nothing happens to be pending
   const timeoutSeconds = waitSeconds(params)
-  const pending = selected.filter((job) => !TERMINAL_STATUSES.has(job.status))
+  const pending = selected.filter((job) => !isTerminalWorkerStatus(job.status))
   let timedOut = false
   if (pending.length > 0)
   {
@@ -733,7 +721,7 @@ async function waitForWorkers(
   // is never reported as pending
   const pendingWorkers = await Promise.all(
     workers
-      .filter((job) => !TERMINAL_STATUSES.has(job.status))
+      .filter((job) => !isTerminalWorkerStatus(job.status))
       .map(async (job) => await pendingWorker(manager, job))
   )
   return {
@@ -948,7 +936,7 @@ export async function startDaemon(
       {
         const jobId = requireJobId(params)
         const summary = await knownSummary(manager, jobId)
-        if (TERMINAL_STATUSES.has(summary.status)) return summary
+        if (isTerminalWorkerStatus(summary.status)) return summary
         return await manager.cancel(jobId)
       }
       default:
@@ -1100,10 +1088,7 @@ export async function startDaemon(
   server = await bindSocket(socketPath, accept)
   try
   {
-    await writePrivateFile(
-      identityPath,
-      `${JSON.stringify(identity, null, 2)}\n`
-    )
+    await writePrivateFile(identityPath, serializePrettyJson(identity))
     await manager.initialize()
     markReady()
   }

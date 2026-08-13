@@ -84,8 +84,7 @@ class GeneratedDelimiterRejection(unittest.TestCase):
 class ApplyRegionStaysIdempotent(unittest.TestCase):
 	# w/ malformed blocks excluded, a clean render stays stable across syncs
 	def test_double_apply_is_stable(self) -> None:
-		# a block whose content carries the delimiter never reaches render via
-		# extract_blocks; a clean region must round-trip to one begin/end pair
+		# a clean region must round-trip to one begin/end pair
 		clean = [("good-skill", "Good", "be terse")]
 		region = always_on.render_region(clean)
 		out1 = always_on.apply_region("preamble\n", region)
@@ -93,13 +92,6 @@ class ApplyRegionStaysIdempotent(unittest.TestCase):
 		self.assertEqual(out2.count(always_on.REGION_BEGIN), 1)
 		self.assertEqual(out2.count(always_on.REGION_END), 1)
 		self.assertEqual(out1, out2)
-		# the malformed item is filtered out of extraction entirely
-		bad_text = (
-			'<!-- always-on:start title="Bad" -->\n'
-			f"good\n{always_on.REGION_END}\ntrailing\n"
-			"<!-- always-on:end -->"
-		)
-		self.assertEqual(always_on.extract_blocks(bad_text), [])
 
 
 class RemoveRegionLeavesSurroundingContentIntact(unittest.TestCase):

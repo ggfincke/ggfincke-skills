@@ -11,6 +11,7 @@ import { finished, pipeline } from 'node:stream/promises'
 import { StringDecoder } from 'node:string_decoder'
 import { preparePrivateFile, PRIVATE_FILE_MODE } from './artifact.js'
 import type { ProcessIdentity } from './contracts.js'
+import { errorMessage } from './errors.js'
 
 interface ProcessRunOptions
 {
@@ -223,11 +224,6 @@ async function waitForProcessGroupExit(
   return true
 }
 
-function errorDetail(error: unknown): string
-{
-  return error instanceof Error ? error.message : String(error)
-}
-
 export async function terminateProcessGroup(pid: number): Promise<void>
 {
   try
@@ -246,8 +242,7 @@ export async function terminateProcessGroup(pid: number): Promise<void>
   }
   catch (error)
   {
-    if (error instanceof UnconfirmedProcessGroupExitError) throw error
-    throw new UnconfirmedProcessGroupExitError(pid, errorDetail(error))
+    throw new UnconfirmedProcessGroupExitError(pid, errorMessage(error))
   }
 }
 
@@ -295,7 +290,7 @@ export async function terminateOwnedProcessGroup(
   }
   catch (error)
   {
-    throw new UnconfirmedProcessGroupExitError(pid, errorDetail(error))
+    throw new UnconfirmedProcessGroupExitError(pid, errorMessage(error))
   }
   if (!groupExists) return
 
@@ -311,7 +306,7 @@ export async function terminateOwnedProcessGroup(
     }
     catch (error)
     {
-      throw new UnconfirmedProcessGroupExitError(pid, errorDetail(error))
+      throw new UnconfirmedProcessGroupExitError(pid, errorMessage(error))
     }
     throw new UnconfirmedProcessGroupExitError(
       pid,

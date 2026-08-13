@@ -23,6 +23,19 @@ interface ClaudeEventData
   result_text?: string
 }
 
+// malformed ndjson is ignored; the raw log still has the line
+function parseJsonRecord(line: string): Record<string, unknown> | undefined
+{
+  try
+  {
+    return JSON.parse(line) as Record<string, unknown>
+  }
+  catch
+  {
+    return undefined
+  }
+}
+
 function assistantText(event: Record<string, unknown>): string | undefined
 {
   const message = event.message
@@ -41,19 +54,9 @@ function assistantText(event: Record<string, unknown>): string | undefined
   return text === '' ? undefined : text
 }
 
-export function parseClaudeEventLine(
-  line: string
-): ClaudeEventData | undefined
+// session, model, and result text from a parsed claude event
+function eventFromRecord(event: Record<string, unknown>): ClaudeEventData
 {
-  let event: Record<string, unknown>
-  try
-  {
-    event = JSON.parse(line) as Record<string, unknown>
-  }
-  catch
-  {
-    return undefined
-  }
   const data: ClaudeEventData = {}
   if (typeof event.session_id === 'string') data.session_id = event.session_id
   if (typeof event.model === 'string') data.model = event.model
@@ -69,17 +72,9 @@ export function parseClaudeEventLine(
   return data
 }
 
-export function parseClaudeActivities(line: string): ActivityInput[]
+// abstract tool/message activity from a parsed claude event
+function activitiesFromRecord(value: Record<string, unknown>): ActivityInput[]
 {
-  let value: Record<string, unknown>
-  try
-  {
-    value = JSON.parse(line) as Record<string, unknown>
-  }
-  catch
-  {
-    return []
-  }
   const activities: ActivityInput[] = []
   const message = value.message
   if (
@@ -109,8 +104,8 @@ export function parseClaudeActivities(line: string): ActivityInput[]
       }
     }
   }
-  const event = parseClaudeEventLine(line)
-  if (event?.assistant_text !== undefined)
+  const event = eventFromRecord(value)
+  if (event.assistant_text !== undefined)
   {
     const summary = parseActivitySummary(event.assistant_text)
     if (summary !== undefined) activities.push({ kind: 'message', summary })
@@ -125,6 +120,22 @@ export function parseClaudeActivities(line: string): ActivityInput[]
     })
   }
   return activities
+}
+
+// test entry: parse once, then eventFromRecord
+export function parseClaudeEventLine(
+  line: string
+): ClaudeEventData | undefined
+{
+  const event = parseJsonRecord(line)
+  return event === undefined ? undefined : eventFromRecord(event)
+}
+
+// test entry: parse once, then activitiesFromRecord
+export function parseClaudeActivities(line: string): ActivityInput[]
+{
+  const value = parseJsonRecord(line)
+  return value === undefined ? [] : activitiesFromRecord(value)
 }
 
 export function parseClaudeActivity(line: string): ActivityInput | undefined
@@ -176,13 +187,15 @@ export class ClaudeProvider implements WorkerProvider
       on_process_finished: context.on_process_finished,
       on_stdout_line: (line) =>
       {
-        const event = parseClaudeEventLine(line)
-        const activities = parseClaudeActivities(line)
-        if (event?.session_id !== undefined) workerSessionId = event.session_id
-        if (event?.model !== undefined) effectiveModel = event.model
-        if (event?.assistant_text !== undefined)
+        const value = parseJsonRecord(line)
+        if (value === undefined) return
+        const event = eventFromRecord(value)
+        const activities = activitiesFromRecord(value)
+        if (event.session_id !== undefined) workerSessionId = event.session_id
+        if (event.model !== undefined) effectiveModel = event.model
+        if (event.assistant_text !== undefined)
           assistantResult = event.assistant_text
-        if (event?.result_text !== undefined) finalResult = event.result_text
+        if (event.result_text !== undefined) finalResult = event.result_text
         for (const activity of activities) context.on_activity?.(activity)
       },
     })

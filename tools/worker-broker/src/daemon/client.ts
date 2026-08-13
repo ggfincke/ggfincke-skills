@@ -6,6 +6,7 @@ import { access } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import type { BrokerConfig } from '../contracts.js'
+import { errorMessage } from '../errors.js'
 import {
   DAEMON_PROTOCOL_VERSION,
   daemonSocketPath,
@@ -212,11 +213,6 @@ class SocketDaemonClient implements DaemonClient
     this.pending.clear()
     for (const pending of pendingCalls) pending.reject(error)
   }
-}
-
-function errorMessage(error: unknown): string
-{
-  return error instanceof Error ? error.message : String(error)
 }
 
 function isResponseFrame(value: unknown): value is DaemonResponseFrame

@@ -25,17 +25,24 @@ const MODEL_RESULT_SCHEMA = fileURLToPath(
   new URL('../../../schemas/model-result.schema.json', import.meta.url)
 )
 
-export function parseCodexActivity(line: string): ActivityInput | undefined
+// malformed ndjson is ignored; the raw log still has the line
+function parseJsonRecord(line: string): Record<string, unknown> | undefined
 {
-  let event: Record<string, unknown>
   try
   {
-    event = JSON.parse(line) as Record<string, unknown>
+    return JSON.parse(line) as Record<string, unknown>
   }
   catch
   {
     return undefined
   }
+}
+
+// abstract tool/message activity from a parsed codex event
+function activityFromRecord(
+  event: Record<string, unknown>
+): ActivityInput | undefined
+{
   const item = event.item
   if (typeof item !== 'object' || item === null || Array.isArray(item))
     return undefined
@@ -61,6 +68,13 @@ export function parseCodexActivity(line: string): ActivityInput | undefined
     }
   }
   return undefined
+}
+
+// test entry: parse once, then activityFromRecord
+export function parseCodexActivity(line: string): ActivityInput | undefined
+{
+  const event = parseJsonRecord(line)
+  return event === undefined ? undefined : activityFromRecord(event)
 }
 
 export function buildCodexArgs(
@@ -132,49 +146,47 @@ export class CodexProvider implements WorkerProvider
       on_process_finished: context.on_process_finished,
       on_stdout_line: (line) =>
       {
-        const activity = parseCodexActivity(line)
-        if (activity !== undefined) context.on_activity?.(activity)
-        try
-        {
-          const event = JSON.parse(line) as Record<string, unknown>
-          if (
-            event.type === 'thread.started' &&
-            typeof event.thread_id === 'string'
-          )
-          {
-            workerSessionId = event.thread_id
-          }
-          effectiveModel = codexEventModel(event) ?? effectiveModel
-          if (event.type === 'turn.completed')
-          {
-            const source: CodexUsageSource = {
-              job_id: context.job_id,
-              attempt,
-              turn_index: turnIndex,
-              timestamp: new Date().toISOString(),
-              provenance: 'captured',
-            }
-            const pricingModel = effectiveModel ?? requestedModel
-            if (pricingModel !== undefined) source.model = pricingModel
-            turnIndex += 1
-            usageWrites = usageWrites
-              .then(async () =>
-              {
-                await persistCodexUsageEvent(
-                  this.config.state_dir,
-                  event,
-                  source
-                )
-              })
-              .catch(() =>
-              {
-                usageCaptureFailed = true
-              })
-          }
-        }
-        catch
+        const event = parseJsonRecord(line)
+        if (event === undefined)
         {
           // malformed provider events remain available in the raw log
+          return
+        }
+        const activity = activityFromRecord(event)
+        if (activity !== undefined) context.on_activity?.(activity)
+        if (
+          event.type === 'thread.started' &&
+          typeof event.thread_id === 'string'
+        )
+        {
+          workerSessionId = event.thread_id
+        }
+        effectiveModel = codexEventModel(event) ?? effectiveModel
+        if (event.type === 'turn.completed')
+        {
+          const source: CodexUsageSource = {
+            job_id: context.job_id,
+            attempt,
+            turn_index: turnIndex,
+            timestamp: new Date().toISOString(),
+            provenance: 'captured',
+          }
+          const pricingModel = effectiveModel ?? requestedModel
+          if (pricingModel !== undefined) source.model = pricingModel
+          turnIndex += 1
+          usageWrites = usageWrites
+            .then(async () =>
+            {
+              await persistCodexUsageEvent(
+                this.config.state_dir,
+                event,
+                source
+              )
+            })
+            .catch(() =>
+            {
+              usageCaptureFailed = true
+            })
         }
       },
     }).finally(async () =>
