@@ -310,7 +310,3 @@ Always add the reduced motion CSS from `references/css-recipes.md` to your globa
 - **`references/patterns.md`** — Patterns, animation timing, events API, troubleshooting.
 - **`references/css-recipes.md`** — Ready-to-use CSS animation recipes.
 - **`references/nextjs.md`** — Next.js App Router patterns and Server Component details.
-
-## Full Compiled Document
-
-For the complete guide with all reference files expanded: `references/compiled.md`
