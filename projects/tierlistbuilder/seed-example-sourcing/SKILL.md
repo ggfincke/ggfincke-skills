@@ -10,7 +10,7 @@ Author new marketplace seed "example" templates end to end. Each template is a f
 ## When this applies
 
 - "Source / add / populate / seed" a batch of example templates, or fill entries from `examples/future examples.md`.
-- Adding brand logos, photos, or movie/TV/game posters & box art as new tier-list templates.
+- Adding brand logos, transparent renders or character art, photos, or movie/TV/game posters & box art as new tier-list templates.
 - Not for: the live Convex upload/activate (separate user deploy), persisted contract-field changes (use `contract-propagation`), or UI work.
 
 ## Deliverables per template (all gitignored)
@@ -44,14 +44,14 @@ Read one existing def of the same modality before authoring and copy its shape.
    - A superset may split an entry into variants - map the plain id onto the canonical one (e.g. `giratina` -> `giratina-altered-forme`, `deoxys` -> `deoxys-normal`, `tornadus`/`thundurus`/`landorus`/`enamorus` -> `-incarnate-forme`).
    - **! Never blanket-unify on `externalId`.** ~330 ids collide across unrelated domains: `sprite` (soda / MCU), `ghost` (pokemon type / MCU), `twitch` (LoL champ / tech co), `scorpion` (Drake album / Mortal Kombat), plus `wendy`, `toad`, `simon`, `echo`. Only reuse within the same franchise, and eyeball the pair before copying.
 1. **Pick the batch** (~5 templates) from `examples/future examples.md`; first diff on-disk folders vs registered `templateOrder` so you target real gaps, not already-sourced folders (only `mcu-posters`/`mcu-shows` are intentionally image-only).
-2. **Roster** (opus, one agent/template): canonical ordered item list `{externalId(kebab), label, query}`. **Size by RECOGNIZABILITY, not a count.** Give a must-include list, then tell the agent to keep adding entries while they are genuinely notable/recognizable and **STOP the moment it would be reaching for obscure deep-cuts** - do NOT set a target number or a `minItems` floor (a round-number target forces padding with straws). The final size is whatever clears that bar: could be 12, could be 60. A large roster is fine when every entry is genuinely famous (e.g. `anime-villains` spans dozens of hit series); a franchise with a shallow bench should stay small. Applies to fresh rosters AND supplementary expansions.
+2. **Roster** (opus, one agent/template): canonical ordered item list `{externalId(kebab), label, query}`. **Size by RECOGNIZABILITY, not a count.** Give a must-include list, then tell the agent to keep adding entries while they are genuinely notable/recognizable and **STOP the moment it would be reaching for obscure deep-cuts** - do not set a target number or a padding floor beyond the schema's structural one-item minimum (a round-number target forces padding with straws). The final size is whatever clears that bar: could be 12, could be 60. A large roster is fine when every entry is genuinely famous (e.g. `anime-villains` spans dozens of hit series); a franchise with a shallow bench should stay small. Applies to fresh rosters AND supplementary expansions.
 3. **Source** (sonnet, chunks of ~5 items): fetch one clean image per item -> unique temp path -> Pillow normalize -> save `examples/<cat>/<slug>/NN-<externalId>.ext` -> **vision-verify by Reading the saved file**. Return provenance.
 4. **QC montage** - THE gate. Build a white-plate (logos/photos) or portrait (posters) contact sheet and Read it visually. Agent self-report does not catch mislabeled/contaminated/badly-framed cells; the montage does. Re-source the failures. **Also curate here:** actively CUT any entry that is a reach (obscure deep-cut, or a weak/off-style source like an action-figure photo among comic art) - drop it, do not keep it just to hold a count. If a workflow padded the roster to a number, the montage is where you trim it back to what genuinely belongs.
 5. **Author** defs + manifests (a Python script embedding a META dict of per-template criteria), append `templateOrder`.
 6. **Gates** (all offline, no Convex) - see below.
 7. **Docs + memory**: tick `future examples.md`, add a batch reconciliation note, write a `project_seed_batch*` memory.
 
-`scripts/batch-sourcing-wf.template.js` in this skill is a ready-to-adapt Workflow script for steps 2-3.
+[The batch sourcing Workflow helper](scripts/batch-sourcing-wf.template.js) is ready to adapt for steps 2-3.
 
 ## Transparent backgrounds (renders, character art, product shots)
 
@@ -139,16 +139,16 @@ A template folder may hold ONE `_cover.{jpg,jpeg,png,webp}`. The build auto-dete
 - Default `1` = full-bleed, zero matte, but each surface crops the source's sides/top on the tighter aspects. This is the most robust choice: a zero-matte cover cannot letterbox unexpectedly when a live container drifts off the canonical aspect.
 - Raise `coverZoom` only to rescue an ultra-wide source whose subjects get cropped out at default, and only if you accept the bars. In the 2026-07-10 batch full-bleed default beat every candidate, including the two widest (`mortal-kombat-1` 2.32:1, `street-fighter-6` 3.10:1).
 
-**The QC gate = simulate every surface, do not eyeball one crop.** `scripts/simulate-cover-surfaces.py` renders exactly what browseHero/detailHero/card show at a given zoom (it re-implements `zoomedFrameForSurface`) and flags any surface showing <62% source width or >30% matte:
+**The QC gate = simulate every surface, do not eyeball one crop.** [The surface simulator](scripts/simulate-cover-surfaces.py) renders exactly what browseHero/detailHero/card show at a given zoom (it re-implements `zoomedFrameForSurface`) and flags any surface showing <62% source width or >30% matte:
 ```bash
-uv run --project scripts/seed_pipeline python .claude/skills/seed-example-sourcing/scripts/simulate-cover-surfaces.py \
+uv run --project scripts/seed_pipeline python .agents/skills/seed-example-sourcing/scripts/simulate-cover-surfaces.py \
   examples/gaming/street-fighter-6/_cover.jpg=1.6 examples/gaming/mortal-kombat-1/_cover.jpg
 ```
 Look at the sheet, then set `coverZoom` per template. **The LLM vision scorer misranks covers** - it rewards square album art, white-logo banners, and hero-over-villain art; the montage + surface sim is the real gate, same as item QC.
 
 **Verify build.** `seed:marketplace:build` reports a `cover variants` count = the number of templates with a `_cover.*`; confirm it rose by exactly the number you added (that is the compile-time proof each new cover was detected from its filename).
 
-`scripts/cover-sourcing-wf.template.js` is a ready-to-adapt Workflow for this: sonnet multi-angle source (write-only, ADD never overwrite scratch candidates) -> read-only Explore vision-score. It returns RANKED CANDIDATES to a scratch dir - present the best to the user and install only the picked one; it never writes into `examples/` itself.
+[The cover sourcing Workflow helper](scripts/cover-sourcing-wf.template.js) is ready to adapt for this: sonnet multi-angle source (write-only, ADD never overwrite scratch candidates) -> read-only Explore vision-score. It returns RANKED CANDIDATES to a scratch dir - present the best to the user and install only the picked one; it never writes into `examples/` itself.
 
 ## Offline gates (must be green before done)
 
@@ -206,7 +206,7 @@ Run Python/Pillow through the seed venv: `uv run --project scripts/seed_pipeline
 - Workflow tool: `pipeline(TEMPLATES, rosterAgent, sourceStage)`; `sourceStage` chunks items and `parallel()`s sonnet source agents. Schema-validate both stages' output.
 - Models: **opus** for the roster (accuracy/comprehensiveness), **sonnet** for source/vision (mechanical fetch+verify). ~5-6 agents/template.
 - On transient throttle, resume via `{scriptPath, resumeFromRunId}` - cached agents replay free. Do not pre-wave-pace.
-- Covers (`scripts/cover-sourcing-wf.template.js`): sonnet source agents are write-capable (they save scratch candidates); the verify stage MUST be read-only sonnet `Explore`. No opus roster stage - a cover has no item list.
+- Covers ([this skill's cover sourcing Workflow helper](scripts/cover-sourcing-wf.template.js)): sonnet source agents are write-capable (they save scratch candidates); the verify stage MUST be read-only sonnet `Explore`. No opus roster stage - a cover has no item list.
 
 ## Constraints
 
