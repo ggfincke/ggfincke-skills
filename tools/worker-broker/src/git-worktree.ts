@@ -2,12 +2,12 @@
 // create immutable-base worktrees & derive authoritative final-tree patches
 
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rename, rm } from 'node:fs/promises'
+import { mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { secureDirectory, writePrivateFile } from './artifact.js'
+import { secureDirectory } from './artifact.js'
 import type { ChangedPath, GitSnapshot, WorkerMode } from './contracts.js'
-import { runCaptured } from './process-runner.js'
+import { runCaptured, runStdoutToFile } from './process-runner.js'
 
 async function git(
   cwd: string,
@@ -110,57 +110,166 @@ function parseNameStatus(output: string): ChangedPath[]
   return changes
 }
 
-function parseStatusPaths(output: string): string[]
+interface WorktreeChanges
 {
-  const tokens = output.split('\0')
-  if (tokens.at(-1) === '') tokens.pop()
-
-  const paths: string[] = []
-  for (let index = 0; index < tokens.length;)
-  {
-    const entry = tokens[index++]
-    if (entry === undefined || entry.length < 4 || entry[2] !== ' ')
-    {
-      throw new Error(`unexpected git status entry: ${entry ?? ''}`)
-    }
-    const status = entry.slice(0, 2)
-    paths.push(entry.slice(3))
-    if (status.includes('R') || status.includes('C'))
-    {
-      const source = tokens[index++]
-      if (source === undefined || source === '')
-      {
-        throw new Error(`unexpected git status rename after ${entry}`)
-      }
-      paths.push(source)
-    }
-  }
-  return [...new Set(paths)].sort()
+  changes: ChangedPath[]
+  changed_files: string[]
 }
 
-export async function listWorktreeStatusPaths(
-  worktree: string
-): Promise<string[]>
+/** Exact Git tree captured after setup completes. */
+export interface WorktreeBaseline extends WorktreeChanges
 {
-  return parseStatusPaths(
-    await git(worktree, [
-      'status',
-      '--porcelain=v1',
-      '-z',
-      '--untracked-files=normal',
-    ])
+  tree_sha: string
+}
+
+function worktreeChanges(nameStatus: string): WorktreeChanges
+{
+  const changes = parseNameStatus(nameStatus)
+  return {
+    changes,
+    changed_files: [
+      ...new Set(changes.flatMap((change) => change.paths)),
+    ].sort(),
+  }
+}
+
+async function stagedWorktreeChanges(
+  worktree: string,
+  baseTree: string,
+  env: NodeJS.ProcessEnv
+): Promise<WorktreeChanges>
+{
+  return worktreeChanges(
+    await git(
+      worktree,
+      [
+        'diff',
+        '--cached',
+        '--name-status',
+        '-z',
+        '--find-renames',
+        baseTree,
+        '--',
+      ],
+      env
+    )
   )
 }
 
-async function writePatchAtomically(
+async function withStagedWorktree<T>(
+  worktree: string,
+  baseTree: string,
+  excludedPaths: readonly string[],
+  operation: (env: NodeJS.ProcessEnv) => Promise<T>
+): Promise<T>
+{
+  const tempDirectory = await mkdtemp(
+    path.join(os.tmpdir(), 'worker-broker-index-')
+  )
+  const indexPath = path.join(tempDirectory, 'index')
+  const env = { ...process.env, GIT_INDEX_FILE: indexPath }
+
+  try
+  {
+    await git(worktree, ['read-tree', baseTree], env)
+    // argv pathspecs blow ARG_MAX on large setup trees; git reads NUL entries
+    const pathspecPath = path.join(tempDirectory, 'pathspec')
+    const pathspec = [
+      '.',
+      ...excludedPaths.map(
+        (excludedPath) => `:(exclude,literal)${excludedPath}`
+      ),
+    ]
+    await writeFile(pathspecPath, `${pathspec.join('\0')}\0`)
+    await git(
+      worktree,
+      [
+        'add',
+        '-A',
+        `--pathspec-from-file=${pathspecPath}`,
+        '--pathspec-file-nul',
+      ],
+      env
+    )
+    return await operation(env)
+  }
+  finally
+  {
+    await rm(tempDirectory, { recursive: true, force: true })
+  }
+}
+
+export async function captureWorktreeBaseline(
+  worktree: string,
+  baseTree: string
+): Promise<WorktreeBaseline>
+{
+  return await withStagedWorktree(worktree, baseTree, [], async (env) =>
+  {
+    const [treeSha, changes] = await Promise.all([
+      git(worktree, ['write-tree'], env),
+      stagedWorktreeChanges(worktree, baseTree, env),
+    ])
+    return { tree_sha: treeSha.trim(), ...changes }
+  })
+}
+
+export async function diffWorktreeFromTree(
+  worktree: string,
+  baseTree: string
+): Promise<WorktreeChanges>
+{
+  return await withStagedWorktree(
+    worktree,
+    baseTree,
+    [],
+    async (env) => await stagedWorktreeChanges(worktree, baseTree, env)
+  )
+}
+
+async function streamPatchAtomically(
+  worktree: string,
+  baseSha: string,
+  finalTreeSha: string,
   patchPath: string,
-  patch: string
+  env: NodeJS.ProcessEnv,
+  streamPatch: typeof runStdoutToFile
 ): Promise<void>
 {
   const temporary = `${patchPath}.${process.pid}.${randomUUID()}.tmp`
   try
   {
-    await writePrivateFile(temporary, patch)
+    await streamPatch(
+      'git',
+      [
+        'diff',
+        '--cached',
+        '--binary',
+        '--full-index',
+        '--no-ext-diff',
+        '--find-renames',
+        baseSha,
+        '--',
+      ],
+      worktree,
+      temporary,
+      env
+    )
+    const patch = await stat(temporary)
+    await git(worktree, ['read-tree', baseSha], env)
+    if (patch.size > 0)
+    {
+      await git(worktree, ['apply', '--cached', temporary], env)
+    }
+    const reconstructedTreeSha = (
+      await git(worktree, ['write-tree'], env)
+    ).trim()
+    if (reconstructedTreeSha !== finalTreeSha)
+    {
+      throw new Error(
+        `streamed patch reconstructed tree ${reconstructedTreeSha}, expected captured final tree ${finalTreeSha}`
+      )
+    }
     await rename(temporary, patchPath)
   }
   finally
@@ -173,69 +282,50 @@ export async function snapshotWorktree(
   worktree: string,
   baseSha: string,
   patchPath: string,
-  excludedPaths: readonly string[] = []
+  excludedPaths: readonly string[] = [],
+  streamPatch: typeof runStdoutToFile = runStdoutToFile
 ): Promise<GitSnapshot>
 {
-  const tempDirectory = await mkdtemp(
-    path.join(os.tmpdir(), 'worker-broker-index-')
-  )
-  const indexPath = path.join(tempDirectory, 'index')
-  const env = { ...process.env, GIT_INDEX_FILE: indexPath }
-
-  try
-  {
-    await git(worktree, ['read-tree', baseSha], env)
-    const pathspec = [
-      '.',
-      ...excludedPaths.map(
-        (excludedPath) => `:(exclude,literal)${excludedPath}`
-      ),
-    ]
-    await git(worktree, ['add', '-A', '--', ...pathspec], env)
-    const [patch, nameStatus, headSha] = await Promise.all([
-      git(
+  return await withStagedWorktree(
+    worktree,
+    baseSha,
+    excludedPaths,
+    async (env) =>
+    {
+      const [nameStatus, headSha, finalTreeSha] = await Promise.all([
+        git(
+          worktree,
+          [
+            'diff',
+            '--cached',
+            '--name-status',
+            '-z',
+            '--find-renames',
+            baseSha,
+            '--',
+          ],
+          env
+        ),
+        git(worktree, ['rev-parse', 'HEAD']),
+        git(worktree, ['write-tree'], env),
+      ])
+      await streamPatchAtomically(
         worktree,
-        [
-          'diff',
-          '--cached',
-          '--binary',
-          '--full-index',
-          '--no-ext-diff',
-          '--find-renames',
-          baseSha,
-          '--',
-        ],
-        env
-      ),
-      git(
-        worktree,
-        [
-          'diff',
-          '--cached',
-          '--name-status',
-          '-z',
-          '--find-renames',
-          baseSha,
-          '--',
-        ],
-        env
-      ),
-      git(worktree, ['rev-parse', 'HEAD']),
-    ])
-    await writePatchAtomically(patchPath, patch)
+        baseSha,
+        finalTreeSha.trim(),
+        patchPath,
+        env,
+        streamPatch
+      )
 
-    const changes = parseNameStatus(nameStatus)
-    return {
-      head_sha: headSha.trim(),
-      changes,
-      changed_files: [
-        ...new Set(changes.flatMap((change) => change.paths)),
-      ].sort(),
-      patch_path: patchPath,
+      const { changes, changed_files: changedFiles } =
+        worktreeChanges(nameStatus)
+      return {
+        head_sha: headSha.trim(),
+        changes,
+        changed_files: changedFiles,
+        patch_path: patchPath,
+      }
     }
-  }
-  finally
-  {
-    await rm(tempDirectory, { recursive: true, force: true })
-  }
+  )
 }

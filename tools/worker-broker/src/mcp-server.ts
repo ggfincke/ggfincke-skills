@@ -3,10 +3,10 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type {
-  StartWorkerRequest,
-  WorkerJob,
-  WorkerStatus,
+import {
+  TERMINAL_WORKER_STATUSES,
+  WORKER_STATUSES,
+  type WorkerStatus,
 } from './contracts.js'
 import type {
   DaemonClient,
@@ -16,155 +16,32 @@ import type {
   WaitForWorkersParams,
 } from './daemon/protocol.js'
 import { errorMessage } from './errors.js'
+import { JOB_ID_MAX_LENGTH, JOB_ID_PATTERN } from './job-store.js'
+import { parseStartWorkerRequest, StartWorkerRequestSchema } from './request.js'
+import { summarizeWorkerJob } from './worker-summary.js'
 
-const WorkerStatusSchema = z.enum([
-  'queued',
-  'running',
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-])
-const TERMINAL_STATUSES = new Set<WorkerStatus>([
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-])
-
-const VerificationSchema = z.union([
-  z.string().min(1),
-  z
-    .object({
-      command: z.string().min(1),
-      timeout_seconds: z.number().int().positive().max(86_400).optional(),
-    })
-    .strict(),
-])
-
-const StartWorkerSchema = z
-  .object({
-    provider: z.enum(['codex', 'cursor', 'coral', 'claude']),
-    mode: z.enum(['read', 'edit']),
-    repo: z.string().min(1),
-    base_ref: z.string().min(1).optional(),
-    task: z.string().min(1),
-    allowed_paths: z.array(z.string()),
-    acceptance_criteria: z.array(z.string()).optional(),
-    setup_commands: z
-      .array(VerificationSchema)
-      .describe(
-        'environment preparation commands run in the worktree before the provider starts; a failure ends the job before any model work'
-      )
-      .optional(),
-    verification_commands: z.array(VerificationSchema).optional(),
-    model: z.string().min(1).optional(),
-    effort: z
-      .enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
-      .optional(),
-    stage: z
-      .string()
-      .min(1)
-      .describe('orchestration stage identifier, metadata only')
-      .optional(),
-    workflow: z
-      .string()
-      .min(1)
-      .describe('workflow template identifier, metadata only')
-      .optional(),
-    run: z
-      .string()
-      .min(1)
-      .describe('orchestration run identifier, metadata only')
-      .optional(),
-    depends_on: z
-      .array(z.string().min(1))
-      .describe(
-        'job ids that must reach completed before this job leaves the queue; a failed dependency rejects this job. Declare later phases up front with depends_on instead of holding the sequence in the lead and polling between waves.'
-      )
-      .optional(),
-    allow_nested_agents: z.boolean().optional(),
-  })
-  .strict()
-
-interface JobSummary
-{
-  job_id: string
-  status: WorkerStatus
-  provider: string
-  mode: string
-  task_preview: string
-  task_bytes: number
-  repo: string
-  allowed_paths: string[]
-  base_sha: string
-  stage?: string
-  workflow?: string
-  run?: string
-  depends_on: string[]
-  model?: string
-  effort?: string
-  branch?: string
-  worktree?: string
-  created_at: string
-  started_at?: string
-  completed_at?: string
-}
-
-// the lead authored this prompt; echo a locator, not the text. every summary
-// carried the full task before, so one wave of long prompts replayed hundreds of
-// kilobytes of the lead's own words back into its context on every list or wait.
-// nothing is lost: get_worker_artifact({artifact:'prompt'}) still has all of it.
-const TASK_PREVIEW_CHARACTERS = 160
-
-function preview(task: string): string
-{
-  const characters = [...task]
-  if (characters.length <= TASK_PREVIEW_CHARACTERS) return task
-  return `${characters.slice(0, TASK_PREVIEW_CHARACTERS).join('')}…`
-}
-
-function summarize(job: WorkerJob): JobSummary
-{
-  const summary: JobSummary = {
-    job_id: job.job_id,
-    status: job.status,
-    provider: job.request.provider,
-    mode: job.request.mode,
-    task_preview: preview(job.request.task),
-    task_bytes: Buffer.byteLength(job.request.task, 'utf8'),
-    repo: job.request.repo,
-    allowed_paths: job.request.allowed_paths,
-    base_sha: job.base_sha,
-    depends_on: job.request.depends_on ?? [],
-    created_at: job.created_at,
-  }
-  if (job.request.stage !== undefined) summary.stage = job.request.stage
-  if (job.request.workflow !== undefined)
-    summary.workflow = job.request.workflow
-  if (job.request.run !== undefined) summary.run = job.request.run
-  if (job.request.model !== undefined) summary.model = job.request.model
-  if (job.request.effort !== undefined) summary.effort = job.request.effort
-  if (job.branch !== undefined) summary.branch = job.branch
-  if (job.worktree !== undefined) summary.worktree = job.worktree
-  if (job.started_at !== undefined) summary.started_at = job.started_at
-  if (job.completed_at !== undefined) summary.completed_at = job.completed_at
-  return summary
-}
+const WorkerStatusSchema = z.enum(WORKER_STATUSES)
+const JobIdSchema = z.string().regex(JOB_ID_PATTERN).max(JOB_ID_MAX_LENGTH)
+const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
 
 // accumulate whole code points so a byte budget never splits one mid-sequence
-function clipToBytes(value: string, maxBytes: number): string
+export function clipToBytes(value: string, maxBytes: number): string
 {
+  if (Buffer.byteLength(value, 'utf8') <= maxBytes) return value
+  const ellipsis = '…'
+  const ellipsisBytes = Buffer.byteLength(ellipsis, 'utf8')
+  if (maxBytes < ellipsisBytes) return ''
+  const contentBudget = maxBytes - ellipsisBytes
   let used = 0
   const kept: string[] = []
   for (const character of value)
   {
     const size = Buffer.byteLength(character, 'utf8')
-    if (used + size > maxBytes) break
+    if (used + size > contentBudget) break
     used += size
     kept.push(character)
   }
-  return `${kept.join('')}…`
+  return `${kept.join('')}${ellipsis}`
 }
 
 // the text channel is what a lead reads first, so it carries progress too
@@ -234,26 +111,25 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       title: 'Start worker',
       description:
         'Start one bounded native worker in an isolated Git worktree and return immediately.',
-      inputSchema: StartWorkerSchema,
+      inputSchema: StartWorkerRequestSchema,
     },
     async (input) =>
     {
       try
       {
-        const job = await client.call(
+        const admission = await client.call(
           'start_worker',
-          input as StartWorkerRequest
+          parseStartWorkerRequest(input)
         )
-        const serializesBehind = await client.call('edit_serialization', {
-          job_id: job.job_id,
-        })
+        const job = admission.worker
+        const serializesBehind = admission.serializes_behind
         const overlapPaths = [
           ...new Set(
             serializesBehind.flatMap((conflict) => conflict.overlapping_paths)
           ),
         ].sort()
         return success(
-          { worker: summarize(job), serializes_behind: serializesBehind },
+          { worker: job, serializes_behind: serializesBehind },
           serializesBehind.length === 0
             ? `started worker ${job.job_id}`
             : `started worker ${job.job_id}; it will serialize behind ${serializesBehind.length} active edit job(s) via shared path(s): ${overlapPaths.join(', ')} — narrow allowed_paths if this wave should run in parallel`
@@ -288,9 +164,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
         if (status !== undefined) params.status = status
         if (run !== undefined) params.run = run
         if (workflow !== undefined) params.workflow = workflow
-        const workers = (await client.call('list_workers', params)).map(
-          summarize
-        )
+        const workers = await client.call('list_workers', params)
         return success({ workers }, `${workers.length} worker job(s)`)
       }
       catch (error)
@@ -337,7 +211,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       inputSchema: z
         .object({
           run: z.string().min(1).optional(),
-          job_ids: z.array(z.string().min(1)).optional(),
+          job_ids: z.array(JobIdSchema).optional(),
           timeout_seconds: z.number().int().positive().max(900).default(300),
         })
         .refine(
@@ -357,15 +231,14 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
         if (run !== undefined) params.run = run
         if (jobIds !== undefined) params.job_ids = jobIds
         const result = await client.call('wait_for_workers', params)
-        // defaulted so this still reads against a daemon built before pending
-        const pending = result.pending ?? []
+        const pending = result.pending
         return success(
           {
             timed_out: result.timed_out,
             pending,
-            jobs: result.workers
-              .filter((job) => TERMINAL_STATUSES.has(job.status))
-              .map(summarize),
+            jobs: result.workers.filter((job) =>
+              TERMINAL_STATUSES.has(job.status)
+            ),
           },
           result.timed_out
             ? `timed out; ${pending.length} pending: ${pending
@@ -389,7 +262,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       description:
         'Read one bounded worker artifact as UTF-8 text. activity with tail: true, max_bytes: 2000 is the cheap liveness read for a running job.',
       inputSchema: {
-        job_id: z.string().min(1),
+        job_id: JobIdSchema,
         artifact: z.enum([
           'prompt',
           'events',
@@ -431,17 +304,14 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       title: 'Get worker status',
       description:
         'Get current lifecycle and assignment metadata for one worker job.',
-      inputSchema: { job_id: z.string().min(1) },
+      inputSchema: { job_id: JobIdSchema },
     },
     async ({ job_id: jobId }) =>
     {
       try
       {
         const job = await client.call('get_worker_status', { job_id: jobId })
-        return success(
-          { worker: summarize(job) },
-          `${job.job_id}: ${job.status}`
-        )
+        return success({ worker: job }, `${job.job_id}: ${job.status}`)
       }
       catch (error)
       {
@@ -457,7 +327,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       description:
         'Get broker-computed Git, process, and verification evidence for a terminal worker job.',
       inputSchema: {
-        job_id: z.string().min(1),
+        job_id: JobIdSchema,
         summary_max_bytes: z
           .number()
           .int()
@@ -491,7 +361,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
             : job.result
         return success(
           {
-            worker: summarize(job),
+            worker: summarizeWorkerJob(job),
             result: result as unknown as Record<string, unknown>,
             summary_truncated: truncated,
             summary_byte_length: summaryBytes,
@@ -516,7 +386,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       title: 'Cancel worker',
       description:
         'Cancel a queued or running worker and retain its terminal audit state.',
-      inputSchema: { job_id: z.string().min(1) },
+      inputSchema: { job_id: JobIdSchema },
     },
     async ({ job_id: jobId }) =>
     {
@@ -524,7 +394,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       {
         const job = await client.call('cancel_worker', { job_id: jobId })
         return success(
-          { worker: summarize(job) },
+          { worker: job },
           job.status === 'running'
             ? `cancellation requested for ${job.job_id}`
             : `${job.job_id}: ${job.status}`

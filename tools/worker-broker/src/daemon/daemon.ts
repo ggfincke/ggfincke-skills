@@ -1,7 +1,7 @@
 // tools/worker-broker/src/daemon/daemon.ts
 // own broker state in one unix-socket daemon & serve the pinned JSONL protocol
 
-import { readFile, rm } from 'node:fs/promises'
+import { open, rm } from 'node:fs/promises'
 import {
   createConnection,
   createServer,
@@ -10,24 +10,30 @@ import {
 } from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
+import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
 import { secureDirectory, writePrivateFile } from '../artifact.js'
 import { defaultBrokerConfig } from '../config.js'
-import type {
-  BrokerConfig,
-  StartWorkerRequest,
-  WorkerJob,
-  WorkerStatus,
+import {
+  codexEventLogAttempt,
+  TERMINAL_WORKER_STATUSES,
+  WORKER_STATUSES,
+  workerEventLogFileName,
+  type BrokerConfig,
+  type WorkerJob,
+  type WorkerStatus,
+  type WorkerSummary,
 } from '../contracts.js'
 import { errorMessage } from '../errors.js'
 import { JobManager } from '../job-manager.js'
+import { isSafeJobId, STATE_SCHEMA_VERSION } from '../job-store.js'
 import { ClaudeProvider } from '../providers/claude.js'
 import { CodexProvider } from '../providers/codex.js'
 import { CoralProvider } from '../providers/coral.js'
 import { CursorProvider } from '../providers/cursor.js'
+import { RequestValidationError } from '../request.js'
 import {
   DAEMON_PROTOCOL_VERSION,
-  STATE_SCHEMA_VERSION,
   daemonIdentityPath,
   daemonSocketPath,
   readBuildId,
@@ -41,29 +47,16 @@ import {
   type DaemonStatusResult,
   type PendingWorker,
   type RunStatusResult,
+  type StartWorkerResult,
   type WaitForWorkersResult,
 } from './protocol.js'
 
-const TERMINAL_STATUSES = new Set<WorkerStatus>([
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-])
-const WORKER_STATUSES: WorkerStatus[] = [
-  'queued',
-  'running',
-  'completed',
-  'failed',
-  'rejected',
-  'cancelled',
-]
+const TERMINAL_STATUSES = new Set<WorkerStatus>(TERMINAL_WORKER_STATUSES)
 const DAEMON_METHODS = new Set<DaemonMethod>([
   'hello',
   'daemon_status',
   'shutdown',
   'start_worker',
-  'edit_serialization',
   'list_workers',
   'get_worker_status',
   'get_worker_result',
@@ -129,6 +122,19 @@ function requireString(params: Record<string, unknown>, name: string): string
   if (typeof value !== 'string' || value.trim() === '')
   {
     requestError(`${name} must be a non-empty string`)
+  }
+  return value
+}
+
+function requireJobId(
+  params: Record<string, unknown>,
+  name = 'job_id'
+): string
+{
+  const value = requireString(params, name)
+  if (!isSafeJobId(value))
+  {
+    requestError(`${name} is not a valid job id`)
   }
   return value
 }
@@ -306,10 +312,47 @@ async function knownJob(
   }
 }
 
+async function knownSummary(
+  manager: JobManager,
+  jobId: string
+): Promise<WorkerSummary>
+{
+  try
+  {
+    return await manager.getSummary(jobId)
+  }
+  catch (error)
+  {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+    {
+      throw new DaemonRequestError(
+        `unknown worker job: ${jobId}`,
+        'unknown_job'
+      )
+    }
+    throw error
+  }
+}
+
+async function knownTerminalJob(
+  manager: JobManager,
+  jobId: string
+): Promise<WorkerJob>
+{
+  const summary = await knownSummary(manager, jobId)
+  if (!TERMINAL_STATUSES.has(summary.status))
+  {
+    requestError(
+      `worker ${summary.job_id} is ${summary.status}; no terminal result yet`
+    )
+  }
+  return await knownJob(manager, jobId)
+}
+
 async function listWorkers(
   manager: JobManager,
   params: Record<string, unknown>
-): Promise<WorkerJob[]>
+): Promise<WorkerSummary[]>
 {
   const status = params.status
   const run = params.run
@@ -332,10 +375,8 @@ async function listWorkers(
   }
   return (await manager.list())
     .filter((job) => status === undefined || job.status === status)
-    .filter((job) => run === undefined || job.request.run === run)
-    .filter(
-      (job) => workflow === undefined || job.request.workflow === workflow
-    )
+    .filter((job) => run === undefined || job.run === run)
+    .filter((job) => workflow === undefined || job.workflow === workflow)
 }
 
 async function runStatus(
@@ -343,17 +384,17 @@ async function runStatus(
   run: string
 ): Promise<RunStatusResult>
 {
-  const jobs = (await manager.list()).filter((job) => job.request.run === run)
+  const jobs = (await manager.list()).filter((job) => job.run === run)
   const totals = Object.fromEntries(
     WORKER_STATUSES.map((status) => [
       status,
       jobs.filter((job) => job.status === status).length,
     ])
   ) as Record<WorkerStatus, number>
-  const stageNames = [...new Set(jobs.map((job) => job.request.stage ?? ''))]
+  const stageNames = [...new Set(jobs.map((job) => job.stage ?? ''))]
   const stages = stageNames.map((stage) =>
   {
-    const stageJobs = jobs.filter((job) => (job.request.stage ?? '') === stage)
+    const stageJobs = jobs.filter((job) => (job.stage ?? '') === stage)
     const counts = Object.fromEntries(
       WORKER_STATUSES.map((status) => [
         status,
@@ -371,7 +412,7 @@ async function runStatus(
     workflows: [
       ...new Set(
         jobs
-          .map((job) => job.request.workflow)
+          .map((job) => job.workflow)
           .filter((value): value is string => value !== undefined)
       ),
     ],
@@ -380,21 +421,126 @@ async function runStatus(
   }
 }
 
-async function readArtifactBytes(
-  artifactPath: string,
-  allowMissing: boolean
-): Promise<Buffer>
+interface ArtifactExcerpt
 {
+  bytes: Buffer
+  byte_length: number
+  truncated: boolean
+}
+
+function excerptBuffer(
+  bytes: Buffer,
+  maxBytes: number,
+  tail: boolean
+): ArtifactExcerpt
+{
+  const truncated = bytes.length > maxBytes
+  return {
+    bytes: truncated
+      ? tail
+        ? bytes.subarray(bytes.length - maxBytes)
+        : bytes.subarray(0, maxBytes)
+      : bytes,
+    byte_length: bytes.length,
+    truncated,
+  }
+}
+
+async function readArtifactExcerpt(
+  artifactPath: string,
+  maxBytes: number,
+  tail: boolean,
+  allowMissing: boolean
+): Promise<ArtifactExcerpt>
+{
+  let artifact: Awaited<ReturnType<typeof open>>
   try
   {
-    return await readFile(artifactPath)
+    artifact = await open(artifactPath, 'r')
   }
   catch (error)
   {
     if (allowMissing && (error as NodeJS.ErrnoException).code === 'ENOENT')
-      return Buffer.alloc(0)
+    {
+      return {
+        bytes: Buffer.alloc(0),
+        byte_length: 0,
+        truncated: false,
+      }
+    }
     throw error
   }
+
+  try
+  {
+    const metadata = await artifact.stat()
+    const byteLength = metadata.size
+    const requestedBytes = Math.min(byteLength, maxBytes)
+    const start = tail ? Math.max(0, byteLength - requestedBytes) : 0
+    const bytes = Buffer.allocUnsafe(requestedBytes)
+    let bytesRead = 0
+    while (bytesRead < requestedBytes)
+    {
+      const result = await artifact.read(
+        bytes,
+        bytesRead,
+        requestedBytes - bytesRead,
+        start + bytesRead
+      )
+      if (result.bytesRead === 0) break
+      bytesRead += result.bytesRead
+    }
+    return {
+      bytes: bytes.subarray(0, bytesRead),
+      byte_length: byteLength,
+      truncated: byteLength > maxBytes,
+    }
+  }
+  finally
+  {
+    await artifact.close()
+  }
+}
+
+function decodeArtifactExcerpt(
+  excerpt: ArtifactExcerpt,
+  tail: boolean
+): string
+{
+  if (!excerpt.truncated) return excerpt.bytes.toString('utf8')
+
+  let start = 0
+  if (tail)
+  {
+    while (
+      start < excerpt.bytes.length &&
+      (excerpt.bytes[start]! & 0xc0) === 0x80
+    )
+    {
+      start += 1
+    }
+  }
+  // omit an incomplete edge code point instead of manufacturing replacement
+  // characters solely because the requested byte range split valid UTF-8
+  return new StringDecoder('utf8').write(excerpt.bytes.subarray(start))
+}
+
+function workerEventLogArtifactName(job: WorkerJob): string
+{
+  const recorded = job.result?.event_log_path
+  if (recorded !== undefined)
+  {
+    const fileName = path.basename(recorded)
+    if (
+      fileName === 'events.jsonl' ||
+      (job.request.provider === 'codex' &&
+        codexEventLogAttempt(fileName) !== undefined)
+    )
+    {
+      return fileName
+    }
+  }
+  return workerEventLogFileName(job.request.provider, job.restart_requeues ?? 0)
 }
 
 async function workerArtifact(
@@ -402,7 +548,7 @@ async function workerArtifact(
   params: Record<string, unknown>
 ): Promise<ArtifactResult>
 {
-  const jobId = requireString(params, 'job_id')
+  const jobId = requireJobId(params)
   const artifact = params.artifact
   if (
     typeof artifact !== 'string' ||
@@ -436,18 +582,22 @@ async function workerArtifact(
     requestError(`artifact ${artifactName} requires a terminal worker job`)
   }
 
-  let bytes: Buffer
+  let excerpt: ArtifactExcerpt
   if (artifactName === 'verification')
   {
-    bytes = Buffer.from(
-      `${JSON.stringify(job.result?.verification ?? [], null, 2)}\n`
+    excerpt = excerptBuffer(
+      Buffer.from(
+        `${JSON.stringify(job.result?.verification ?? [], null, 2)}\n`
+      ),
+      maxBytes,
+      tail
     )
   }
   else
   {
     const names = {
       prompt: 'prompt.md',
-      events: 'events.jsonl',
+      events: workerEventLogArtifactName(job),
       stderr: 'provider.stderr.log',
       patch: 'change.patch',
       model_result: 'model-result.json',
@@ -456,23 +606,19 @@ async function workerArtifact(
     // activity is the one artifact readable before a job is terminal, so a
     // queued worker legitimately has no log yet; that reads as empty rather
     // than as a raw fs error naming the broker's state path
-    bytes = await readArtifactBytes(
+    excerpt = await readArtifactExcerpt(
       path.join(manager.store.jobDir(jobId), names[artifactName]),
+      maxBytes,
+      tail,
       artifactName === 'activity'
     )
   }
-  const truncated = bytes.length > maxBytes
-  const content = truncated
-    ? tail
-      ? bytes.subarray(bytes.length - maxBytes)
-      : bytes.subarray(0, maxBytes)
-    : bytes
   return {
     job_id: jobId,
     artifact: artifactName,
-    content: content.toString('utf8'),
-    truncated,
-    byte_length: bytes.length,
+    content: decodeArtifactExcerpt(excerpt, tail),
+    truncated: excerpt.truncated,
+    byte_length: excerpt.byte_length,
   }
 }
 
@@ -492,7 +638,7 @@ const MAX_PENDING_MESSAGE_CHARACTERS = 200
 
 async function pendingWorker(
   manager: JobManager,
-  job: WorkerJob
+  job: WorkerSummary
 ): Promise<PendingWorker>
 {
   const progress = await manager.progress(job.job_id)
@@ -501,7 +647,7 @@ async function pendingWorker(
     status: job.status,
     elapsed_ms: Date.now() - Date.parse(job.started_at ?? job.created_at),
   }
-  if (job.request.stage !== undefined) entry.stage = job.request.stage
+  if (job.stage !== undefined) entry.stage = job.stage
   if (progress.phase !== undefined) entry.phase = progress.phase
   if (progress.last_message !== undefined)
   {
@@ -523,13 +669,19 @@ async function waitForWorkers(
   {
     requestError('run must be a non-empty string')
   }
-  if (
-    jobIds !== undefined &&
-    (!Array.isArray(jobIds) ||
-      jobIds.some((jobId) => typeof jobId !== 'string' || jobId.trim() === ''))
-  )
+  if (jobIds !== undefined)
   {
-    requestError('job_ids must contain non-empty strings')
+    if (
+      !Array.isArray(jobIds) ||
+      jobIds.some((jobId) => typeof jobId !== 'string' || jobId.trim() === '')
+    )
+    {
+      requestError('job_ids must contain non-empty strings')
+    }
+    if ((jobIds as string[]).some((jobId) => !isSafeJobId(jobId)))
+    {
+      requestError('job_ids must contain valid job ids')
+    }
   }
   if (run === undefined && (!Array.isArray(jobIds) || jobIds.length === 0))
   {
@@ -541,11 +693,11 @@ async function waitForWorkers(
   {
     for (const job of await manager.list())
     {
-      if (job.request.run === run) selectedIds.add(job.job_id)
+      if (job.run === run) selectedIds.add(job.job_id)
     }
   }
   const selected = await Promise.all(
-    [...selectedIds].map(async (jobId) => await knownJob(manager, jobId))
+    [...selectedIds].map(async (jobId) => await knownSummary(manager, jobId))
   )
   // validated before the early-exit branch so a malformed timeout is still
   // rejected when nothing happens to be pending
@@ -575,7 +727,7 @@ async function waitForWorkers(
     aborter.abort()
   }
   const workers = await Promise.all(
-    [...selectedIds].map(async (jobId) => await knownJob(manager, jobId))
+    [...selectedIds].map(async (jobId) => await knownSummary(manager, jobId))
   )
   // derived from the post-race read, so a worker that finished during the wait
   // is never reported as pending
@@ -762,15 +914,30 @@ export async function startDaemon(
               'draining'
             )
           }
-          return await manager.start(params as unknown as StartWorkerRequest)
+          let admission: Awaited<ReturnType<JobManager['start']>>
+          try
+          {
+            admission = await manager.start(params)
+          }
+          catch (error)
+          {
+            if (error instanceof RequestValidationError)
+            {
+              requestError(error.message)
+            }
+            throw error
+          }
+          return {
+            worker: admission.job,
+            serializes_behind: admission.serializes_behind,
+          } satisfies StartWorkerResult
         })
-      case 'edit_serialization':
-        return manager.editSerialization(requireString(params, 'job_id'))
       case 'list_workers':
         return await listWorkers(manager, params)
       case 'get_worker_status':
+        return await knownSummary(manager, requireJobId(params))
       case 'get_worker_result':
-        return await knownJob(manager, requireString(params, 'job_id'))
+        return await knownTerminalJob(manager, requireJobId(params))
       case 'get_worker_artifact':
         return await workerArtifact(manager, params)
       case 'get_run_status':
@@ -779,8 +946,9 @@ export async function startDaemon(
         return await waitForWorkers(manager, params)
       case 'cancel_worker':
       {
-        const jobId = requireString(params, 'job_id')
-        await knownJob(manager, jobId)
+        const jobId = requireJobId(params)
+        const summary = await knownSummary(manager, jobId)
+        if (TERMINAL_STATUSES.has(summary.status)) return summary
         return await manager.cancel(jobId)
       }
       default:

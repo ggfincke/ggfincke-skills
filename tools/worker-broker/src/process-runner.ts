@@ -2,12 +2,15 @@
 // run cancellable process groups while preserving stdout & stderr artifacts
 
 import { constants as fsConstants, createWriteStream } from 'node:fs'
-import { access } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { access, open } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import type { Writable } from 'node:stream'
-import { finished } from 'node:stream/promises'
+import { finished, pipeline } from 'node:stream/promises'
+import { StringDecoder } from 'node:string_decoder'
 import { preparePrivateFile, PRIVATE_FILE_MODE } from './artifact.js'
+import type { ProcessIdentity } from './contracts.js'
 
 interface ProcessRunOptions
 {
@@ -21,7 +24,8 @@ interface ProcessRunOptions
   signal?: AbortSignal
   timeout_ms?: number
   on_stdout_line?: (line: string) => void
-  on_process_started?: (pid: number) => void | Promise<void>
+  on_process_started?: (identity: ProcessIdentity) => void | Promise<void>
+  on_process_finished?: (identity: ProcessIdentity) => void | Promise<void>
 }
 
 interface ProcessRunResult
@@ -33,10 +37,104 @@ interface ProcessRunResult
 }
 
 const TERMINATION_GRACE_MS = 2_000
+const PROCESS_TOKEN_PATTERN = /^[a-f0-9]{32}$/u
+const PROCESS_SUPERVISOR_PREFIX = 'worker-broker-supervisor:'
+export const STDOUT_LINE_MAX_BYTES = 256 * 1024
 
-// hold the detached process at exec until durable ownership is recorded
-const PROCESS_START_WRAPPER =
-  'IFS= read -r ready <&3 || exit 125; [ "$ready" = start ] || exit 125; exec "$@"'
+// keep a token-bearing group leader until the direct command exits; the node
+// supervisor preserves the child's exact code-vs-signal outcome
+const PROCESS_SUPERVISOR_SCRIPT = [
+  "const { spawn } = require('node:child_process')",
+  "const { readFileSync } = require('node:fs')",
+  'const [marker, executable, ...args] = process.argv.slice(1)',
+  'process.title = marker',
+  'let child',
+  'let pendingSignal',
+  "for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => { pendingSignal = signal; child?.kill(signal) })",
+  "if (readFileSync(3, 'utf8').trim() !== 'start') process.exit(125)",
+  "child = spawn(executable, args, { stdio: 'inherit' })",
+  'if (pendingSignal !== undefined) child.kill(pendingSignal)',
+  "child.once('error', (error) => { process.stderr.write(`${error.message}\\n`); process.exitCode = 126 })",
+  "child.once('exit', (code, signal) => { if (signal !== null) { process.removeAllListeners(signal); process.kill(process.pid, signal); return }; process.exitCode = code ?? 126 })",
+].join('; ')
+
+function stdoutLineTooLarge(value: string): boolean
+{
+  return (
+    value.length > STDOUT_LINE_MAX_BYTES ||
+    Buffer.byteLength(value, 'utf8') > STDOUT_LINE_MAX_BYTES
+  )
+}
+
+// skip oversized lines in the callback; the artifact file still gets every byte
+function createStdoutLineBuffer(onLine: ((line: string) => void) | undefined)
+{
+  const decoder = new StringDecoder('utf8')
+  let buffer = ''
+  let skipping = false
+
+  function accept(text: string): void
+  {
+    if (onLine === undefined || text === '') return
+    let incoming = text
+    if (skipping)
+    {
+      const newline = incoming.indexOf('\n')
+      if (newline === -1) return
+      skipping = false
+      incoming = incoming.slice(newline + 1)
+      if (incoming === '') return
+    }
+
+    if (
+      !incoming.includes('\n') &&
+      buffer.length + incoming.length > STDOUT_LINE_MAX_BYTES
+    )
+    {
+      buffer = ''
+      skipping = true
+      return
+    }
+
+    const lines = `${buffer}${incoming}`.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines)
+    {
+      if (!stdoutLineTooLarge(line)) onLine(line)
+    }
+    if (stdoutLineTooLarge(buffer))
+    {
+      buffer = ''
+      skipping = true
+    }
+  }
+
+  return {
+    write(chunk: Buffer): void
+    {
+      accept(decoder.write(chunk))
+    },
+    end(): void
+    {
+      accept(decoder.end())
+      if (onLine === undefined || skipping || buffer === '') return
+      if (!stdoutLineTooLarge(buffer)) onLine(buffer)
+      buffer = ''
+    },
+  }
+}
+
+export class UnconfirmedProcessGroupExitError extends Error
+{
+  readonly process_id: number
+
+  constructor(processId: number, detail: string)
+  {
+    super(`could not confirm process group ${processId} exited: ${detail}`)
+    this.name = 'UnconfirmedProcessGroupExitError'
+    this.process_id = processId
+  }
+}
 
 async function resolveExecutable(
   command: string,
@@ -125,19 +223,102 @@ async function waitForProcessGroupExit(
   return true
 }
 
+function errorDetail(error: unknown): string
+{
+  return error instanceof Error ? error.message : String(error)
+}
+
 export async function terminateProcessGroup(pid: number): Promise<void>
 {
+  try
+  {
+    if (!Number.isSafeInteger(pid) || pid <= 1)
+    {
+      throw new Error(`invalid process group id: ${pid}`)
+    }
+    killProcessGroup(pid, 'SIGTERM')
+    if (await waitForProcessGroupExit(pid, TERMINATION_GRACE_MS)) return
+    killProcessGroup(pid, 'SIGKILL')
+    if (!(await waitForProcessGroupExit(pid, TERMINATION_GRACE_MS)))
+    {
+      throw new Error('the group survived SIGKILL')
+    }
+  }
+  catch (error)
+  {
+    if (error instanceof UnconfirmedProcessGroupExitError) throw error
+    throw new UnconfirmedProcessGroupExitError(pid, errorDetail(error))
+  }
+}
+
+async function processCommand(processId: number): Promise<string | undefined>
+{
+  try
+  {
+    return (
+      await runCaptured(
+        'ps',
+        ['-ww', '-p', String(processId), '-o', 'command='],
+        process.cwd()
+      )
+    ).trim()
+  }
+  catch
+  {
+    return undefined
+  }
+}
+
+export async function terminateOwnedProcessGroup(
+  identity: ProcessIdentity
+): Promise<void>
+{
+  const { pid, token } = identity
   if (!Number.isSafeInteger(pid) || pid <= 1)
   {
-    throw new Error(`invalid persisted process group id: ${pid}`)
+    throw new UnconfirmedProcessGroupExitError(
+      pid,
+      `invalid persisted process group id: ${pid}`
+    )
   }
-  killProcessGroup(pid, 'SIGTERM')
-  if (await waitForProcessGroupExit(pid, TERMINATION_GRACE_MS)) return
-  killProcessGroup(pid, 'SIGKILL')
-  if (!(await waitForProcessGroupExit(pid, TERMINATION_GRACE_MS)))
+  if (!PROCESS_TOKEN_PATTERN.test(token))
   {
-    throw new Error(`process group ${pid} survived SIGKILL`)
+    throw new UnconfirmedProcessGroupExitError(
+      pid,
+      'the persisted supervisor token is invalid'
+    )
   }
+  let groupExists: boolean
+  try
+  {
+    groupExists = processGroupExists(pid)
+  }
+  catch (error)
+  {
+    throw new UnconfirmedProcessGroupExitError(pid, errorDetail(error))
+  }
+  if (!groupExists) return
+
+  const command = await processCommand(pid)
+  const marker = `${PROCESS_SUPERVISOR_PREFIX}${token}`
+  if (command === undefined || !command.includes(marker))
+  {
+    // the leader can disappear between the group probe and ps; absence is safe,
+    // but a surviving leaderless or reused group must never be signalled
+    try
+    {
+      if (!processGroupExists(pid)) return
+    }
+    catch (error)
+    {
+      throw new UnconfirmedProcessGroupExitError(pid, errorDetail(error))
+    }
+    throw new UnconfirmedProcessGroupExitError(
+      pid,
+      'the live process-group leader does not match the persisted broker supervisor token'
+    )
+  }
+  await terminateProcessGroup(pid)
 }
 
 export async function runProcess(
@@ -166,16 +347,17 @@ export async function runProcess(
   const artifactStreams = [finished(stdout), finished(stderr)]
   const startedAt = Date.now()
   let timedOut = false
-  let stdoutBuffer = ''
+  const stdoutLines = createStdoutLineBuffer(options.on_stdout_line)
 
   return await new Promise<ProcessRunResult>((resolve, reject) =>
   {
+    const processToken = randomBytes(16).toString('hex')
     const child = spawn(
-      '/bin/sh',
+      process.execPath,
       [
-        '-c',
-        PROCESS_START_WRAPPER,
-        'worker-broker-process',
+        '-e',
+        PROCESS_SUPERVISOR_SCRIPT,
+        `${PROCESS_SUPERVISOR_PREFIX}${processToken}`,
         executable,
         ...options.args,
       ],
@@ -187,14 +369,22 @@ export async function runProcess(
       }
     )
     const pid = child.pid
+    const identity: ProcessIdentity | undefined =
+      pid === undefined ? undefined : { pid, token: processToken }
     const processGate = child.stdio[3] as Writable
     let forceKillTimer: NodeJS.Timeout | undefined
     let timeoutTimer: NodeJS.Timeout | undefined
     let artifactError: unknown
     let executionError: unknown
     let processStartError: unknown
+    let processFinishError: unknown
     let processStarted = Promise.resolve()
     let settled = false
+    let markChildClosed = (): void => undefined
+    const childClosed = new Promise<void>((resolve) =>
+    {
+      markChildClosed = resolve
+    })
 
     const cleanup = (): void =>
     {
@@ -233,19 +423,39 @@ export async function runProcess(
     {
       if (settled) return
       settled = true
+      await processStarted
+      if (identity !== undefined)
+      {
+        try
+        {
+          // the leader can exit while detached descendants still own its
+          // process group, so drain the group before releasing durable ownership
+          await terminateProcessGroup(identity.pid)
+          await options.on_process_finished?.(identity)
+        }
+        catch (error)
+        {
+          processFinishError = error
+          child.stdout.destroy()
+          child.stderr.destroy()
+        }
+      }
+      await childClosed
+      stdoutLines.end()
       cleanup()
       closeArtifacts()
-      await Promise.all([processStarted, artifactsFinished])
+      await artifactsFinished
       if (artifactError !== undefined) reject(artifactError)
       else if (processStartError !== undefined) reject(processStartError)
+      else if (processFinishError !== undefined) reject(processFinishError)
       else if (executionError !== undefined) reject(executionError)
       else resolve(result)
     }
 
-    if (pid !== undefined)
+    if (identity !== undefined)
     {
       processStarted = Promise.resolve()
-        .then(async () => await options.on_process_started?.(pid))
+        .then(async () => await options.on_process_started?.(identity))
         .then(async () =>
         {
           if (options.signal?.aborted || timedOut)
@@ -285,11 +495,7 @@ export async function runProcess(
         stdout.once('drain', () => child.stdout.resume())
       }
       if (options.on_stdout_line === undefined) return
-
-      stdoutBuffer += chunk.toString('utf8')
-      const lines = stdoutBuffer.split('\n')
-      stdoutBuffer = lines.pop() ?? ''
-      for (const line of lines) options.on_stdout_line(line)
+      stdoutLines.write(chunk)
     })
     child.stderr.pipe(stderr)
     child.stdin.on('error', (error: NodeJS.ErrnoException) =>
@@ -309,10 +515,20 @@ export async function runProcess(
     {
       executionError = error
     })
-    child.once('close', (exitCode, signal) =>
+    child.once('exit', (exitCode, signal) =>
     {
       if (settled) return
-      if (stdoutBuffer !== '') options.on_stdout_line?.(stdoutBuffer)
+      void settle({
+        exit_code: exitCode,
+        signal,
+        timed_out: timedOut,
+        elapsed_ms: Date.now() - startedAt,
+      })
+    })
+    child.once('close', (exitCode, signal) =>
+    {
+      markChildClosed()
+      if (settled) return
       void settle({
         exit_code: exitCode,
         signal,
@@ -342,17 +558,21 @@ export async function runCaptured(
     })
     let stdout = ''
     let stderr = ''
+    const stdoutDecoder = new StringDecoder('utf8')
+    const stderrDecoder = new StringDecoder('utf8')
     child.stdout.on('data', (chunk: Buffer) =>
     {
-      stdout += chunk.toString('utf8')
+      stdout += stdoutDecoder.write(chunk)
     })
     child.stderr.on('data', (chunk: Buffer) =>
     {
-      stderr += chunk.toString('utf8')
+      stderr += stderrDecoder.write(chunk)
     })
     child.once('error', reject)
     child.once('close', (exitCode, signal) =>
     {
+      stdout += stdoutDecoder.end()
+      stderr += stderrDecoder.end()
       if (exitCode === 0) resolve(stdout)
       else
       {
@@ -364,4 +584,73 @@ export async function runCaptured(
       }
     })
   })
+}
+
+export async function runStdoutToFile(
+  command: string,
+  args: string[],
+  cwd: string,
+  stdoutPath: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<void>
+{
+  await preparePrivateFile(stdoutPath)
+  const stdout = await open(stdoutPath, 'w', PRIVATE_FILE_MODE)
+  try
+  {
+    const output = createWriteStream(stdoutPath, {
+      fd: stdout.fd,
+      autoClose: false,
+    })
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stderr = ''
+    let spawnError: unknown
+    let commandError: unknown
+    let outputError: unknown
+    const stderrDecoder = new StringDecoder('utf8')
+    child.stderr.on('data', (chunk: Buffer) =>
+    {
+      stderr += stderrDecoder.write(chunk)
+    })
+    const commandFinished = new Promise<void>((resolve) =>
+    {
+      child.once('error', (error) =>
+      {
+        spawnError = error
+      })
+      child.once('close', (exitCode, signal) =>
+      {
+        stderr += stderrDecoder.end()
+        if (exitCode !== 0)
+        {
+          commandError = new Error(
+            `${command} ${args.join(' ')} failed (${signal ?? exitCode ?? 'unknown'}): ${stderr.trim()}`
+          )
+        }
+        resolve()
+      })
+    })
+    const outputFinished = pipeline(child.stdout, output).catch(
+      (error: unknown) =>
+      {
+        outputError = error
+        child.kill('SIGTERM')
+      }
+    )
+    await Promise.all([commandFinished, outputFinished])
+    if (spawnError !== undefined) throw spawnError
+    if (outputError !== undefined) throw outputError
+    if (commandError !== undefined) throw commandError
+  }
+  finally
+  {
+    await stdout.close().catch((error: NodeJS.ErrnoException) =>
+    {
+      if (error.code !== 'EBADF') throw error
+    })
+  }
 }
