@@ -23,6 +23,6 @@
     "lint-staged": "17.4.1",
     "prettier": "3.9.6",
     "prettier-plugin-brace-style": "0.10.3",
-    "typescript-eslint": "8.65.0"
+    "typescript-eslint": "8.69.0"
   }
 }
