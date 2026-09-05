@@ -19,7 +19,7 @@
     "format:all:check": "npm run format:check && npm run format:python:check"
   },
   "devDependencies": {
-    "eslint": "10.8.0",
+    "eslint": "10.9.1",
     "lint-staged": "17.3.0",
     "prettier": "3.9.6",
     "prettier-plugin-brace-style": "0.10.3",
