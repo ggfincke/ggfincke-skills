@@ -1,6 +1,6 @@
 ---
 name: contract-propagation
-description: "Propagate a persisted-field change across TierListBuilder's three tiers - the Convex backend, the TypeScript contracts, and the Python seed pipeline - so a field added, renamed, retyped, or removed on a core domain object (board, tier, item, template, template card, ranking, tier preset) updates every layer it touches and nothing silently drifts. Use when adding, changing, or removing a persisted contract field on a TLB core object, when editing its per-domain schema module (convex/schema/workspace.ts or convex/schema/marketplace.ts) or its validator under convex/lib/validators/, or when a field is missing or stale after sync, publish/remix, import/export, or seeding. Not for the convex/schema.ts assembler itself, non-contract domains (auth, platform, profile, admin, seed-run bookkeeping), or values derived at read time. Produces the ordered propagation checklist - validators, domain schema, normalizers, equality helpers, cloud mapper, wire serializer, publish/useTemplate, the Python seed passthrough, and tests - then hands execution to the phased-implementation skill, one tier at a time."
+description: "Plan and propagate persisted core-domain field changes across TierListBuilder contracts, Convex, sync/import/export, and the Python seed pipeline. Use for added, renamed, retyped, removed, missing, or stale fields on boards, tiers, items, templates, rankings, and presets. Not the schema assembler, non-contract domains, derived values, or UI-only state."
 ---
 
 # Contract Propagation (TierListBuilder)
@@ -21,6 +21,7 @@ Core objects are the persisted domain tables, split across two per-domain schema
 
 ## Read first
 
+- The live root `AGENTS.md`, then `convex/README.md` and `docs/deployment.md` before a schema or persistence break. The current deployment identity and durability stage determine the rollout; this skill does not authorize deployment or data reset.
 - `convex/_generated/ai/guidelines.md` - per `AGENTS.md`, read this before any Convex work; its rules override training-data assumptions about Convex.
 - The field's neighbors in `packages/contracts/workspace/board.ts` (or the matching contract for the object) - copy the existing type, default, normalizer, and equality conventions rather than inventing new ones.
 - `convex/README.md` for the pre-1.0 schema stance (see TLB-specific rules).
@@ -36,7 +37,7 @@ Walk these top to bottom when adding or changing. Each is the canonical home for
 
 ### Tier 2 - Convex backend
 
-3. `convex/lib/validators/workspace.ts` (or `convex/lib/validators/marketplace/{template,ranking,aggregate}.ts`, with shared shapes in `common.ts` and `marketplace/shared.ts`) - the `v.object()` validator. Shared item-render fields live in `schemaItemRenderFields` (`convex/lib/validators/common.ts`); the persisted item tables spread it, so an item field usually changes there once. Make the field `v.optional(...)` so existing rows stay valid while the change is in flight - this is for in-flight back-compat, not a long-term migration strategy (see rules).
+3. `convex/lib/validators/workspace.ts` (or `convex/lib/validators/marketplace/{template,ranking,aggregate}.ts`, with shared shapes in `common.ts` and `marketplace/shared.ts`) - the `v.object()` validator. Shared item-render fields live in `schemaItemRenderFields` (`convex/lib/validators/common.ts`); the persisted item tables spread it, so an item field usually changes there once. Use `v.optional(...)` only when absence is part of the intended contract or the approved durability-stage rollout requires a widening step. Do not add temporary old-row compatibility by default.
 4. `convex/schema/workspace.ts` or `convex/schema/marketplace.ts` - add the field to the table definition in the correct per-domain module, matching the validator's optionality. For shared item fields, edit `schemaItemRenderFields` instead of each item table; `templateItems`, `publishedRankingItems`, and `templateRankingAggregateItems` all spread it. Do not add fields to the `convex/schema.ts` assembler. Carry the inline comment explaining any denormalized or nullable semantics.
 5. `convex/workspace/boards/upsertBoardState.ts` (the dispatcher) plus `convex/workspace/boards/upsertBoardState/{contract,validate,ensure,apply}.ts` - accept, bounds-check, default, and patch the field on write; `validate.ts` is where persisted board/item/tier field bounds are enforced, so a field the writer accepts but `validate.ts` never checks ships unbounded. If the field participates in sync, wire its change detection through `valuesEqual` (`convex/lib/core/data/equality.ts`) or the type's `xyzEqual` helper, or the upsert will silently never patch it (or re-patch every time).
 6. `convex/workspace/boards/cloudFields.ts` - add the field to `buildForkedBoardInsert` **only if a fork should inherit it from its template**.
@@ -56,11 +57,12 @@ Walk these top to bottom when adding or changing. Each is the canonical home for
 
 ### Tests
 
-14. `tests/board/boardSnapshot.test.ts` and `tests/board/boardOps.test.ts` (snapshot + ops), `tests/board/boardWireMapper.test.ts` (wire round-trip), `tests/cloud-sync/cloudBoardMapper.test.ts` (cloud mapper round-trip), and - if seeded - `scripts/seed_pipeline/tests/test_contract_schema.py` and `scripts/seed_pipeline/tests/test_ts_parity.py` (TS <-> Python parity). Add or extend a fixture and assert the field survives the round-trips it participates in.
+14. Run the relevant existing checks: `tests/board/boardSnapshot.test.ts` and `tests/board/boardOps.test.ts` (snapshot + ops), `tests/board/boardWireMapper.test.ts` (wire round-trip), `tests/cloud-sync/cloudBoardMapper.test.ts` (cloud mapper round-trip), and - if seeded - `scripts/seed_pipeline/tests/test_contract_schema.py` and `scripts/seed_pipeline/tests/test_ts_parity.py` (TS <-> Python parity). Add or change fixtures/tests only when explicitly requested or included in the approved plan. Propose only important missing round-trip coverage; reuse an existing test plan without asking again.
 
 ## TLB-specific rules
 
-- **Pre-1.0 schema is disposable.** Per `convex/README.md`, while there is no persisted production user data, prefer replacing incompatible rows, dropping stale tables/indexes, or resetting dev data (`convex/dev/reset.ts`) over writing row-conversion/migration jobs. Only add old-data support when explicitly asked. `v.optional` is for keeping rows valid mid-change, not a permanent migration tool.
+- **Read the current persistence posture.** During friends-alpha, an explicitly approved reset may target local/development data only; `db:reset` must never target `prod:*`. A breaking hosted cutover uses a fresh production deployment, the human-owned release controller, reseeding, and complete code/data-pair verification before the discarded deployment is retired. After the durability-promotion gate, use `widen -> migrate -> narrow`. Do not run any reset, cutover, release, or retirement merely because a code change is approved.
+- **No speculative compatibility.** Prefer the requested clean contract before 1.0, but preserve currently documented, tested, or still-used compatibility until its removal is explicitly in scope. Do not add migrations or optional fields solely to support obsolete rows.
 - **TS and Python must agree.** The seed JSON schema and the TS contract are two encodings of the same shape; `test_contract_schema.py` and `test_ts_parity.py` are the guard. If you touch one and the field is seeded, touch the other.
 - **Equality wiring is not optional for sync fields.** A field that reaches `upsertBoardState` without equality handling either never syncs or thrashes. Decide explicitly whether the field participates in change detection, and route it through `valuesEqual` or the type's `xyzEqual` helper.
 - **Normalizer placement.** The default + normalizer live with the type in `packages/contracts`; `boardNormalizers.ts` is the untrusted-input gate. Both, not one.
@@ -70,18 +72,18 @@ Walk these top to bottom when adding or changing. Each is the canonical home for
 
 1. State the field, the object/table, and the change: add / rename / retype / remove.
 2. Answer the three conditionals - is it template-inheritable (layer 6/7), seed-relevant (layers 11-13), and does it participate in sync change-detection (layer 5)? - to decide which layers apply.
-3. Produce the ordered plan covering only the applicable layers, and confirm it before editing widely.
+3. Produce the ordered plan covering only the applicable layers. Reuse an already approved scope; obtain missing approval before expanding it or taking an external/destructive action.
 4. Execute with the phased-implementation skill: one tier at a time, typecheck and run the relevant tests between tiers, and stop to re-plan if a layer contradicts the plan.
 5. Verify the round-trips the field participates in: edit -> sync -> reload, export -> import, and publish -> useTemplate, plus the seed build if seeded.
 
 ## Removing a field
 
-Reverse the order so nothing reads a field that is already gone:
+Plan the removal across the actual deployment boundary so no live consumer reads a field that is already gone. Apply the current persistence posture above; this checklist is not a reset or release authorization:
 
 1. Stop writing it: UI actions, mappers, wire serializer, fork/publish copies, seed passthrough.
-2. Drop it from the per-domain schema module (`convex/schema/<domain>.ts`) and the validators (pre-1.0: just remove; reset dev data if existing rows break).
+2. Drop it from the per-domain schema module (`convex/schema/<domain>.ts`) and validators when the approved consumer/data cutover allows it. Existing local/development rows require a separately approved reset if necessary; hosted rows follow fresh-deployment cutover or durable migration, never an existing-production reset.
 3. Delete the type, normalizer, equality helper, and constants from the contracts.
-4. Remove it from the seed JSON schema and tests.
+4. Remove it from the seed JSON schema. Change tests only within the approved test scope; otherwise report the affected existing coverage and request the necessary adjustment.
 5. Grep the field name across all three tiers (`convex/`, `packages/` + `src/`, `scripts/seed_pipeline/`) to confirm no stragglers.
 
 ## Notes

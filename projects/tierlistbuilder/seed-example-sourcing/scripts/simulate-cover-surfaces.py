@@ -4,8 +4,8 @@
 # renders what each cover surface actually shows at a given coverZoom, mirroring
 # packages/contracts/lib/coverMedia.ts::zoomedFrameForSurface, so you can pick coverZoom
 # per template BEFORE install and confirm the crop is right on every viewport.
-# writes surface-sim/surfaces-N.jpg contact sheets and prints any surface that exceeds
-# the configured source-width or matte limits.
+# writes dev-docs/seed-examples/previews/surfaces/surfaces-N.jpg contact sheets and
+# prints any surface that exceeds the configured source-width or matte limits.
 #
 # run through the seed venv:
 #   uv run --project scripts/seed_pipeline python <this> examples/gaming/street-fighter-6/_cover.jpg
@@ -69,13 +69,17 @@ def render(img: Image.Image, sa: float, zoom: float) -> Image.Image:
 	return canvas
 
 
-# each arg is a cover path, optionally "path=zoom"; label = parent folder name (the slug)
+# each arg is a cover path, optionally "path=zoom"; nested styles keep their template context
 def parse_args(argv: list[str]) -> list[tuple[str, Path, float]]:
 	out = []
 	for a in argv:
 		path, _, z = a.partition("=")
 		p = Path(path)
-		out.append((p.parent.name or p.stem, p, float(z) if z else 1.0))
+		label = p.parent.name or p.stem
+		if p.parent.parent.name == "styles":
+			template = p.parent.parent.parent
+			label = f"{template.parent.name}/{template.name}/{p.parent.name}"
+		out.append((label, p, float(z) if z else 1.0))
 	return out
 
 
@@ -93,8 +97,8 @@ def main() -> None:
 	W = cells * OUT_W + (cells + 1) * PAD + 240
 	RH = round(OUT_W / min(SURFACES.values())) + LAB
 	sheets = [rows[i : i + 6] for i in range(0, len(rows), 6)]
-	outdir = Path("surface-sim")
-	outdir.mkdir(exist_ok=True)
+	outdir = Path("dev-docs/seed-examples/previews/surfaces")
+	outdir.mkdir(parents=True, exist_ok=True)
 	for gi, g in enumerate(sheets, 1):
 		H = len(g) * (RH + PAD) + PAD
 		sh_im = Image.new("RGB", (W, H), (18, 18, 20))

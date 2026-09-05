@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "task_id": "REQUIRED",
+  "status": "pending",
+  "target": { "repository": "REQUIRED", "source_inventory_sha256": null, "artifact_digest": null },
+  "inputs": [
+    { "path": "REQUIRED", "sha256": "REQUIRED", "materialization_receipt": null }
+  ],
+  "outputs": [
+    { "id": "REQUIRED", "path": "REQUIRED", "sha256": null, "bytes": null, "format": null, "width": null, "height": null, "alpha": null, "status": "pending", "selected_candidate": null }
+  ],
+  "counts": { "requested": null, "succeeded": 0, "failed": 0, "pending": null, "unexpected_ids": [] },
+  "provenance": [
+    { "output_id": "REQUIRED", "source_page": null, "creator": null, "known_usage_constraints": "unknown", "intended_use": "local preview", "producer": null, "requested_model": null, "observed_model": null }
+  ],
+  "recovery": [
+    { "original_path": "REQUIRED if replacing", "backup_path": null, "sha256": null }
+  ],
+  "visual_qc": [
+    { "output_ids": [], "evidence_path": null, "sha256": null, "reviewer": null, "verdict": "pending", "limitations": [] }
+  ],
+  "verification": [],
+  "limitations": []
+}
