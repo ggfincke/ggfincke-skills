@@ -25,7 +25,7 @@ Output in every case: ONE read-only audit doc w/ grouped findings + risk sequenc
 
 ### 2. Approve - the gate
 
-The audit stays read-only until Garrett reads it and picks which action groups to do. Approval is per-group, not all-or-nothing - take some, defer others, drop the rest. The selected group IDs are the input to Implement. Nothing below this line runs before this happens; don't let an audit slide into edits because a fix looks obvious.
+The audit stays read-only until Garrett approves the relevant action groups. Approval can cover selected groups or the entire plan. Carry the approved IDs, source-edit scope, generated outputs, named hand-written tests, existing verification commands, Git/external-action boundaries, and user-requested checkpoints into Implement; unchanged approval does not expire merely because another session or model takes over. Do not let an audit slide into edits because a fix looks obvious.
 
 ### 3. Implement - carry out approved groups
 
@@ -39,13 +39,13 @@ If a phase contradicts the plan, it stops to re-plan rather than improvising - t
 
 ### 4. Re-verify - before acting on a doc you didn't just write
 
-A guard, not a fixed-in-time step: run it whenever trust has decayed - the audit sat a while, came from another model, or came from a prior session, i.e. you're about to act on claims you can't vouch for against the LIVE code right now. (Another model - Codex or any agent - counts, every time, regardless of how confident it reads. A long pause mid-Implement means re-verify the not-yet-done groups before resuming. A doc you wrote this session -> skip it.)
+A guard, not a mandatory rerun: carry the evidence source, inspected commit/range and dirty-file hashes, commands/results, limitations, and exact approval into each handoff. Compare that baseline with live state before acting. Reverify changed or unsupported evidence and consequential assumptions; reuse still-applicable evidence instead of repeating the whole audit solely because the model or session changed. A same-session claim can still need rechecking if its code changed.
 
 ```
 /verify-review-findings   # classifies each claim confirmed / stale / incorrect / speculative / unverifiable
 ```
 
-It classifies each claim against live code w/ cited evidence and stays read-only until you approve the confirmed ones. Feed only the confirmed findings back into Approve -> Implement; stale/incorrect/speculative ones get struck or rewritten in the doc, not silently carried. This is the audit-doc reconciliation pattern that recurs across the repos (TLB, SwimMate, vsc-mdx, coral): a long-lived audit/spec doc is never trusted blind.
+It classifies changed or unverified claims against live code with cited evidence. Carry confirmed findings into Implement when the existing approval covers them; request new approval only for a changed scope, risk, side effect, or missing authorization. Stale/incorrect/speculative claims get struck or rewritten in the doc, not silently carried. A long-lived audit is never trusted blind, and a valid approval is never silently broadened.
 
 ### 5. Reconcile - fix the doc's bookkeeping
 

@@ -101,3 +101,7 @@ Do not confuse more proposed changes with greater thoroughness. A well-structure
 ## Template
 
 - [assets/templates/architecture-review-template.md](assets/templates/architecture-review-template.md) - copy this packaged resource to the concrete review path; never edit it in place.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

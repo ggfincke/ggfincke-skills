@@ -1,6 +1,6 @@
 ---
 name: phased-implementation
-description: "Execute an already-approved, phased implementation plan one phase at a time: implement only the current phase with the diff scoped to it, gate between phases by running the relevant checks and stopping for go-ahead, update the plan or review artifact as the living source of truth as phases close, and stop to re-plan instead of improvising when a phase contradicts the plan. Use after a plan, patch plan, or set of action groups has been approved and it is time to carry it out step by step; not for creating plans (use plan mode) or for a single one-off edit."
+description: "Execute an approved implementation plan in scoped phases, run each phase's checks, and keep its ledger current. Carry approval across listed groups and tests; pause at user-requested checkpoints or when scope, consequences, or authorization changes. Use after a phased plan or action groups are approved, not for creating plans or a single one-off edit."
 ---
 
 # Phased Implementation
@@ -27,14 +27,14 @@ For the current phase only:
 
 ## Gating between phases
 
-After each phase, stop and report before starting the next - unless I have said to run straight through:
+After each phase, report its result and run the next approved group. Approval of the entire plan carries across its listed groups and named tests. Stop for a new decision only at a checkpoint the user requested, when only the current group was approved, or when the plan's scope, consequences, or authorization changes:
 
 - What changed in this phase: files, and the specific change.
 - Tests or checks run for this phase and their result. If you could not run them, give the exact command.
 - Whether reality matched the plan, or you found something the plan did not anticipate.
-- The next phase, and a request to proceed.
+- The next approved phase, or the specific missing decision if a stop is required.
 
-The gate is the checkpoint where I can course-correct. Do not silently continue into the next phase.
+The gate makes progress reviewable and lets the user course-correct. It does not expire an unchanged approval.
 
 ## When a phase contradicts the plan
 
@@ -53,3 +53,7 @@ Claim only what you implemented and verified. Do not assert the whole plan is fi
 
 - This skill executes approved phased plans or action groups from plan mode or review skills without scope drift.
 - To create the plan in the first place, use plan mode or the relevant review skill - not this skill.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

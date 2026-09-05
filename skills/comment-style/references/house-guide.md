@@ -25,8 +25,8 @@ comments (JSON, etc.) follow their canonical syntax.
   describe so a glance explains what that function or block is for (and why it
   is shaped that way when that matters).
 - Docstrings / TSDoc blocks are for larger constructs (typically classes), not
-  routine functions. They help maintainers and agents orient; they are not a
-  separate “public API docs” category.
+  routine functions by default. Follow explicit target-project requirements for
+  public API documentation or documentation tooling.
 - Plain comments are lowercase and casual. Block docs use full sentences
   (capitalized, period-terminated).
 - Better Comments tags (`*`, `!`, `?`, `TODO`) are uncommon and carry structured
@@ -123,12 +123,18 @@ in the code.
 
 ## 3. Docstrings and block docs
 
-There is no separate “public documentation” category. Block docs are maintainer
-and agent orientation for larger units — usually a class, or a similarly
-substantial TypeScript type/class when a paragraph helps.
+By default, block docs orient maintainers and agents on larger units — usually
+a class, or a similarly substantial TypeScript type/class when a paragraph helps.
+An explicit target-project public API or documentation-pipeline requirement takes
+precedence, including required docblocks on functions or modules.
 
-Ordinary functions and private helpers get a plain comment above them, not a
-docstring or TSDoc block.
+Otherwise, ordinary functions and private helpers get a plain comment above them,
+not a docstring or TSDoc block.
+
+Preserve machine-readable annotations whose syntax or attachment carries type,
+deprecation, or tooling meaning, even on functions and tests. They are not prose
+documentation. The JavaScript/TypeScript exceptions and inline wiring are in
+`typescript.md`; do not use arbitrary tags to bypass the prose convention.
 
 ```python
 class SeedCompiler:
@@ -279,8 +285,7 @@ Do not commit:
 - comments that restate the next line
 - step-by-step narration of readable code
 - docstring/TSDoc on every function or export
-- “public API docstring theater” (block docs written as if they were a
-  published contract surface)
+- redundant public API prose where the target has no documentation requirement
 - a block doc and a plain comment that say the same thing
 - module-level Python docstrings
 - side comments beside code
@@ -304,6 +309,12 @@ They cover:
 - no side comments beside code; ASCII `->` only
 - block docs / docstrings on large units only (TS: classes, interfaces, enums;
   Python: module-level non-`_` classes) — not on routine functions
+
+The bundled enforcers implement these defaults. For a target with required API
+documentation or a tooling-significant annotation the checker does not recognize,
+keep that contract and use a narrow target-owned rule override or checker
+adaptation for the affected surface. Do not strip required docs to satisfy this
+style, or disable unrelated checks.
 
 Typical command shapes once wired (names vary by repo):
 

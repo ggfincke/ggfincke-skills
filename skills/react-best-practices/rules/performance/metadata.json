@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "organization": "Vercel Engineering",
+  "date": "January 2026",
+  "abstract": "Locally maintained React and Next.js performance guidance with 70 rules across 8 categories. Examples and impact labels guide investigation, not automatic migrations or guaranteed speedups. Preserve behavior and existing architecture, check prerequisites, and verify meaningful changes on the target workload.",
+  "references": [
+    "https://react.dev",
+    "https://nextjs.org",
+    "https://swr.vercel.app",
+    "https://github.com/shuding/better-all",
+    "https://github.com/isaacs/node-lru-cache",
+    "https://vercel.com/blog/how-we-optimized-package-imports-in-next-js",
+    "https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast"
+  ],
+  "upstream": {
+    "repository": "https://github.com/vercel-labs/agent-skills",
+    "directory": "skills/react-best-practices",
+    "original_import_revision": null,
+    "original_import_revision_note": "The original imported revision was not recorded; the checked reference below is not asserted to be that revision.",
+    "reviewed_reference": "20e89cc4bb256eb7b1fcbdc68f7175284709a847",
+    "reviewed_on": "2026-08-27",
+    "review_scope": "Pinned documentation comparison and targeted API/correctness review; not a complete upstream refresh."
+  },
+  "local_maintenance": {
+    "owner": "ggfincke-skills",
+    "compiled_generator": "scripts/compile-skill-references.py",
+    "authoritative": "rules/performance/",
+    "divergence": [
+      "Portable local discovery and reference routing.",
+      "Version, correctness, permission, and repository-convention guards; locally corrected examples.",
+      "Deterministic compiled reference with source digest; impact labels are workload-dependent heuristics."
+    ]
+  }
+}

@@ -102,7 +102,7 @@ Three lists:
 - Needs your call: speculative and unverifiable findings, with what you would decide or supply.
 
 ### Approval request
-Ask which confirmed findings to act on. Separately name each major regression test you propose and state that approving a finding does not approve test edits unless the user also approves that named test. Do not edit until approval.
+Record the approved source concerns, generated outputs, named hand-written tests, existing verification, and Git/external actions. Ask only for missing scope: approval of a plan that names its tests already covers those tests, while approval of a finding alone does not. Carry existing approval and evidence into implementation without asking again.
 
 ## After approval
 
@@ -120,3 +120,7 @@ Only claim what you verified. Do not assert the rest of the review is fine - onl
 - This produces a triage report first; wait for approval before editing. Approve with phrases like "fix the confirmed ones", "address findings 2 and 5", "show diffs first", "re-verify finding 3 - I think it's real", or "draft the reply to the reviewer".
 - references/usage.md has first-turn variants by input source (another model's review, a human PR review, a scanner/SARIF report, CI output, a single claim, a stale-branch review) and follow-ups (approve the confirmed set, hand off to a generator skill, re-verify a verdict, demand stronger dismissal evidence, draft the reviewer reply).
 - This skill vets findings that already exist. To generate findings in the first place, use simplification-review, security-remediation, or consolidation-audit - then this skill is what you run when someone hands those results back to you to check.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

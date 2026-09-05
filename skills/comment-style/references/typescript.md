@@ -1,5 +1,8 @@
 # Comment Style - TypeScript
 
+These are defaults. Explicit target-project API documentation requirements and tooling-significant syntax take precedence, including on functions, methods, modules, and tests. Preserve required docblocks; scope any necessary enforcer override to that documented surface.
+
+
 Follows the shared principles in `../SKILL.md`. TypeScript specifics + how to enforce them.
 
 ## Header
@@ -14,7 +17,8 @@ Path is repo-relative. The purpose is an untagged lowercase phrase with no trail
 ## Language specifics
 
 - TSDoc/JSDoc belongs on classes, interfaces, and enums when a short paragraph helps orient on the larger unit. Ordinary functions and methods use a plain `//` comment above them instead.
-- Block-doc summaries are capitalized, full sentences, and period-terminated. Tests and private helpers use plain why-comments only.
+- Prose block-doc summaries are capitalized, full sentences, and period-terminated. Tests and private helpers use plain why-comments.
+- Preserve JavaScript JSDoc that supplies checker semantics (`@type`, `@param`, `@returns`, `@typedef`, `@import`, and related supported type tags), including inline casts and annotations in tests. Preserve `@deprecated` in both JS and TS, and syntax-sensitive tooling directives. Without a target documentation requirement, these exemptions do not justify prose-only function docs or redundant JSDoc types in TypeScript; see the [TypeScript JSDoc reference](https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html).
 - Comment interface/type members on the line above each member when a note helps; do not put a TSDoc block on every member.
 - Keep `eslint-disable` and other tooling directives narrow. Add a plain rationale above only when the reason is not obvious.
 
@@ -27,7 +31,7 @@ Five custom rules, plus core `no-inline-comments`:
 | `file-header`         | exact two-line path + untagged lowercase purpose; optional `prefixes` filter and `root` anchor | path/case/period/separation only |
 | `comment-tags`        | canonical `*`, `!`, `?`, and uppercase `TODO(scope):` syntax                              | no                               |
 | `plain-comment-case`  | lowercase natural-language starts while preserving code-like symbols                      | yes                              |
-| `block-doc-comments`  | bans implementation block comments; allows sentence-style TSDoc only on class/interface/enum | no                            |
+| `block-doc-comments`  | restricts prose blocks to class/interface/enum docs; preserves semantic JSDoc and tool directives | no                         |
 | `no-unicode-arrow`    | bans the Unicode arrow; use ASCII `->`                                                    | yes                              |
 
 Wire it up:
@@ -51,7 +55,7 @@ export default [
         "error",
         {
           ignorePattern:
-            "^\\s*(?:eslint(?:-disable)?|@ts-|istanbul|c8\\b|v8\\b)",
+            "^\\s*(?:\\*\\s*)*(?:eslint(?:-disable)?|@ts-|istanbul|c8\\b|v8\\b)|(?:^|\\n)\\s*\\*?\\s*@(?:type|satisfies)\\b",
         },
       ],
     },

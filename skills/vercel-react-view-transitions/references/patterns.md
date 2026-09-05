@@ -26,7 +26,7 @@ export default function SearchableGrid({ itemsPromise }) {
 }
 ```
 
-Per-item `<ViewTransition name={...}>` inside a deferred list triggers cross-fades on every keystroke. Fix with `default="none"`:
+If only a shared morph is wanted, use `default="none"` to avoid other eligible per-item cross-fades. Add `update="auto"` only when list movement is also requested:
 
 ```tsx
 {filteredItems.map(item => (
@@ -43,20 +43,26 @@ Toggle between grid and detail view with shared element morph:
 ```tsx
 'use client';
 
-import { useState, useRef, startTransition, ViewTransition } from 'react';
+import { useState, useRef, useLayoutEffect, startTransition, ViewTransition } from 'react';
 
 export default function ItemGrid({ items }) {
-  const [expandedId, setExpandedId] = useState(null);
-  const scrollRef = useRef(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const scrollRef = useRef<number | null>(null);
 
-  return expandedId ? (
-    <ViewTransition enter="slide-in" name={`item-${expandedId}`}>
+  useLayoutEffect(() => {
+    if (expandedId === null && scrollRef.current !== null) {
+      window.scrollTo({ behavior: 'instant', top: scrollRef.current });
+      scrollRef.current = null;
+    }
+  }, [expandedId]);
+
+  return expandedId !== null ? (
+    <ViewTransition name={`item-${expandedId}`} share="morph" enter="scale-in" exit="scale-out" default="none">
       <ItemDetail
         item={items.find(i => i.id === expandedId)}
         onClose={() => {
           startTransition(() => {
             setExpandedId(null);
-            setTimeout(() => window.scrollTo({ behavior: 'smooth', top: scrollRef.current }), 100);
           });
         }}
       />
@@ -64,7 +70,7 @@ export default function ItemGrid({ items }) {
   ) : (
     <div className="grid grid-cols-3 gap-4">
       {items.map(item => (
-        <ViewTransition key={item.id} name={`item-${item.id}`}>
+        <ViewTransition key={item.id} name={`item-${item.id}`} share="morph" default="none">
           <ItemCard
             item={item}
             onSelect={() => {
@@ -79,13 +85,15 @@ export default function ItemGrid({ items }) {
 }
 ```
 
+Use the morph/scale recipes and reduced-motion rule in `css-recipes.md`. This example restores the saved scroll position after the grid commits, without a timer or forced smooth scroll. Keep the application's existing focus-restoration policy on `ItemCard`/`ItemDetail`; do not let animation replace it.
+
 ## Type-Safe Transition Helpers
 
 Use `as const` arrays and derived types to prevent ID clashes:
 
 ```tsx
 const transitionTypes = ['default', 'transition-to-detail', 'transition-to-list'] as const;
-const animationTypes = ['auto', 'none', 'animate-slide-from-left', 'animate-slide-from-right'] as const;
+const animationTypes = ['auto', 'none', 'slide-from-left', 'slide-from-right', 'slide-to-left', 'slide-to-right'] as const;
 
 type TransitionType = (typeof transitionTypes)[number];
 type AnimationType = (typeof animationTypes)[number];
@@ -96,7 +104,7 @@ export function HorizontalTransition({ children, enter, exit }: {
   enter: TransitionMap;
   exit: TransitionMap;
 }) {
-  return <ViewTransition enter={enter} exit={exit}>{children}</ViewTransition>;
+  return <ViewTransition default="none" enter={enter} exit={exit}>{children}</ViewTransition>;
 }
 ```
 
@@ -110,7 +118,7 @@ Omit `key` to trigger an update (cross-fade) instead of exit + enter. Avoids Sus
 </ViewTransition>
 ```
 
-Use `key` when content identity changes (state resets). Omit for cross-fades (tabs, panels, carousel).
+Use `key` only when content identity should change and local state should reset. The same-surface keyed shared-pair example in `nextjs.md` uses a stable name; changing both key and name does not create a shared pair.
 
 ## Isolate Elements from Parent Animations
 
@@ -164,11 +172,13 @@ function AnimatedCollapse({ open, children }) {
 <AnimatedCollapse open={open}><SectionContent /></AnimatedCollapse>
 ```
 
+The expand/collapse recipes in `css-recipes.md` reveal or conceal the captured snapshot. They do not interpolate surrounding document-flow height; add a separate layout boundary only if that behavior is requested.
+
 ## Preserve State with Activity
 
 ```jsx
 <Activity mode={isVisible ? 'visible' : 'hidden'}>
-  <ViewTransition enter="slide-in" exit="slide-out">
+  <ViewTransition enter="slide-up" exit="slide-down" default="none">
     <Sidebar />
   </ViewTransition>
 </Activity>
@@ -200,11 +210,12 @@ function cycleSort() {
 
 ## View Transition Events
 
-Imperative control via `onEnter`, `onExit`, `onUpdate`, `onShare`. Always return a cleanup function. `onShare` takes precedence over `onEnter`/`onExit`.
+Imperative control via `onEnter`, `onExit`, `onUpdate`, `onShare`. Return a cleanup function when creating an animation. `onShare` takes precedence over `onEnter`/`onExit`. CSS reduced-motion rules cannot cancel a JavaScript animation, so gate it explicitly:
 
 ```jsx
 <ViewTransition
   onEnter={(instance, types) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const anim = instance.new.animate(
       [{ transform: 'scale(0.8)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }],
       { duration: 300, easing: 'ease-out' }
@@ -235,23 +246,23 @@ The `types` array (second argument) lets you vary animation based on transition 
 
 ## Troubleshooting
 
-**VT not activating:** Ensure `<ViewTransition>` comes before any DOM node. Ensure state update is inside `startTransition`.
+**VT not activating:** Check the installed APIs and scheduling first. For enter/exit, the boundary must precede the first DOM node in the inserted/removed subtree; a persistent DOM parent does not prevent a newly inserted child boundary from animating.
 
 **"Two ViewTransition components with the same name":** Names must be globally unique. Use IDs: `name={`hero-${item.id}`}`.
 
-**`router.back()` and browser back/forward skip animation:** Use `router.push()` with an explicit URL instead. See SKILL.md "router.back() and Browser Back Button."
+**`router.back()` and browser back/forward skip animation:** Preserve traversal. Legacy `popstate` may need a nonanimated fallback; do not replace it with `push`. See SKILL.md "router.back() and Browser Back Button."
 
-**`flushSync` skips animations:** Use `startTransition` instead.
+**`flushSync` skips animations:** Keep required synchronous behavior. Change scheduling only when its semantics are compatible with the task; otherwise accept the nonanimated result.
 
-**Only updates animate (no enter/exit):** Without `<Suspense>`, React treats swaps as updates. Conditionally render the VT itself, or wrap in `<Suspense>`.
+**Only updates animate (no enter/exit):** Check whether the same boundary remains mounted. Conditionally render or key it only when remounting is intended; Suspense is not required for an ordinary enter/exit toggle.
 
-**Layout VT prevents page VTs from animating:** Nested VTs never fire enter/exit inside a parent VT. If your layout has a VT wrapping `{children}`, page-level enter/exit will silently not work. Remove the layout VT.
+**Nested enter/exit does not fire:** When the whole parent boundary enters/exits, it normally owns that subtree. If the parent remains mounted, a child boundary can animate its own change. Inspect the changed subtree and shared names before removing layout boundaries.
 
 **List reorder not animating with `useOptimistic`:** Optimistic values resolve before snapshot. Use committed state for list order.
 
-**TS error "Property 'default' is missing":** Type-keyed objects require a `default` key.
+**TS error "Property 'default' is missing":** Follow the installed type declaration and provide a deliberate fallback, usually `default: 'none'` for an opt-out.
 
-**Hash fragments cause scroll jumps:** Navigate without hash; scroll programmatically after navigation.
+**Hash fragments cause scroll jumps:** Preserve the fragment and anchor/focus contract. Fix the existing restoration conflict or degrade motion; do not discard the hash to make the animation look smoother.
 
 **Backdrop-blur flickers:** Use the backdrop-blur workaround from `css-recipes.md`.
 

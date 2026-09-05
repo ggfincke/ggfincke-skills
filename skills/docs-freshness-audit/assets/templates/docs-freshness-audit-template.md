@@ -105,19 +105,25 @@ _Only if the changelog limb ran. Follows Keep a Changelog._
 
 ## Recommended Update Sequence
 
-_Group the approved-able fixes and order them by risk. Lowest-risk, self-contained corrections first._
+_Group the approved-able fixes and order them by risk. Lowest-risk, self-contained corrections first. Before approval, reconcile group IDs with verdicts: Current rows stay outside correction groups unless a separate evidenced change is stated._
 
 ### Group 1: [Theme] ([Low risk])
 
-- Findings: [D1, D3]
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
+- Findings: [D1]
 - [Self-contained prose corrections; edit in place]
 
 ### Group 2: [Theme] ([Med risk])
+
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
 
 - Findings: [D2, M1]
 - [Needs new prose / a screenshot recapture / coordination with a release]
 
 ### Group 3: Changelog & version
+
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
 
 - [Apply Unreleased entries; reconcile version strings - propose only, no tag/publish]
 

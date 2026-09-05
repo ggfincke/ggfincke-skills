@@ -1,5 +1,8 @@
 # Comment Style - Python
 
+These are defaults. Explicit target-project API documentation requirements and tooling-significant syntax take precedence, including on functions, methods, modules, and tests. Preserve required docblocks; scope any necessary enforcer override to that documented surface.
+
+
 Follows the shared principles in `../SKILL.md`. Python specifics + how to enforce them.
 
 ## Header

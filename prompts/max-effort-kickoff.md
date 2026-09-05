@@ -9,13 +9,13 @@ The key move is the second paragraph: it raises *depth* (how hard you think, how
 ## Paste block
 
 ```
-ultrathink. Be extremely thorough and comprehensive on this - do not cut corners and do not stop at the first plausible answer. Trace it end to end, verify claims against the live code rather than assuming, consider the cases I didn't name, and surface explicitly what you're unsure about or couldn't verify.
+Be extremely thorough and comprehensive on this - do not cut corners and do not stop at the first plausible answer. Trace it end to end, verify claims against the live code rather than assuming, consider the cases I didn't name, and surface explicitly what you're unsure about or couldn't verify.
 
-This dials up depth, not scope. It does NOT override my standing rules: still discuss the approach and get my go-ahead before changing files, still major/important tests only (never exhaustive coverage), and still keep edits scoped to what we agreed. Be exhaustive in the analysis; stay disciplined in what you actually do.
+This dials up depth, not scope. It does NOT authorize implementation during a review or expand an existing approval. Preserve the agreed scope and side-effect boundaries; add or change only explicitly requested or approved major tests, never exhaustive coverage. Continue already authorized work without redundant approval; ask before a new scope or risk decision.
 ```
 
 ## Variants
 
 - Read-only analysis (no edits expected): append "Stay read-only - I want the findings and a plan first, not changes."
 - Hand off to a deep pass: for a true everything-at-once review into one document, use the `mega-review` skill instead of this prompt.
-- Quick depth bump (inline): just "ultrathink" alone already raises reasoning effort; use the full block when you also want the scope guardrails restated.
+- Host-specific cue: use `ultrathink` only where the host documents it. Prompt wording is not proof that the actual model or reasoning setting changed; inspect supported controls and honor authorization before changing them.

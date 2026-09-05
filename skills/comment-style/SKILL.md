@@ -1,6 +1,6 @@
 ---
 name: comment-style
-description: Apply a low-noise comment style in any language - exact path+purpose file headers, glanceable plain comments by default, sentence-style block docs only on large units (classes and similar), lowercase why-comments above code, canonical structured tags, and ASCII arrows. Use whenever adding or revising comments/docstrings or wiring comment-style enforcement (ESLint, Ruff, SwiftFormat) in a repo.
+description: Apply house comment conventions when adding or revising comments, docstrings, or file headers in any language, or wiring comment-style enforcement. Covers the copyable ESLint and Python/Swift checkers.
 ---
 
 # Comment Style
@@ -21,6 +21,7 @@ Plain comments are the default: a short note above a unit so a glance explains w
 - TODOs use one short `TODO action` or `TODO(scope): action` line with a lowercase scope. Put context immediately above in a plain block.
 - Keep comment blocks concise; there is no hard line cap. Move durable architecture and long rationale to maintained docs.
 - Cross-reference exact symbols plus stable module paths, never source line numbers.
+- Honor explicit target-project conventions and public API documentation requirements. Preserve generated/vendor formats and annotations required by documentation, type-checking, deprecation, or other tooling; apply these prose defaults only where they do not conflict with those contracts.
 
 <!-- always-on:end -->
 
@@ -35,9 +36,11 @@ payload = normalize(raw)  # normalize ...   <- wrong: side comment
 
 ## Plain comments vs. block docs
 
-There is no separate “public API documentation” category. A short “what this does” plain comment above a function is welcome when it helps orientation. Do not narrate every assignment, branch, or type already visible in the code.
+A target project may require public API docblocks for its documentation pipeline or published contract. Follow that requirement, including on functions. Otherwise a short plain comment above a function is welcome when it helps orientation. Do not narrate every assignment, branch, or type already visible in the code.
 
-Block docs orient maintainers (and agents) on a larger unit — usually a class, or a similarly substantial TypeScript type/class when a paragraph helps. Ordinary functions and private helpers get a plain comment above them, not a docstring or TSDoc block.
+Block docs orient maintainers (and agents) on a larger unit — usually a class, or a similarly substantial TypeScript type/class when a paragraph helps. Without a target documentation requirement, ordinary functions and private helpers get a plain comment above them, not a docstring or TSDoc block.
+
+These are prose conventions. Preserve annotations whose block syntax or placement carries type-checking, deprecation, or tooling meaning, including on functions and tests. Do not convert them to plain comments; the narrow JavaScript/TypeScript exceptions are in `references/typescript.md`.
 
 Do not duplicate a block doc and a plain comment that say the same thing. Put constructor-level behavior on the class docstring rather than repeating it on `__init__` or a constructor.
 
@@ -48,7 +51,7 @@ Do not duplicate a block doc and a plain comment that say the same thing. Put co
 - Edge-case enumeration - the types and body already show it.
 - Step-by-step narration - name steps with helper functions or let the code read itself.
 - Defensive "future-reader" notes - they rot silently when the code changes.
-- Docstring/TSDoc/`///` on every function or export; “public API docstring theater”.
+- Unnecessary docstring/TSDoc/`///` on every function or export where the target has no documentation requirement.
 - Legacy labels such as `NOTE:`, `HACK:`, `FIXME:`, or `FOOTGUN:` when a plain comment or canonical tag expresses the real meaning.
 
 ## Expanded references

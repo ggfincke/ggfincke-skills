@@ -15,7 +15,7 @@ This skill combines official React correctness guidance with framework-neutral p
 - React hydration and `suppressHydrationWarning`: https://react.dev/reference/react-dom/client/hydrateRoot
 - React with TypeScript: https://react.dev/learn/typescript
 - React TypeScript Cheatsheet: https://react-typescript-cheatsheet.netlify.app/
-- React-layer accessibility falls back to a self-contained checklist in `react-core.md`; the `web-design-guidelines` skill (optional, not bundled with this skill) and the `security-remediation` skill cover the general accessibility and untrusted-input rules when installed.
+- React-layer accessibility falls back to a self-contained checklist in `react-core.md`; the `frontend-workbench` skill (optional, not bundled with this skill) and the `security-remediation` skill cover the general accessibility and untrusted-input rules when installed.
 - Vercel Introducing React Best Practices: https://vercel.com/blog/introducing-react-best-practices
 - Vercel agent skills repo: https://github.com/vercel-labs/agent-skills
 
@@ -36,3 +36,9 @@ When revising this skill:
 2. Check the Vercel agent skills repo for new framework-neutral performance rules.
 3. Keep advice version-gated where APIs are not universal.
 4. Run `python3 scripts/validate-skills.py --strict-frontmatter`.
+
+## Checked facts and provenance
+
+Reviewed on 2026-08-27 against current primary React documentation and local React/React DOM 19.2.8 with `@types/react` 19.2.18. The `use` conditional-call exception, continued `useContext` support, ref-prop availability, URL-sink behavior, and `FunctionComponent` children typing are version-sensitive; inspect the target's installed versions before applying them. Direct props typing remains a house preference, not a claim that modern `React.FC` adds children.
+
+The Vercel source comparison used [agent-skills at 20e89cc4bb256eb7b1fcbdc68f7175284709a847](https://github.com/vercel-labs/agent-skills/tree/20e89cc4bb256eb7b1fcbdc68f7175284709a847). The historical imported revision was not recorded. This skill is a local framework-neutral adaptation, not an unmodified upstream snapshot or a complete refresh to that revision. The two local Vercel-derived collections record their source paths, checked reference, local divergence, and deterministic generator in [performance metadata](../rules/performance/metadata.json) and [composition metadata](../rules/composition/metadata.json). Each collection retains all imported rule bodies and local corrections.

@@ -18,3 +18,7 @@ The combined MIT notice is retained in `LICENSE-adapted-sources.txt`.
 - OpenAI Figma design skill, commit `49f948faa9258a0c61caceaf225e179651397431`: https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.curated/figma-generate-design
 
 Refresh this package by reviewing upstream changes, preserving compatible license notices, and updating the pins above with the resulting behavior change.
+
+## Pinned UI audit material
+
+The bundled `guidelines.md` retains the Web Interface Guidelines snapshot and its source header. Its MIT license is retained in `LICENSE-web-guidelines.txt`; refresh only through an explicit reviewed upstream comparison.

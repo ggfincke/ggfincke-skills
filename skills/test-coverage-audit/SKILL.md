@@ -1,6 +1,6 @@
 ---
 name: test-coverage-audit
-description: "Identify the few major, important tests worth adding for a codebase, module, or diff - the ones protecting critical, breakable behavior - and deliberately stop short of exhaustive coverage. Detect the existing test framework and conventions, focus on core flows and logic with real consequences (data integrity, money, auth, complex non-obvious code), call out what is deliberately not worth testing, check that proposed tests actually assert behavior, and stay read-only until the plan is approved. Use when asked to audit or improve test coverage, find missing tests or test gaps, check whether a change is adequately tested, or decide what tests to write. Favors a short high-value list over chasing a coverage percentage; adds tests only after approval and never changes source behavior to do so."
+description: "Audit test gaps and propose the few major tests that protect critical, breakable behavior. Detect the existing framework, reuse fixtures, and explain what is not worth testing. Use for coverage questions or an approved test plan; never chase a percentage, silently add tests, or change source behavior to make them pass."
 ---
 
 # Test Coverage Audit
@@ -69,7 +69,7 @@ If an existing test on important behavior asserts little or is over-mocked, flag
 - Keep the list short. Resist completeness. It is correct to conclude that only one or two tests are worth writing, or none.
 - Use the repo's existing framework, fixtures, helpers, naming, and style. Do not add a new test dependency.
 - Prefer deterministic, fast, isolated tests. No real network or external systems.
-- If proposing or writing a test reveals an actual bug, stop and report it. Do not silently fix source; hand it to security-remediation or simplification-review, or get approval to fix.
+- If proposing or writing a test reveals an actual bug, report and verify it. Do not silently fix source; obtain scoped bug-fix approval or carry an existing approval that covers this behavior. Route security bugs to security-remediation; use the host's ordinary bug-fix workflow for other behavior changes. Simplification-review is only for behavior-preserving cleanup.
 
 ## Required output before edits
 
@@ -92,7 +92,7 @@ The notable things you are leaving untested, each with a one-line reason. This s
 A few judgment-call tests worth it only if cheap or if you happen to care. Keep this short; it is fine to omit.
 
 ### Approval request
-Ask which tests to write. Do not add tests until approval.
+Ask which tests to write only if they are not already named in an approved plan. Carry that approval into implementation; do not add unapproved tests.
 
 ## After approval
 
@@ -111,5 +111,9 @@ Claim only what you added. Do not call the scope well tested beyond the importan
 - This produces a short list and waits for approval before adding tests. Approve with phrases like "write them", "do the first two", "show the tests first", or "skip it, coverage is fine".
 - The guiding rule is major, important tests only - not exhaustive coverage. Default to few; name what you are not testing.
 - references/usage.md has first-turn variants by stack (JS/TS, Python, Go, mixed or unknown) and by scope (a diff, a module/feature), plus follow-ups (approve the list, hand off to phased-implementation, a bug surfaced while testing, strengthen a weak test on critical logic).
-- This systematizes the "add a regression test" step the other skills mention. It produces the short test list; phased-implementation executes it; if a gap turns out to be a bug, security-remediation or simplification-review owns the fix.
+- This systematizes the "add a regression test" step the other skills mention. It produces the short test list; phased-implementation executes an approved plan. A newly exposed behavior bug needs scoped fix approval; security-remediation owns security work, and ordinary bug fixing owns other behavior corrections.
 - For the inverse - pruning low-value tests that already exist rather than adding missing ones - use test-pruning-audit. This skill finds the few major tests worth adding; that one finds the excess tests worth deleting.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

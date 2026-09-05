@@ -11,7 +11,6 @@ This skill is opt-in and **stateless**. Do not write files, ADRs, `CONTEXT.md`, 
 
 Activate only from an affirmative current-task request. Do not activate for a contextual mention, a request to inspect or edit this skill, or a request to write a plan that did not ask for an interview.
 
-While this skill is active, the interview format below wins over action-first's one-question and five-item-list rules. Ask the whole frontier each round, then wait.
 
 ## Rounds and the frontier
 

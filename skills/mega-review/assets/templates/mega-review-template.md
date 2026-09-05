@@ -188,6 +188,8 @@ These groups are the implementation plan. Do not create a separate action-groups
 
 ### Group A: [Name and theme]
 
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
 **Theme:** [One line]
 **Findings:** [F1, F2]
 **Status:** Proposed / Approved / In Progress / Done / Deferred
@@ -202,6 +204,8 @@ These groups are the implementation plan. Do not create a separate action-groups
 **Deviations / deferrals:** [empty until implemented; anything that changed from the plan and why]
 
 ### Group B / C: [continue]
+
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
 
 ---
 

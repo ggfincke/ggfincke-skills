@@ -1,6 +1,6 @@
 # CSS Animation Recipes
 
-Ready-to-use CSS for `<ViewTransition>` props. Copy into your global stylesheet.
+CSS for the named `<ViewTransition>` props used by these references. Copy only the selected recipes plus their timing variables, keyframes, and reduced-motion rule into the owning stylesheet. Adapt names to avoid collisions with existing app CSS.
 
 ---
 
@@ -146,7 +146,7 @@ Usage:
 }
 
 ::view-transition-image-pair(.morph) {
-  animation-name: via-blur;
+  animation: var(--duration-move) ease-in-out both via-blur;
 }
 
 @keyframes via-blur {
@@ -204,6 +204,26 @@ Usage: `<ViewTransition enter="scale-in" exit="scale-out" />`
 
 ---
 
+## Expand / Collapse a Snapshot
+
+```css
+::view-transition-new(.expand-in) {
+  animation: var(--duration-enter) ease-out both reveal-block;
+}
+::view-transition-old(.collapse-out) {
+  animation: var(--duration-exit) ease-in both reveal-block reverse;
+}
+
+@keyframes reveal-block {
+  from { clip-path: inset(0 0 100% 0); opacity: 0; }
+  to { clip-path: inset(0); opacity: 1; }
+}
+```
+
+Usage: `<ViewTransition enter="expand-in" exit="collapse-out" />`. This animates the captured image, not document-flow height. Include a separate layout boundary only when surrounding movement is intended.
+
+---
+
 ## Persistent Element Isolation
 
 ```css
@@ -234,9 +254,12 @@ For elements with `backdrop-filter`, hide the old snapshot to avoid flash:
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(*),
   ::view-transition-new(*),
-  ::view-transition-group(*) {
-    animation-duration: 0s !important;
+  ::view-transition-group(*),
+  ::view-transition-image-pair(*) {
+    animation: none !important;
     animation-delay: 0s !important;
   }
 }
 ```
+
+This also disables the image-pair blur in the morph recipe. Gate JavaScript `animate()` calls and optional smooth scrolling separately; CSS cannot cancel those effects. Verify both preference modes in the target browser.

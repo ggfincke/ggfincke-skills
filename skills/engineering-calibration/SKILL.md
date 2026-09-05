@@ -21,7 +21,9 @@ Do not equate simplicity with fewer files or fewer lines. Do not introduce abstr
 
 ## Review boundary
 
-Keep every mode read-only. Do not edit code, tests, plans, configuration, dependencies, or generated artifacts during the calibration pass. Return the review first. Make changes only after a separate, explicit implementation request.
+For a standalone calibration review, stay read-only: do not edit code, tests, plans, configuration, dependencies, or generated artifacts. Return the review and wait for implementation approval.
+
+Inside an already authorized implementation, use calibration as a bounded design checkpoint. Record the decision and continue within the approved scope; loading this skill does not invalidate that approval. Stop for a new decision only if the checkpoint exposes a scope, risk, dependency, or behavior change that the approval does not cover. Test edits still require their own requested or approved scope.
 
 Honor the requested scope. Do not turn a scoped review into a whole-repository audit.
 

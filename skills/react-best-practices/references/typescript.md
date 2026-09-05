@@ -12,7 +12,7 @@ Use this reference for typing React code: props, hooks, events, generics, and mo
 
 ## Props
 
-- Do not use `React.FC` / `FunctionComponent`. Type the props parameter directly. It avoids the implicit-children and awkward-generic baggage.
+- House preference: type the props parameter directly instead of using `React.FC` / `FunctionComponent`, especially for generic components. This is a style/readability choice: modern `@types/react` does not add implicit children to `FunctionComponent`; declare `children` explicitly when accepted.
 - `type` or `interface` is fine; match the repo. Use a union `type` when props have mutually exclusive modes.
 - Extend native element props with `ComponentPropsWithoutRef<'button'>` instead of re-listing DOM attributes. Derive from another component with `ComponentProps<typeof Button>`.
 - Type renderable children as `React.ReactNode`, not `JSX.Element` (too narrow) or `any`.
@@ -66,5 +66,5 @@ export function useTheme() {
 
 ## Refs across versions
 
-- React 19: `ref` is a regular prop. Type it in the props (`ref?: Ref<HTMLButtonElement>`); no `forwardRef`.
+- React 19: new function components can accept `ref` in their props (`ref?: Ref<HTMLButtonElement>`). Existing supported `forwardRef` code is not a mandatory migration; retain it when React 18/library compatibility or repository conventions require it.
 - Pre-React 19: `forwardRef<HTMLButtonElement, ButtonProps>(...)`. The first type argument is the ref element, the second the props.

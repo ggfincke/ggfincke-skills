@@ -163,6 +163,8 @@ These groups are the implementation plan. Do not create a separate action-groups
 
 ### Group A: [Group Name and Theme]
 
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
 **Theme:** [One-line description of what this group addresses]
 **Findings:** [F1, F2]
 **Risk:** [Low/Medium/High] - [why]
@@ -193,6 +195,8 @@ These groups are the implementation plan. Do not create a separate action-groups
 
 ### Group B: [Group Name and Theme]
 
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
 **Theme:** [Description]
 **Findings:** [F3]
 **Risk:** [Low/Medium/High] - [why]
@@ -217,6 +221,8 @@ These groups are the implementation plan. Do not create a separate action-groups
 - [Commands/tests/manual checks]
 
 ### Group C: [Group Name and Theme]
+
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
 
 **Theme:** [Description]
 **Findings:** [F4, F5]
