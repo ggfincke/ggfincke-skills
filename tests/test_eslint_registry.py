@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
 import unittest
 
 import support
@@ -90,3 +93,65 @@ class EslintRuleRegistry(unittest.TestCase):
 		self.assertEqual(disabled, ROOT_BASE_EXCLUSIONS)
 		enabled = set(settings) - disabled
 		self.assertEqual(enabled, registry_names() - ROOT_BASE_EXCLUSIONS)
+
+
+class EslintCommentBehavior(unittest.TestCase):
+	# run the actual root config so semantic exemptions must survive both block & inline rules
+	def test_semantic_jsdoc_and_prose_boundaries(self) -> None:
+		if not shutil.which("node") or not (support.REPO_ROOT / "node_modules/eslint").is_dir():
+			self.skipTest("the existing root Node/ESLint install is required")
+		cases = (
+			(
+				"projects/tests/fixture.js",
+				"/**\n * @ts-check\n */\n"
+				"/** @type {number} */\nlet count = 1\n"
+				"/** @param {number} value */\nfunction square(value) { return value * value }\n"
+				"const cast = /** @type {number} */ (count)\n"
+				"const checked = /**\n * @satisfies {number}\n */ (count)\n",
+				[],
+			),
+			(
+				"projects/fixture.js",
+				"/* ordinary prose */\nconst count = 1\n"
+				"/** Counts calls. */\nfunction countCalls() { return count }\n",
+				["blockComment", "disallowedDocumentation"],
+			),
+			(
+				"projects/fixture.ts",
+				"/** @param {number} value */\nfunction square(value: number) { return value * value }\n",
+				["disallowedDocumentation"],
+			),
+		)
+		fixtures = [
+			{"filename": name, "body": f"// {name}\n// check comment contracts\n\n{body}"}
+			for name, body, _ in cases
+		]
+		result = subprocess.run(
+			[
+				"node",
+				"--input-type=module",
+				"-e",
+				"import fs from 'node:fs'; import { Linter } from 'eslint'; "
+				"import config from './eslint.config.js'; const linter = new Linter(); "
+				"const fixtures = JSON.parse(fs.readFileSync(0, 'utf8')); "
+				"process.stdout.write(JSON.stringify(fixtures.map(({filename, body}) => "
+				"linter.verify(body, config, {filename}).map(({ruleId, messageId}) => "
+				"({ruleId, messageId})))));",
+			],
+			input=json.dumps(fixtures),
+			cwd=support.REPO_ROOT,
+			capture_output=True,
+			text=True,
+			check=False,
+		)
+		self.assertEqual(result.returncode, 0, result.stderr)
+		self.assertEqual(
+			json.loads(result.stdout),
+			[
+				[
+					{"ruleId": "ggfincke/block-doc-comments", "messageId": message}
+					for message in expected
+				]
+				for _, _, expected in cases
+			],
+		)

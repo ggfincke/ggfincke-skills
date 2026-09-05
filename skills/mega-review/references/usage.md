@@ -20,17 +20,17 @@ Default is all six. Only drop a lens when the user requests or approves that sco
 - Drop test-gaps for a throwaway/spike branch.
 - Bug-hunt + performance only, for a "why is this slow / what's broken" pass that does not need refactor proposals.
 
-If the user names a stack-specific concern (React render churn, Convex limits, Django ORM), make sure the relevant lens (perf/simplification) picks up the stack specialization - react-best-practices for framework-neutral React/TS, vercel-react-best-practices for Next.js surfaces and bundle/data-fetching performance.
+If the user names a stack-specific concern (React render churn, Convex limits, Django ORM), make sure the relevant lens (perf/simplification) picks up the stack specialization - react-best-practices for framework-neutral React/TS, react-best-practices with its Next.js/performance references for Next.js surfaces and bundle/data-fetching performance.
 
 ## Bug-hunt lens: finder -> refute -> synthesize
 
 The correctness lens has no standalone skill; run it as a recall-first harness, scaled by the effort dial.
 
 1. **Fan out finders.** Spawn fine-grained finder readers - per file, per region, or per lens of failure (logic/control-flow, state & lifecycle, error handling, concurrency, boundary/encoding, contract & data-shape). Each finder is blind to the others and reports candidate defects with a concrete trigger and the code evidence. Err toward surfacing: a candidate is cheap, a missed bug is not.
-2. **Adversarially verify each candidate.** For every candidate, try to *refute* it against the live code - find the guard, the caller invariant, or the type that makes it a non-issue. Reject only when the guard/invariant is proven. If no concrete trigger is found but no refutation is proven either, mark it unverifiable or a limitation, not rejected. At higher effort, use a multi-voter refute panel and kill on majority-refute. The verification pass should be at least as long as the discovery pass.
+2. **Adversarially verify each candidate.** For every candidate, try to *refute* it against the live code - find the guard, the caller invariant, or the type that makes it a non-issue. Reject only when the guard/invariant is proven. If no concrete trigger is found but no refutation is proven either, mark it unverifiable or a limitation, not rejected. At higher effort, use independent refutation panels. The lead resolves conflicting evidence: two unsupported refutations cannot outweigh a concrete reproduction, and one proven invariant can refute a majority's suspicion. Spend verification effort according to consequence and uncertainty, not elapsed-time parity.
 3. **Sweep and synthesize.** Dedupe survivors (same root cause found by multiple finders = one finding), rank by severity x confidence, and cut to a focused shortlist (the high-signal ones, not everything that survived). Push refuted candidates to Considered & Rejected with the evidence that killed them; push unresolved candidates to Not Run / Limitations or a "Needs measurement / runtime context" bucket.
 
-Effort ladder for this lens: Standard = a few region finders + single-pass verify; Thorough = per-module finders + per-candidate refute; Exhaustive = loop-until-dry finders + multi-voter refute panels + a completeness critic ("which module or failure-lens went unread?").
+Effort ladder for this lens: Standard = a few region finders + single-pass verify; Thorough = per-module finders + per-candidate refute; Exhaustive = complete requested-surface ledger + independent refutation panels + a completeness critic ("which module or failure-lens went unread?"). Finish when each requested surface and consequential claim has an evidenced disposition or an explicit limitation. Do not replace an exhaustive request with unexplained sampling or an unbounded loop.
 
 This is recall-first by design: surface aggressively, then let the refute pass earn each finding's place. It is the inverse of simplification-review (behavior-preserving, not bug-hunting) and of verify-review-findings (triages claims others produced); here you generate the claims and refute your own.
 
@@ -40,7 +40,7 @@ Real hot paths only - confirm something is hot before calling it slow, and prese
 
 - **Data access:** N+1 queries, over-fetching, missing indexes, full scans, repeated identical queries, unbatched writes, missing pagination.
 - **Compute:** unnecessary recomputation, work inside loops that could hoist, repeated expensive lookups, avoidable allocations, O(n^2) where the n is real.
-- **Frontend/React:** wasteful re-renders, unstable deps/keys, derived state recomputed each render, large lists without virtualization, heavy work on the main thread, layout thrash. (Fold in react-best-practices; use vercel-react-best-practices for bundle size, data fetching, and Next.js surfaces.)
+- **Frontend/React:** wasteful re-renders, unstable deps/keys, derived state recomputed each render, large lists without virtualization, heavy work on the main thread, layout thrash. (Fold in react-best-practices; use react-best-practices with its Next.js/performance references for bundle size, data fetching, and Next.js surfaces.)
 - **I/O & async:** blocking I/O on a hot path, serialized awaits that could be parallel, missing caching/memoization, chatty network round-trips, oversized payloads.
 - **Platform limits:** backend ceilings that turn into correctness failures at scale - e.g. Convex per-query read limits and per-second write throughput, serverless time/memory caps, request/response size limits. Propose the chunk/batch/stream fix.
 

@@ -591,5 +591,99 @@ class DistinctSymlinkInstallsRemainDistinctDestinations(unittest.TestCase):
 			self.assertFalse(list(root.rglob(".*.ggfincke-sync.*")))
 
 
+class AgySyncTargets(unittest.TestCase):
+	def test_expand_targets_all_includes_agy(self) -> None:
+		with tempfile.TemporaryDirectory() as d:
+			home = Path(d).resolve()
+			with mock.patch.dict("os.environ", {"HOME": str(home)}):
+				targets = sync.expand_targets(["all"], project=None)
+				labels = [name for name, _ in targets]
+				self.assertEqual(labels, ["agents", "claude", "agy"])
+				dest_paths = {name: path for name, path in targets}
+				self.assertEqual(
+					dest_paths["agy"], (home / ".gemini" / "antigravity-cli" / "skills").resolve()
+				)
+
+	def test_expand_targets_agy_gemini_and_project_agy(self) -> None:
+		with tempfile.TemporaryDirectory() as d:
+			home = Path(d).resolve()
+			project = home / "my-project"
+			project.mkdir()
+			with mock.patch.dict("os.environ", {"HOME": str(home)}):
+				# agy target
+				targets = sync.expand_targets(["agy"], project=None)
+				self.assertEqual(len(targets), 1)
+				self.assertEqual(targets[0][0], "agy")
+				self.assertEqual(
+					targets[0][1], (home / ".gemini" / "antigravity-cli" / "skills").resolve()
+				)
+
+				# gemini target
+				targets = sync.expand_targets(["gemini"], project=None)
+				self.assertEqual(len(targets), 1)
+				self.assertEqual(targets[0][0], "gemini")
+				self.assertEqual(targets[0][1], (home / ".gemini" / "skills").resolve())
+
+				# agy-shared alias
+				targets = sync.expand_targets(["agy-shared"], project=None)
+				self.assertEqual(len(targets), 1)
+				self.assertEqual(targets[0][1], (home / ".gemini" / "skills").resolve())
+
+				# project-agy target
+				targets = sync.expand_targets(["project-agy"], project=project)
+				self.assertEqual(len(targets), 1)
+				self.assertEqual(targets[0][0], "project-agy")
+				self.assertEqual(targets[0][1], (project / ".agents" / "skills").resolve())
+
+	def test_instruction_agents_for_targets_includes_agy(self) -> None:
+		self.assertIn("agy", sync.instruction_agents_for_targets(["all"]))
+		self.assertEqual(sync.instruction_agents_for_targets(["agy"]), ["agy"])
+		self.assertEqual(sync.instruction_agents_for_targets(["gemini"]), ["agy"])
+		self.assertEqual(sync.instruction_agents_for_targets(["agy-shared"]), ["agy"])
+
+	def test_agy_sync_writes_skills_and_gemini_md(self) -> None:
+		with tempfile.TemporaryDirectory() as d:
+			root = Path(d)
+			home = root / "home"
+			gemini_home = (home / ".gemini").resolve()
+			agy_home = (gemini_home / "antigravity-cli").resolve()
+			gemini_home.mkdir(parents=True)
+			source = root / "source" / "demo-skill"
+			source.mkdir(parents=True)
+			(source / "SKILL.md").write_text(
+				"---\nname: demo-skill\ndescription: d\n---\n"
+				'<!-- always-on:start title="Demo rule" -->\n'
+				"- demo rule\n"
+				"<!-- always-on:end -->\n",
+				encoding="utf-8",
+			)
+			agy_skills = agy_home / "skills"
+			targets = [("agy", agy_skills)]
+			gemini_md = gemini_home / "GEMINI.md"
+			always_on_items = [("demo-skill", "Demo rule", "- demo rule")]
+
+			with mock.patch.dict(
+				"os.environ",
+				{"GEMINI_HOME": str(gemini_home), "AGY_HOME": str(agy_home)},
+			):
+				plan = sync.build_sync_plan(
+					[source],
+					source.parent,
+					targets,
+					"link",
+					force=True,
+					instruction_agents=["agy"],
+					always_on_items=always_on_items,
+				)
+				report = sync.sync_transaction.apply_plan(plan.transaction, run_id="test-agy")
+				self.assertTrue(report.success, report.events)
+				self.assertTrue((agy_skills / "demo-skill").is_symlink())
+				self.assertTrue(gemini_md.is_file())
+				content = gemini_md.read_text(encoding="utf-8")
+				self.assertIn("BEGIN ggfincke-skills:always-on", content)
+				self.assertIn("Demo rule", content)
+				self.assertIn("- demo rule", content)
+
+
 if __name__ == "__main__":
 	unittest.main()

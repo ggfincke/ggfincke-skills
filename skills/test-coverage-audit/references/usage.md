@@ -77,7 +77,7 @@ time, run them after each, and stop for go-ahead between batches.
 
 ```
 That failing test looks like a real bug, not a test mistake. Stop on it - do not change source
-to make it pass. Write it up and hand it to [security-remediation / simplification-review].
+to make it pass. Verify and report it, then request a scoped bug fix (security-remediation for security bugs; the host's ordinary bug-fix workflow otherwise). Use simplification-review only for behavior-preserving cleanup.
 ```
 
 ### Strengthen a weak test on critical logic

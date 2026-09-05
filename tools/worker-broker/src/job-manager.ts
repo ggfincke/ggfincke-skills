@@ -2,6 +2,7 @@
 // schedule isolated jobs, compute evidence, reject drift, & retain terminal state
 
 import { EventEmitter } from 'node:events'
+import { capabilityEvidence, requireCapabilities } from './capabilities.js'
 import { randomBytes } from 'node:crypto'
 import { access, rename } from 'node:fs/promises'
 import path from 'node:path'
@@ -512,8 +513,9 @@ export class JobManager
   async start(request: unknown): Promise<WorkerAdmission>
   {
     if (this.shuttingDown) throw new Error('worker broker is shutting down')
-    await this.initialize()
     const normalized = normalizeRequest(request)
+    const capabilities = requireCapabilities(normalized)
+    await this.initialize()
     normalized.repo = await resolveRepository(normalized.repo)
     await Promise.all(
       normalized.depends_on.map(async (jobId) =>
@@ -531,6 +533,7 @@ export class JobManager
     const baseSha = await resolveBaseSha(normalized.repo, normalized.base_ref)
     const jobId = createJobId(normalized.task)
     const job: WorkerJob = {
+      capability_evidence: capabilities,
       job_id: jobId,
       status: 'queued',
       request: normalized,
@@ -994,6 +997,7 @@ export class JobManager
     try
     {
       activePhase = 'preparing'
+      job.capability_evidence = requireCapabilities(job.request)
       await this.phase(job, 'preparing', 'started')
       unexpectedFailureClass = classifyFailure('setup')
       const created = await this.runWorktreeOperation(
@@ -1540,6 +1544,8 @@ export class JobManager
   ): WorkerResult
   {
     const result: WorkerResult = {
+      capability_evidence:
+        job.capability_evidence ?? capabilityEvidence(job.request),
       job_id: job.job_id,
       status,
       provider: job.request.provider,

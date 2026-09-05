@@ -7,7 +7,7 @@ description: Run an explicit multi-lens review/audit of a codebase, branch, or l
 
 You are running a maximum-effort, multi-lens review and producing one comprehensive audit document. This is the "do the works" pass: every review lens at once, findings verified and deduped across lenses, organized into an implementable plan. You stay read-only until the plan is approved.
 
-This skill is an orchestrator, not a reimplementation. Each lens delegates to the skill that owns it; you run them together, then merge. Do not restate the owning skill's rules here - load and apply them. The two lenses with no owning skill (bug-hunt, performance) are specified below.
+Run the selected lenses together and merge their evidence. Installed sibling skills provide optional specialization. This package is independently usable: the [neutral protocol](references/review-protocol.md) includes standalone simplification, consolidation, and test-gap guidance; [usage](references/usage.md) owns bug-hunt/performance, and [security](references/security-lens.md) supplies the full profile's security baseline. Do not require sibling installations.
 
 ## When to use it - and when not to
 
@@ -28,7 +28,7 @@ Run all six by default. The user can scope them ("everything but security", "jus
 5. **Test gaps** -> test-coverage-audit. The few major, important tests worth adding - and what is deliberately not worth testing. Major-tests-only, never exhaustive coverage.
 6. **Performance** (owned here - no standalone skill). Real hot paths only: N+1 and over-fetching, repeated expensive lookups, unnecessary recomputation/allocations, wasteful renders/state updates, blocking I/O, missing batching/caching, query/index problems, payload size. Backend-platform limits count (e.g. Convex read/write ceilings). See the perf checklist in `references/usage.md`. Do not propose speculative micro-optimizations off the hot path.
 
-In a React/TS repo, fold react-best-practices into the simplification and performance lenses rather than running it as a seventh - it is the same lens, stack-specialized. It owns correctness, Hooks, state design, and typing; when the repo is on Next.js or the finding is bundle size or data fetching, fold in vercel-react-best-practices instead, which owns those axes.
+In a React/TS repo, fold react-best-practices into the simplification and performance lenses rather than running it as a seventh - it is the same lens, stack-specialized. Its dispatcher selects core, TypeScript, performance, Next.js, or composition references for the affected stack.
 
 ## Orchestration
 
@@ -39,7 +39,7 @@ Start by reading AGENTS.md / CLAUDE.md / README for conventions, build/test gate
 3. **Fan out, one track per lens.** When the harness supports parallel subagents, run the lenses concurrently; otherwise sequentially. Each track applies its owning skill's discipline and returns raw findings with evidence. Route by model tier (see below) and use the handoff contract below.
 4. **Merge across lenses.** This is the step that makes it one review, not six stapled together:
    - **Dedupe.** The same root cause often surfaces under multiple lenses (a duplicated helper is consolidation + simplification; an unbounded query is perf + security DoS). Collapse to one finding, tagged with every lens it came from.
-   - **Verify adversarially.** Apply the verify-review-findings discipline to your own findings: grep before calling anything dead, confirm two paths are behavior-identical before calling them duplicates, trace source-to-sink before calling something exploitable, confirm a hot path before calling it slow. For high-consequence or removal-class findings, try to refute - majority-refute kills it. Survivors only.
+   - **Verify adversarially.** Apply the verify-review-findings discipline to your own findings: grep before calling anything dead, confirm two paths are behavior-identical before calling them duplicates, trace source-to-sink before calling something exploitable, confirm a hot path before calling it slow. For high-consequence or removal-class findings, seek independent refutations. The lead adjudicates the concrete reproduction, guard, or invariant; vote counts signal disagreement, never settle truth. Keep unresolved claims explicitly limited rather than rejecting them without proof.
    - **Considered & rejected.** Record what you checked and discarded, each with the evidence that settled it, so it is not re-raised next pass.
    - **Classify uniformly.** Give every survivor a severity, a confidence, and a behavior risk on one scale across all lenses, so the index is comparable.
 5. **Group and sequence.** Organize survivors into cross-lens action groups by file overlap, dependency chains, and shared change shape - each group a cohesive unit of work. Order groups into phases: independent/low-risk first, cross-cutting/high-risk later. Treat test coverage as a continuous concern across every group.
@@ -63,7 +63,7 @@ Let the user's stated intensity set the dial; do not guess. Scale agent count an
 
 - **Standard** - one reader per lens over a scoped diff; cheap/fast tier for reading & per-claim verification, strong tier for the cross-lens merge and synthesis.
 - **Thorough** - per-lens readers plus, inside the bug/consolidation lenses, per-module readers and whole-repo cross-cutting hunters; adversarial verify on removal-class and high-severity findings.
-- **Exhaustive** - loop-until-dry discovery per lens, multi-voter refute panels on every high-severity and removal-class finding, and a completeness critic that asks what lens or module went unread. The verification pass should be as long as the discovery pass - a plausible-but-wrong finding in a mega doc is expensive.
+- **Exhaustive** - maintain a coverage ledger for every requested module and lens, use independent refutation panels on high-severity and removal-class findings, and run a completeness critic against that ledger. Follow new evidence across the requested surface. Stop when coverage is accounted for and consequential claims are supported, refuted, or explicitly limited; report unread surfaces and external blockers. Verification effort follows consequence and uncertainty, not a fixed ratio to discovery time.
 
 Match model to task: strongest tier for judgment, verification, and the cross-lens merge; cheapest tier that can do a mechanical, scoped read. Honor explicit caps ("stay tight, don't spawn 20+ agents") as hard limits, and report what you scoped out.
 
@@ -78,7 +78,7 @@ Match model to task: strongest tier for judgment, verification, and the cross-le
 
 ## After approval
 
-Once specific findings or action groups are approved, hand execution to the phased-implementation skill: one action group at a time, run that group's gates, stop and gate between groups, and update the mega doc as the living source of truth (mark groups done, record deviations and deferrals). Do not apply the whole plan in one pass.
+Once specific findings or action groups are approved, hand execution to the phased-implementation skill: one action group at a time, run that group's gates, continue through groups already approved, and update the mega doc as the living source of truth (mark groups done, record deviations and deferrals). Retain group boundaries and verification; ask again only for new scope or user-requested checkpoints.
 
 ## Notes
 
@@ -87,3 +87,7 @@ Once specific findings or action groups are approved, hand execution to the phas
 - The host's ordinary review workflow is the fast correctness/PR pass; mega-review is the slow, broad, document-producing one. Different jobs.
 - `references/usage.md` has invocation variants, lens-scoping phrases, the bug-hunt finder -> refute -> synthesize protocol, and the performance checklist.
 - `assets/templates/mega-review-template.md` is the packaged template to copy; the concrete audit document is the single source of truth, with the cross-lens finding index, per-lens findings, considered/rejected, integrated action groups, risk-sequenced phases, test-suite analysis, and verification log.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

@@ -4,42 +4,100 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "job_id": { "type": "string" },
+    "job_id": {
+      "type": "string"
+    },
     "status": {
-      "enum": ["completed", "failed", "rejected", "cancelled"]
+      "enum": [
+        "completed",
+        "failed",
+        "rejected",
+        "cancelled"
+      ]
     },
-    "provider": { "enum": ["codex", "cursor", "coral", "claude"] },
-    "model": { "type": "string" },
+    "provider": {
+      "enum": [
+        "codex",
+        "cursor",
+        "coral",
+        "claude"
+      ]
+    },
+    "model": {
+      "type": "string"
+    },
     "effort": {
-      "enum": ["low", "medium", "high", "xhigh", "max", "ultra"]
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
     },
-    "effective_model": { "type": "string" },
-    "mode": { "enum": ["read", "edit"] },
-    "repo": { "type": "string" },
-    "base_ref": { "type": "string" },
-    "base_sha": { "type": "string" },
-    "stage": { "type": "string" },
-    "workflow": { "type": "string" },
-    "run": { "type": "string" },
-    "head_sha": { "type": "string" },
-    "worktree": { "type": "string" },
-    "branch": { "type": "string" },
-    "summary": { "type": "string" },
+    "effective_model": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "read",
+        "edit"
+      ]
+    },
+    "repo": {
+      "type": "string"
+    },
+    "base_ref": {
+      "type": "string"
+    },
+    "base_sha": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "workflow": {
+      "type": "string"
+    },
+    "run": {
+      "type": "string"
+    },
+    "head_sha": {
+      "type": "string"
+    },
+    "worktree": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
     "assumptions": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "risks": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "follow_ups": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "changed_files": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "changes": {
       "type": "array",
@@ -47,13 +105,20 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "status": { "type": "string" },
+          "status": {
+            "type": "string"
+          },
           "paths": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": ["status", "paths"]
+        "required": [
+          "status",
+          "paths"
+        ]
       }
     },
     "setup": {
@@ -62,13 +127,34 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "command": { "type": "string" },
-          "exit_code": { "type": ["integer", "null"] },
-          "signal": { "type": ["string", "null"] },
-          "timed_out": { "type": "boolean" },
-          "stdout_path": { "type": "string" },
-          "stderr_path": { "type": "string" },
-          "elapsed_ms": { "type": "integer", "minimum": 0 }
+          "command": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "signal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timed_out": {
+            "type": "boolean"
+          },
+          "stdout_path": {
+            "type": "string"
+          },
+          "stderr_path": {
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "required": [
           "command",
@@ -87,13 +173,34 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "command": { "type": "string" },
-          "exit_code": { "type": ["integer", "null"] },
-          "signal": { "type": ["string", "null"] },
-          "timed_out": { "type": "boolean" },
-          "stdout_path": { "type": "string" },
-          "stderr_path": { "type": "string" },
-          "elapsed_ms": { "type": "integer", "minimum": 0 }
+          "command": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "signal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timed_out": {
+            "type": "boolean"
+          },
+          "stdout_path": {
+            "type": "string"
+          },
+          "stderr_path": {
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "required": [
           "command",
@@ -108,16 +215,40 @@
     },
     "scope_violations": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
-    "patch_path": { "type": "string" },
-    "event_log_path": { "type": "string" },
-    "stderr_path": { "type": "string" },
-    "model_result_path": { "type": "string" },
-    "worker_session_id": { "type": "string" },
-    "process_exit_code": { "type": ["integer", "null"] },
-    "process_signal": { "type": ["string", "null"] },
-    "error": { "type": "string" },
+    "patch_path": {
+      "type": "string"
+    },
+    "event_log_path": {
+      "type": "string"
+    },
+    "stderr_path": {
+      "type": "string"
+    },
+    "model_result_path": {
+      "type": "string"
+    },
+    "worker_session_id": {
+      "type": "string"
+    },
+    "process_exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "process_signal": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": "string"
+    },
     "failure_class": {
       "enum": [
         "environment",
@@ -127,10 +258,67 @@
         "verification"
       ]
     },
-    "created_at": { "type": "string", "format": "date-time" },
-    "started_at": { "type": "string", "format": "date-time" },
-    "completed_at": { "type": "string", "format": "date-time" },
-    "elapsed_ms": { "type": "integer", "minimum": 0 }
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "elapsed_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "capability_evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "scope",
+          "status",
+          "layer",
+          "evidence"
+        ],
+        "properties": {
+          "capability": {
+            "enum": [
+              "native_no_nesting",
+              "no_nested_agents",
+              "filesystem_read_only",
+              "filesystem_workspace_only",
+              "network_disabled"
+            ]
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "enforced",
+              "unsupported",
+              "unverified"
+            ]
+          },
+          "layer": {
+            "enum": [
+              "instructions",
+              "detection",
+              "prevention"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    }
   },
   "required": [
     "job_id",

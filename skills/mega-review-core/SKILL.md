@@ -15,14 +15,16 @@ Run a thorough five-lens review and produce one comprehensive audit document. Th
 - If a security concern appears incidentally, record it as an out-of-scope follow-up without analyzing or proposing a security remediation. Point the user to a separate `security-remediation` pass when appropriate.
 - Use the full `mega-review` skill for all six lenses or any request that explicitly includes security.
 
+Use the local [neutral protocol](references/review-protocol.md) for standalone lens baselines when sibling specializations are absent. Never load the full profile or its security material to supply a missing reference.
+
 ## Lenses
 
 Run all five lenses unless the user narrows the set, and state the final lens set in the audit document.
 
 1. **Correctness / bug-hunt** - use the finder -> refute -> synthesize protocol in [references/usage.md](references/usage.md).
-2. **Simplification** - delegate behavior-preserving cleanup to `simplification-review`.
-3. **Consolidation** - delegate duplication and drift analysis to `consolidation-audit`. `architecture-review` is an optional sibling track outside this five-lens profile, not an implied part of consolidation.
-4. **Test gaps** - delegate major-test analysis to `test-coverage-audit`; do not pursue exhaustive coverage.
+2. **Simplification** - use the local baseline, optionally specialized by `simplification-review`.
+3. **Consolidation** - use the local baseline, optionally specialized by `consolidation-audit`. `architecture-review` is an optional sibling track outside this five-lens profile, not an implied part of consolidation.
+4. **Test gaps** - use the local baseline, optionally specialized by `test-coverage-audit`; do not pursue exhaustive coverage.
 5. **Performance** - use the hot-path checklist in [references/usage.md](references/usage.md), including React/TS guidance where relevant.
 
 ## Orchestration
@@ -58,4 +60,8 @@ Keep the review read-only until action groups are approved. Match every verdict 
 
 ## After approval
 
-Hand approved action groups to `phased-implementation`. Implement one group at a time, run that group's gates, stop between groups, and update the audit file with status, validation, deviations, and deferrals.
+Hand approved action groups to `phased-implementation`. Implement one group at a time, run that group's gates, continue through groups already approved, and update the audit file with status, validation, deviations, and deferrals.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

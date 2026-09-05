@@ -13,7 +13,8 @@ const commentRules = {
   'no-inline-comments': [
     'error',
     {
-      ignorePattern: '^\\s*(?:eslint(?:-disable)?|@ts-|istanbul|c8\\b|v8\\b)',
+      ignorePattern:
+        '^\\s*(?:\\*\\s*)*(?:eslint(?:-disable)?|@ts-|istanbul|c8\\b|v8\\b)|(?:^|\\n)\\s*\\*?\\s*@(?:type|satisfies)\\b',
     },
   ],
 }

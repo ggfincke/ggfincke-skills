@@ -24,8 +24,6 @@ PYTHON_TOOLING_RE = re.compile(
 	re.IGNORECASE,
 )
 SWIFT_TOOLING_RE = re.compile(r"^//\s*swiftlint:", re.IGNORECASE)
-# word-bounded so the rule cannot fire on a substring; callers pass only the code portion of a line
-SWIFT_PREVIEW_PROVIDER_RE = re.compile(r"\bPreviewProvider\b")
 TODO_PREFIX_RE = re.compile(r"^(?:#|//)\s*todo\b", re.IGNORECASE)
 VALID_TODO_RE = re.compile(r"^(?:#|//) TODO(?:\([a-z0-9][a-z0-9._/-]*\):)?\s+\S")
 TAG_PREFIX_RE = re.compile(r"^(?:#|//)\s*([*!?])")
@@ -372,13 +370,13 @@ def check_python_file(path: Path) -> list[Violation]:
 SWIFT_RAW_STRING_OPEN_RE = re.compile(r'(#+)"')
 
 
-# find a line comment on one Swift line while carrying `"""` literal state across lines.
+# find the first line or block comment while carrying `"""` literal state across Swift lines.
 # `pending` is the closing delimiter awaited from an earlier line, or None outside a literal;
 # returns the comment index (-1 when none) & the delimiter still open at end of line
 def scan_swift_line(line: str, pending: str | None = None) -> tuple[int, str | None]:
 	# most lines hold neither a comment nor a literal delimiter; the C-level substring search
 	# skips the character loop for them. `"""` is the only state a line can carry forward
-	if pending is None and "//" not in line and '"""' not in line:
+	if pending is None and "//" not in line and "/*" not in line and '"""' not in line:
 		return -1, None
 	index = 0
 	if pending is not None:
@@ -428,7 +426,7 @@ def scan_swift_line(line: str, pending: str | None = None) -> tuple[int, str | N
 			in_string = not in_string
 			index += 1
 			continue
-		if not in_string and line.startswith("//", index):
+		if not in_string and line.startswith(("//", "/*"), index):
 			return index, None
 		index += 1
 	return -1, None
@@ -486,7 +484,7 @@ def fix_swift_file(path: Path) -> bool:
 		if inside_literal or comment_index == -1:
 			continue
 		comment = body[comment_index:]
-		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
+		if comment.startswith(("/*", "///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
 		normalized = normalize_comment(comment)
 		if normalized != comment:
@@ -497,8 +495,10 @@ def fix_swift_file(path: Path) -> bool:
 	return changed
 
 
+SWIFT_ATTRIBUTE = r"@[\w.]+(?:\([^)]*\))?"
+SWIFT_ATTRIBUTE_LINE_RE = re.compile(rf"(?:{SWIFT_ATTRIBUTE}\s*)+")
 SWIFT_TYPE_DECL_RE = re.compile(
-	r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|open|internal|fileprivate|private|final|indirect)\s+)*"
+	rf"^(?:{SWIFT_ATTRIBUTE}\s+)*(?:(?:public|open|internal|fileprivate|private|final|indirect)\s+)*"
 	r"(?:class|struct|enum|actor|protocol)\b"
 )
 
@@ -507,7 +507,7 @@ def next_swift_code_line(lines: list[str], start: int) -> str | None:
 	index = start
 	while index < len(lines):
 		body = line_without_newline(lines[index])[0].strip()
-		if not body or body.startswith("//"):
+		if not body or body.startswith("//") or SWIFT_ATTRIBUTE_LINE_RE.fullmatch(body):
 			index += 1
 			continue
 		return body
@@ -595,15 +595,13 @@ def check_swift_file(path: Path) -> list[Violation]:
 		# a line wholly inside an open `"""` literal is runtime data, not source
 		if inside_literal:
 			continue
-		code = body if comment_index == -1 else body[:comment_index]
-		if "/*" in body or "*/" in body:
-			violations.append(Violation(path, index, "use line comments, not block comments"))
-		if SWIFT_PREVIEW_PROVIDER_RE.search(code):
-			violations.append(Violation(path, index, "use #Preview instead of PreviewProvider"))
 		if comment_index == -1:
 			continue
 		prefix = body[:comment_index]
 		comment = body[comment_index:]
+		if comment.startswith("/*"):
+			violations.append(Violation(path, index, "use line comments, not block comments"))
+			continue
 		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
 		if "→" in comment:
@@ -646,6 +644,7 @@ def iter_swift_paths() -> list[Path]:
 		path
 		for path in SWIFT_ROOT.rglob("*.swift")
 		if not SWIFT_SKIP_PARTS.intersection(path.relative_to(SWIFT_ROOT).parts)
+		and is_within(path, ROOT)
 	)
 
 

@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "organization": "Engineering",
+  "date": "January 2026",
+  "abstract": "Composition patterns for building flexible, maintainable React components. Avoid boolean prop proliferation by using compound components, lifting state, and composing internals. These patterns make codebases easier for both humans and AI agents to work with as they scale.",
+  "references": [
+    "https://react.dev",
+    "https://react.dev/learn/passing-data-deeply-with-context",
+    "https://react.dev/reference/react/use"
+  ],
+  "upstream": {
+    "repository": "https://github.com/vercel-labs/agent-skills",
+    "directory": "skills/composition-patterns",
+    "original_import_revision": null,
+    "original_import_revision_note": "The original imported revision was not recorded; the checked reference below is not asserted to be that revision.",
+    "reviewed_reference": "20e89cc4bb256eb7b1fcbdc68f7175284709a847",
+    "reviewed_on": "2026-08-27",
+    "review_scope": "Pinned documentation comparison and targeted API/correctness review; not a complete upstream refresh."
+  },
+  "local_maintenance": {
+    "owner": "ggfincke-skills",
+    "compiled_generator": "scripts/compile-skill-references.py",
+    "authoritative": "rules/composition/",
+    "divergence": [
+      "Portable local discovery and reference routing.",
+      "Version, correctness, permission, and repository-convention guards; locally corrected examples.",
+      "Deterministic compiled reference with source digest; impact labels are workload-dependent heuristics."
+    ]
+  }
+}

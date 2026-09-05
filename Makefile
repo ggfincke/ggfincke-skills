@@ -7,7 +7,7 @@ HOOKS_DIR := scripts/hooks
 BROKER     := tools/worker-broker
 
 .DEFAULT_GOAL := help
-.PHONY: help validate test broker-check format format-check format-python format-python-check check sync sync-force sync-copy sync-copy-force sync-agents sync-agents-force sync-project sync-project-repo install-hooks uninstall-hooks clean
+.PHONY: generate generated-check doctor help validate test broker-check audit audit-root audit-broker format format-check format-python format-python-check check sync sync-force sync-copy sync-copy-force sync-agy sync-agy-force sync-agents sync-agents-force sync-mcp sync-mcp-dry-run sync-project sync-project-repo install-hooks uninstall-hooks clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -16,11 +16,32 @@ help: ## Show this help
 validate: ## Validate all canonical skills (strict frontmatter)
 	$(PYTHON) $(SCRIPTS)/validate-skills.py
 
+generate: ## Refresh packaged references and repository-owned instruction outputs
+	$(PYTHON) $(SCRIPTS)/compile-skill-references.py
+	$(PYTHON) $(SCRIPTS)/generate-instructions.py
+	$(PYTHON) skills/working-conventions/scripts/export-cursor-guard.py
+
+generated-check: ## Verify generated references and instruction outputs without writing
+	$(PYTHON) $(SCRIPTS)/compile-skill-references.py --check
+	$(PYTHON) $(SCRIPTS)/generate-instructions.py --check
+	$(PYTHON) skills/working-conventions/scripts/export-cursor-guard.py --check
+
+doctor: ## Inspect existing local skill hosts and broker configuration without repair
+	$(PYTHON) $(SCRIPTS)/doctor.py --target agents --target claude
+
 test: ## Run the sync/parser/checker regression tests
 	$(PYTHON) -m unittest discover -s tests -p 'test_*.py'
 
 broker-check: ## Typecheck, build, & test the worker broker
 	npm --prefix $(BROKER) run check
+
+audit-root: ## Audit root dependencies at the shared CI severity threshold
+	npm audit --audit-level=high
+
+audit-broker: ## Audit broker dependencies at the shared CI severity threshold
+	npm --prefix $(BROKER) audit --audit-level=high
+
+audit: audit-root audit-broker ## Audit both npm dependency trees
 
 format: ## Mutating Prettier + ESLint fix on owned TS/JS
 	npm run format
@@ -34,25 +55,37 @@ format-python: ## Mutating Ruff + Python comment-style fix
 format-python-check: ## Non-mutating Ruff + Python comment-style check
 	npm run format:python:check
 
-check: validate test broker-check format-check format-python-check ## Full gate: validate, tests, broker, format
+check: validate generated-check test broker-check format-check format-python-check audit ## Full gate: validate, generated outputs, tests, broker, format, audits
 
 sync: check ## Symlink all skills into canonical Codex/agents + Claude roots
-	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode link
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target agents --target claude --mode link
 
 sync-force: check ## Symlink all skills, replacing existing installs
-	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode link --force
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target agents --target claude --mode link --force
 
 sync-copy: check ## Copy all skills as stable snapshots
-	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode copy
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target agents --target claude --mode copy
 
 sync-copy-force: check ## Copy all skills as stable snapshots, replacing existing installs
-	$(PYTHON) $(SCRIPTS)/sync-skills.py --target all --mode copy --force
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target agents --target claude --mode copy --force
+
+sync-agy: check ## Symlink all skills into Antigravity CLI (agy)
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target agy --mode link
+
+sync-agy-force: check ## Symlink all skills into agy, replacing existing installs
+	$(PYTHON) $(SCRIPTS)/sync-skills.py --target agy --mode link --force
 
 sync-agents: check ## Symlink Claude custom agents into the personal agent root
 	$(PYTHON) $(SCRIPTS)/sync-agents.py --mode link
 
 sync-agents-force: check ## Replace Claude custom agents with canonical symlinks
 	$(PYTHON) $(SCRIPTS)/sync-agents.py --mode link --force
+
+sync-mcp: check ## Merge the canonical MCP registry into opencode + Claude Code configs
+	$(PYTHON) $(SCRIPTS)/sync-mcp.py
+
+sync-mcp-dry-run: check ## Preview MCP registry merges without writing anything
+	$(PYTHON) $(SCRIPTS)/sync-mcp.py --dry-run
 
 sync-project: check ## Install portable skills into a project's .claude/skills (PROJECT=/path)
 	@test -n "$(PROJECT)" || { echo "set PROJECT=/path/to/repo"; exit 1; }

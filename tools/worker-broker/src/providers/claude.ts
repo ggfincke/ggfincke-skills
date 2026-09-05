@@ -149,7 +149,7 @@ export function buildClaudeArgs(
   prompt: string
 ): string[]
 {
-  const args = ['-p', prompt, '--output-format', 'stream-json']
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose']
   if (context.request.mode === 'edit')
     args.push('--dangerously-skip-permissions')
   else args.push('--permission-mode', 'plan')

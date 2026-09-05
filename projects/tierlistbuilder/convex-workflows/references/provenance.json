@@ -1,0 +1,758 @@
+{
+  "schema_version": 1,
+  "maintained_at": "2026-08-27",
+  "package": "projects/tierlistbuilder/convex-workflows",
+  "ownership": "locally maintained project guidance; current project policy and official APIs control behavior",
+  "original_upstream_revision": null,
+  "original_license": null,
+  "original_upstream_repository": "https://github.com/get-convex/agent-skills",
+  "verified_equivalent_upstream_revision": "ec1e6baae7d86c7843c22938c75979c016f5c6e9",
+  "upstream_equivalence_note": "All 26 preserved source files byte-match this revision and three other fetched revisions. This establishes an equivalent public source, not the exact historical install revision. The project skills-lock.json independently names get-convex/agent-skills for all four packs but records no commit.",
+  "upstream_comparison_receipt": "/Users/ggfincke/Documents/Codex/2026-08-27/can-x20/work/skills-followups/convex-upstream-comparison.json",
+  "license_review": {
+    "checked_at": "2026-08-27",
+    "current_upstream_head": "6bc4b14a2dcd73fd388eb0570afe6d1cdb185f2e",
+    "reachable_revisions_examined": 55,
+    "skill_prose_license": null,
+    "asset_notice_scope": "THIRD_PARTY_NOTICES.md supplies an MIT notice for Heroicons SVG assets only; it does not license the skill prose.",
+    "publication_status": "Keep this adapted package local and unpublished until an applicable prose license or maintainer permission is established.",
+    "maintainer_clarification_issue": "https://github.com/get-convex/agent-skills/issues/28",
+    "official_skill_directory": "https://docs.convex.dev/ai/agent-skills"
+  },
+  "origin_note": "The upstream repository and equivalent source revision are verified; the exact historical install revision and any redistribution license for the skill prose remain unknown. Per-file original_upstream_revision and original_license fields preserve the original import-time record. Do not infer a prose license from the Convex SDK, icon notices or other vendor skills. Local adaptation is not a redistribution license.",
+  "preservation_note": "All four entrypoint bodies and fourteen references were fully read and adapted into the mapped guides. Duplicate checklists and unsafe/stale executable examples were rewritten, not byte-preserved in active guidance. Exact original bytes for all 26 files remain in the recovery snapshot; UI metadata/icons do not create extra entrypoints.",
+  "recovery_snapshot": "/Users/ggfincke/Documents/Codex/2026-08-27/can-x20/work/skills-implementation/phase-c-convex-source",
+  "source_inventory_receipt": "/Users/ggfincke/Documents/Codex/2026-08-27/can-x20/work/skills-implementation/phase-c-convex-source-manifest.json",
+  "source_files": [
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-setup-auth/SKILL.md",
+      "package": "convex-setup-auth",
+      "relative": "SKILL.md",
+      "sha256": "771d9fb3c0e4c3ecad71634e3acdd1c69f5e8529879a036005fa9a680c8ffbfb",
+      "bytes": 7088,
+      "lines": 187,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/auth/guide.md",
+      "adapted_sha256": "a3e1cbc40a2991ad4b85fc61a95a15a612c4371992cca58865d4042608adbf44",
+      "preserved_topics": [
+        "existing-provider decision",
+        "caller identity versus authorization",
+        "provider routing",
+        "user records",
+        "env and runtime verification"
+      ],
+      "intentional_corrections": [
+        "use the current Convex Auth owner and central session/account/legal guards",
+        "separate audit, source implementation, and live auth operations"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-setup-auth/agents/openai.yaml",
+      "package": "convex-setup-auth",
+      "relative": "agents/openai.yaml",
+      "sha256": "1a384a83bd4c1b6b68f7ec6580b4de7b70d4572dd150c2e0994048bf20295dc3",
+      "bytes": 485,
+      "lines": 14,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-setup-auth/assets/icon.svg",
+      "package": "convex-setup-auth",
+      "relative": "assets/icon.svg",
+      "sha256": "339b23156b86e081a7c2676d7636229ad4e5cad52e3c2e3b00852bee720e5c70",
+      "bytes": 394,
+      "lines": 3,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-setup-auth/references/auth0.md",
+      "package": "convex-setup-auth",
+      "relative": "references/auth0.md",
+      "sha256": "2f37666fc4ecba8359a34138c32b9525fb062d0736b6a0d4c8e19010a84af61d",
+      "bytes": 7542,
+      "lines": 156,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/auth/auth0.md",
+      "adapted_sha256": "a2fc56ff864f845cee743b95f7c832b960ac2fb970aed3066e44f6fd3f038c6a",
+      "preserved_topics": [
+        "tenant/application choice",
+        "CLI or dashboard path",
+        "callback/logout/origins",
+        "provider and backend transport",
+        "token refresh/storage",
+        "historical validation caveat",
+        "production and handoff"
+      ],
+      "intentional_corrections": [
+        "historical incomplete refresh verification is not a current defect",
+        "no unapproved CLI installation, tenant creation, or secret disclosure"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-setup-auth/references/clerk.md",
+      "package": "convex-setup-auth",
+      "relative": "references/clerk.md",
+      "sha256": "6c400d6da5253ea97a0437d54cf809e6abbf621d6521e5443b87eb9b51e86f8b",
+      "bytes": 6340,
+      "lines": 141,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/auth/clerk.md",
+      "adapted_sha256": "59ea84832b3275cbf1edcf155e72a1577e60cbc79ead6b4a6ea737c4c0b857ed",
+      "preserved_topics": [
+        "framework wrapper order",
+        "token transport and issuer/audience",
+        "dashboard and env values",
+        "backend-ready state",
+        "stale token diagnosis",
+        "dev/production and validation"
+      ],
+      "intentional_corrections": [
+        "conditional provider change only",
+        "public versus private config and existing app policy"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-setup-auth/references/convex-auth.md",
+      "package": "convex-setup-auth",
+      "relative": "references/convex-auth.md",
+      "sha256": "5f8eb30d3ee4b8fcba2c75e5e33c8eed0f9cc69840a7bf01419b7adc4db36062",
+      "bytes": 8400,
+      "lines": 188,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/auth/convex-auth.md",
+      "adapted_sha256": "f53ef0966bc73aa977ea0ede77a8ee7a3d1943974fd1078aea7e09e450456b26",
+      "preserved_topics": [
+        "supported sign-in methods",
+        "initializer/manual choice",
+        "provider and HTTP/schema wiring",
+        "peer dependency compatibility",
+        "secret entry and human handoff",
+        "local/production and runtime checks"
+      ],
+      "intentional_corrections": [
+        "replace stale @auth/core 0.37.0 default with installed-peer verification",
+        "do not rerun initializer or add managed tables twice"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-setup-auth/references/workos-authkit.md",
+      "package": "convex-setup-auth",
+      "relative": "references/workos-authkit.md",
+      "sha256": "53a35fd5f45b05548edc049a1fdb138a249748ad2afaea158af1b9ec7caed475",
+      "bytes": 6318,
+      "lines": 147,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/auth/workos-authkit.md",
+      "adapted_sha256": "8ab9459cbb6dccd39f6959611e3506dcf54fe65606a7b2f632ee650f8b176f77",
+      "preserved_topics": [
+        "existing versus managed team",
+        "convex.json authKit branch",
+        "redirect/port handling",
+        "provider/backend wiring",
+        "public versus secret env",
+        "optional user storage",
+        "production and validation"
+      ],
+      "intentional_corrections": [
+        "provisioning changes state and needs scope",
+        "manual team setup does not universally require auto-provision fields"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-migration-helper/SKILL.md",
+      "package": "convex-migration-helper",
+      "relative": "SKILL.md",
+      "sha256": "77bc11973377357633cf80c1d111abd52daaa4249cc6ed25b76fac51457ce7ce",
+      "bytes": 5941,
+      "lines": 178,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/migrations/guide.md",
+      "adapted_sha256": "b65bf04fd08a7bce91aefbd58a6c6d475f8213d87e6324af80550801f46f4d6a",
+      "preserved_topics": [
+        "schema validation",
+        "safe versus breaking changes",
+        "retention choice",
+        "widen/write/backfill/verify/narrow",
+        "new fields and data preservation",
+        "component choice",
+        "operations and completion"
+      ],
+      "intentional_corrections": [
+        "current disposable alpha policy precedes retained-data patterns",
+        "no blanket keep-all-data rule or whole-tree rollback",
+        "dryRun and deployment are not automatically read-only"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-migration-helper/agents/openai.yaml",
+      "package": "convex-migration-helper",
+      "relative": "agents/openai.yaml",
+      "sha256": "0bc3e0eda497793004e82ab1439e7290de33972d4acb09507c63eee4d779ed1a",
+      "bytes": 472,
+      "lines": 13,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-migration-helper/assets/icon.svg",
+      "package": "convex-migration-helper",
+      "relative": "assets/icon.svg",
+      "sha256": "b191971e5cd0347fb23ea91c87e7468b2a3759613d3dd928fdd326004a5542ae",
+      "bytes": 386,
+      "lines": 3,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-migration-helper/references/migration-patterns.md",
+      "package": "convex-migration-helper",
+      "relative": "references/migration-patterns.md",
+      "sha256": "6a891a932fdb045862ba09e50ba5c932469759562f053466149dc8f5390c7456",
+      "bytes": 6220,
+      "lines": 243,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/migrations/migration-patterns.md",
+      "adapted_sha256": "82afb188dc636e32d2d4ddd0b80ee0d606089db9766976d3e6462a4745f1ffdf",
+      "preserved_topics": [
+        "required field",
+        "field removal",
+        "type conversion",
+        "nested table extraction",
+        "orphan cleanup",
+        "dual-write and dual-read",
+        "small bounded jobs",
+        "global verification"
+      ],
+      "intentional_corrections": [
+        "retained-data scope only with exit conditions",
+        "explicit field allowlists and ownership",
+        "undefined removal differs from null",
+        "cursor progress and bounded internal verification"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-migration-helper/references/migrations-component.md",
+      "package": "convex-migration-helper",
+      "relative": "references/migrations-component.md",
+      "sha256": "fa2bd0ce2832f0e9d317d319974702e8cb28818f8bd46a8aca6037dfb908769a",
+      "bytes": 5128,
+      "lines": 219,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/migrations/migrations-component.md",
+      "adapted_sha256": "71e3182c8475af5bfe55bcddf8916615e0d52750f08fb92ac805d6e682478a29",
+      "preserved_topics": [
+        "adoption/mount",
+        "definition and patch shorthand",
+        "single/series runner",
+        "status/cancel/reset",
+        "dry run",
+        "release integration",
+        "batch size/customRange/parallelize"
+      ],
+      "intentional_corrections": [
+        "package not installed; current API checked but not run",
+        "schema option for customRange",
+        "cancel is not rollback; reset can revisit series",
+        "shared counter updates are not safe under parallelize"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-create-component/SKILL.md",
+      "package": "convex-create-component",
+      "relative": "SKILL.md",
+      "sha256": "71c4781ec586f9dde750de892242848a3981f4b0003ec5d362c2921eb27017e9",
+      "bytes": 10538,
+      "lines": 325,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/components/guide.md",
+      "adapted_sha256": "a0db61726a710008aba000fbd53736642cf3c27d32e4ce76de7dcddf8160089e",
+      "preserved_topics": [
+        "when components are justified",
+        "local/packaged/hybrid choices",
+        "layout and mount",
+        "generated call references",
+        "auth and cross-boundary IDs",
+        "env and HTTP",
+        "pagination",
+        "transaction and package verification"
+      ],
+      "intentional_corrections": [
+        "current SDK supports declared typed env and mounted HTTP routes",
+        "preserve app config and nested rollback",
+        "no automatic dependency, test, or deploy work"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-create-component/agents/openai.yaml",
+      "package": "convex-create-component",
+      "relative": "agents/openai.yaml",
+      "sha256": "03dd30545fe6a4b6694e19069b855e19981eddc4a1fdb9d5a76f50bcfd57fa25",
+      "bytes": 504,
+      "lines": 14,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-create-component/assets/icon.svg",
+      "package": "convex-create-component",
+      "relative": "assets/icon.svg",
+      "sha256": "9a3cd1373505abe79ed7c6036791c38a0c69e70cd41530abdd886449e247a02d",
+      "bytes": 485,
+      "lines": 3,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-create-component/references/advanced-patterns.md",
+      "package": "convex-create-component",
+      "relative": "references/advanced-patterns.md",
+      "sha256": "02da039712bb9bbf0aac46f109b87fe1add5c9ec9c652f2bed38c6673efff47d",
+      "bytes": 3642,
+      "lines": 140,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/components/advanced-patterns.md",
+      "adapted_sha256": "5922b05e482bcd68c82c7b77a1ed0c8ae74e359c21fcd8ce500543518f01ce0a",
+      "preserved_topics": [
+        "asynchronous function handles",
+        "schema-derived validators",
+        "globals configuration",
+        "client facade and narrowed context"
+      ],
+      "intentional_corrections": [
+        "trusted callback capability boundary",
+        "schema.doc and v.nullable from actual SDK",
+        "typed env alternative, duplicate singleton policy, no fictional package"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-create-component/references/hybrid-components.md",
+      "package": "convex-create-component",
+      "relative": "references/hybrid-components.md",
+      "sha256": "22b2a79b2de33816f49dc872069b27cc736840934d291c0f8b321003232da02a",
+      "bytes": 1019,
+      "lines": 38,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/components/hybrid-components.md",
+      "adapted_sha256": "e77d2380d789f3168712b4da457a133e7b5109341c9f1e85913bf59e51d18b84",
+      "preserved_topics": [
+        "shared TypeScript with local state",
+        "specific extension points",
+        "build/version drift risks",
+        "verification"
+      ],
+      "intentional_corrections": [
+        "require present reuse/override need",
+        "no alpha compatibility scaffold by default"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-create-component/references/local-components.md",
+      "package": "convex-create-component",
+      "relative": "references/local-components.md",
+      "sha256": "9377421806a92ccea7c84b358b739472265684bf3f745ca04390fa64633a0d24",
+      "bytes": 1100,
+      "lines": 39,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/components/local-components.md",
+      "adapted_sha256": "6e360f8f4d1741b1a229147be4c203c31b2fd0f438f5d47a7d5244f538f8cec9",
+      "preserved_topics": [
+        "isolated ownership",
+        "folder layout",
+        "mount and codegen",
+        "app API wrapper",
+        "validation"
+      ],
+      "intentional_corrections": [
+        "app.use and ctx.run* paths",
+        "explicit env/HTTP mount support",
+        "no automatic publishing or example app"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-create-component/references/packaged-components.md",
+      "package": "convex-create-component",
+      "relative": "references/packaged-components.md",
+      "sha256": "5c74edadb9061e4fdee82d0f9272c0555cac97b79531d36b3ccba385be11f6a6",
+      "bytes": 1824,
+      "lines": 54,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/components/packaged-components.md",
+      "adapted_sha256": "34f85643a0368a1fc5a69df047d647e0faa7fa0e7033f8b659f53ab6575aee36",
+      "preserved_topics": [
+        "when packaging is needed",
+        "scaffold/version selection",
+        "build/codegen sequence",
+        "exports",
+        "consumer and test helper integration",
+        "publication checks"
+      ],
+      "intentional_corrections": [
+        "actual export map owns .js suffixes",
+        "test compiled output through a consumer",
+        "unknown inherited license must be resolved before redistribution"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-performance-audit/SKILL.md",
+      "package": "convex-performance-audit",
+      "relative": "SKILL.md",
+      "sha256": "7a3943446e7c654d4d37b960cd75f10eae89d6e9ef57c9bf72fd4b9754cd31d1",
+      "bytes": 7587,
+      "lines": 185,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/performance/guide.md",
+      "adapted_sha256": "7b88e228718b1b16f5fd4f0c0f09a038b947cadfc87d0cefa98793ff298f0119",
+      "preserved_topics": [
+        "symptoms and signal routing",
+        "optional insights",
+        "flow/read/write trace",
+        "scope and siblings",
+        "escalation",
+        "verification and reporting"
+      ],
+      "intentional_corrections": [
+        "audit is read-only rather than apply fixes",
+        "no unpinned diagnostics install or silent production contact",
+        "measured outcomes separate from static risk"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-performance-audit/agents/openai.yaml",
+      "package": "convex-performance-audit",
+      "relative": "agents/openai.yaml",
+      "sha256": "df55912a7cf79e764863bdb07f8a665ed43da1bf1f74b9046a38f46ee2b5d9a6",
+      "bytes": 518,
+      "lines": 14,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-performance-audit/assets/icon.svg",
+      "package": "convex-performance-audit",
+      "relative": "assets/icon.svg",
+      "sha256": "7a26bbe0641421d26cf2d3b7daba200d10e780f03c8bd28ccb616bc870eb0c6f",
+      "bytes": 490,
+      "lines": 3,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "recovery only; no new skill discovery or inherited host UI metadata",
+      "adapted_path": null,
+      "adapted_sha256": null
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-performance-audit/references/function-budget.md",
+      "package": "convex-performance-audit",
+      "relative": "references/function-budget.md",
+      "sha256": "4e8e5e07a910b16967a2508f79733a10249409aecf763d548ddd3fbdbb4dc941",
+      "bytes": 7916,
+      "lines": 254,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/performance/function-budget.md",
+      "adapted_sha256": "d1c05c5178537e0d19ba473dd148f14a861df4aa1c98d9436196870e2ec720a4",
+      "preserved_topics": [
+        "limits and symptoms",
+        "unbounded reads",
+        "smaller shapes",
+        "bounded batches",
+        "action boundaries",
+        "response projection",
+        "nested query/mutation helpers",
+        "runAction overhead",
+        "verification"
+      ],
+      "intentional_corrections": [
+        "current Convex-runtime action limit differs from Node action limit",
+        "actual bytes and cursor progress, not fixed row heuristics",
+        "preserve component and caught-failure rollback boundaries",
+        "no unconditional deploy or backend-performance claim"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-performance-audit/references/hot-path-rules.md",
+      "package": "convex-performance-audit",
+      "relative": "references/hot-path-rules.md",
+      "sha256": "9ab8f2f8a7645a78ff404f22d16f749f6bd12ebc929f6e397fb833ea7f001c1d",
+      "bytes": 11053,
+      "lines": 411,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/performance/hot-path-rules.md",
+      "adapted_sha256": "231c40eb2dcb6316baee33ba2bc89635fd4ac31383f00e3bc182dadcb85048a5",
+      "preserved_topics": [
+        "cost and sibling tracing",
+        "indexed versus residual filters",
+        "missing-field cutover",
+        "redundant indexes and ordering exception",
+        "denormalized fallback/maps",
+        "digest row sizes",
+        "write churn/no-ops",
+        "freshness",
+        "triggers/aggregates/backfills",
+        "verification"
+      ],
+      "intentional_corrections": [
+        "preserve result membership and ordering",
+        "current alpha policy restricts fallback/backfill additions",
+        "distinguish database no-ops from trigger wrappers",
+        "required projections remain atomic"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-performance-audit/references/occ-conflicts.md",
+      "package": "convex-performance-audit",
+      "relative": "references/occ-conflicts.md",
+      "sha256": "e55004cbcbbf1ec84b8ad041e80efdb3eaaf1d6086cb6f1eacc83ccc52000a8f",
+      "bytes": 4544,
+      "lines": 137,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/performance/occ-conflicts.md",
+      "adapted_sha256": "9aa40dd5e7b8d42f9a916b6b5f16f356982c80819b63facf8c91d0febdd4ae2a",
+      "preserved_topics": [
+        "conflict symptoms",
+        "hot docs/broad read sets",
+        "triggers and feedback chains",
+        "narrow reads",
+        "sharding",
+        "noncritical scheduling",
+        "combining writes",
+        "invalidation versus OCC",
+        "verification"
+      ],
+      "intentional_corrections": [
+        "OCC is read-set invalidation, not only write-versus-write",
+        "sharding requires exactness and lifecycle design",
+        "minimal deferred payload and approved consistency contract"
+      ]
+    },
+    {
+      "original_path": "/Users/ggfincke/Projects/Applications/tierlistbuilder/.agents/skills/convex-performance-audit/references/subscription-cost.md",
+      "package": "convex-performance-audit",
+      "relative": "references/subscription-cost.md",
+      "sha256": "464f4c88f6fec00a90f05a05bdde000dc705c1f974683726fb19f39c5fbbd99c",
+      "bytes": 9839,
+      "lines": 300,
+      "original_upstream_revision": null,
+      "original_license": null,
+      "disposition": "adapted specialist material",
+      "adapted_path": "references/performance/subscription-cost.md",
+      "adapted_sha256": "9efd37e65557ebbaed506411255704fa3c989fcdfcedc12461a78aab1055c155",
+      "preserved_topics": [
+        "subscription/work accounting",
+        "freshness choice",
+        "batching tradeoff",
+        "skip",
+        "high-churn fields/presence",
+        "aggregates and digests",
+        "time dependence",
+        "pagination retention",
+        "UI churn",
+        "verification"
+      ],
+      "intentional_corrections": [
+        "same-client same-query/args subscriptions deduplicate",
+        "snapshots retain auth and stale-result/error handling",
+        "Date.now neither reliably drives timer reruns nor guarantees cache reuse",
+        "no automatic component/cron adoption"
+      ]
+    }
+  ],
+  "current_project_authorities": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "944bb01420f8e3831b48ca7a2b4a794f051e25f4252b07b7da10826d3fa8a650",
+      "bytes": 35398
+    },
+    {
+      "path": "convex/README.md",
+      "sha256": "7ce7b964c7b2d0823086cae6f0322a33abd11728ebe83c940a2189eb68b06c73",
+      "bytes": 11588
+    },
+    {
+      "path": "docs/deployment.md",
+      "sha256": "d37e0df9c742285d8559a60bcf02f6fc8ffa39831721e73b73c18df767dae778",
+      "bytes": 33677
+    },
+    {
+      "path": "convex/_generated/ai/guidelines.md",
+      "sha256": "533ba2428f2dc572e825555e6e681d2e56e7e757c15a3fdd036a5d705413f020",
+      "bytes": 30480
+    },
+    {
+      "path": "convex/convex.config.ts",
+      "sha256": "aaebd203728398252c95231bbfcf2eebf5e431cd1dfac871dd4af330efa0994e",
+      "bytes": 1711
+    },
+    {
+      "path": "convex/auth.config.ts",
+      "sha256": "b0f0f8498e50d70880a7ce1f6cec7e844f83e29940b673ad38698ac290776a6f",
+      "bytes": 557
+    },
+    {
+      "path": "convex/auth.ts",
+      "sha256": "98a622a7a4173498c23ce7ae54ff432c31119166a201542b5d5ffde521c4cc8a",
+      "bytes": 2495
+    },
+    {
+      "path": "convex/schema.ts",
+      "sha256": "f98e9c696ccfd6a8982ba26cd98da20832d0bee73f5b8d5168db5310b02c3f2a",
+      "bytes": 1163
+    },
+    {
+      "path": "convex/lib/security/auth.ts",
+      "sha256": "6413946a0f2cfe1a512b35162d3ade52c3865984730a9abc6e5699bfc38bfeb9",
+      "bytes": 7908
+    },
+    {
+      "path": "src/features/platform/auth/model/useAuthSession.ts",
+      "sha256": "11c04453fae5f0c15e5fbee8b633867a404bb668f709628a3395dc98b7d57418",
+      "bytes": 1486
+    },
+    {
+      "path": "config/runtime-env.json",
+      "sha256": "b9a30c4c288c75cffc73b257724b9a53fab93986fcae3b7dc1f288c57b26bf20",
+      "bytes": 46676
+    },
+    {
+      "path": "package.json",
+      "sha256": "6996db17324c70d59176fff1b5d054f8c33e988684dc2d658c191c365588a704",
+      "bytes": 10339
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "5f8e3b19299725d350788204fe371178d68deee7b0512084d124dbef40dbd2d5",
+      "bytes": 313398
+    },
+    {
+      "path": "node_modules/convex/src/browser/sync/local_state.ts",
+      "sha256": "ebb500c42bd79f6638f8fa31009597a687edb34aedf2a915d5ad4085f7f1f48f",
+      "bytes": 11391
+    },
+    {
+      "path": "node_modules/convex/src/server/components/index.ts",
+      "sha256": "03c3427142c40edc8a8fe1ce56cbf3206fe4a66ea758d0dde24cb4b5b0811cc5",
+      "bytes": 24219
+    },
+    {
+      "path": "node_modules/convex/src/values/validator.ts",
+      "sha256": "91e917e3501bad890b57ca851ec9b4ce536390bc131a2d74339797dbd9fb21e3",
+      "bytes": 14049
+    }
+  ],
+  "installed_versions_at_check": {
+    "convex": "1.45.0",
+    "@convex-dev/auth": "0.0.95",
+    "@auth/core": "0.41.3",
+    "@convex-dev/rate-limiter": "0.3.2",
+    "convex-test": "0.0.56",
+    "typescript": "6.0.2"
+  },
+  "not_installed_at_check": [
+    "convex-helpers",
+    "@convex-dev/migrations",
+    "@convex-dev/aggregate"
+  ],
+  "current_host_expert": {
+    "path": "/Users/ggfincke/.codex/plugins/cache/openai-curated-remote/convex/2.0.1/skills/convex-expert/SKILL.md",
+    "sha256": "20d4f646e54f96981163e9c6e6eb132713ef6d576e52dbf6a7660120df2d4e12",
+    "use": "API guidance when available; dated limits, unconditional install/deploy recommendations and generic migration defaults yield to current primary docs, user scope and project policy"
+  },
+  "primary_document_urls_checked": [
+    "https://auth0.github.io/auth0-cli/",
+    "https://auth0.github.io/auth0-cli/auth0_apps_create.html",
+    "https://clerk.com/docs/guides/development/integrations/databases/convex",
+    "https://docs.convex.dev/",
+    "https://docs.convex.dev/auth/auth0",
+    "https://docs.convex.dev/auth/authkit/",
+    "https://docs.convex.dev/auth/authkit/add-to-app",
+    "https://docs.convex.dev/auth/authkit/auto-provision",
+    "https://docs.convex.dev/auth/clerk",
+    "https://docs.convex.dev/auth/convex-auth",
+    "https://docs.convex.dev/auth/database-auth",
+    "https://docs.convex.dev/auth/functions-auth",
+    "https://docs.convex.dev/client/react/overview",
+    "https://docs.convex.dev/components/authoring",
+    "https://docs.convex.dev/components/authoring#environment-variables",
+    "https://docs.convex.dev/components/authoring#hybrid-components",
+    "https://docs.convex.dev/components/using#http-routes",
+    "https://docs.convex.dev/database/advanced/occ",
+    "https://docs.convex.dev/database/pagination",
+    "https://docs.convex.dev/database/reading-data/indexes/",
+    "https://docs.convex.dev/production/state/limits",
+    "https://docs.convex.dev/understanding/best-practices/",
+    "https://github.com/get-convex/migrations",
+    "https://labs.convex.dev/auth/authz",
+    "https://labs.convex.dev/auth/setup",
+    "https://labs.convex.dev/auth/setup/manual",
+    "https://www.convex.dev/components/migrations"
+  ],
+  "verification_boundary": "Source/policy comparison, package/link validation and explicitly recorded local SDK probes only. No auth setup, codegen/deployment, data migration, provider login, subscription service measurement or dependency installation is implied.",
+  "compiler_at_check": {
+    "installed_as": "typescript",
+    "alias_package_name": "@typescript/typescript6",
+    "alias_package_version": "6.0.2",
+    "executable": "bin/tsc6",
+    "delegated_package": "@typescript/old",
+    "reported_compiler_version": "6.0.3",
+    "observed_node_version": "v26.7.0"
+  },
+  "local_verification_receipt": "/Users/ggfincke/Documents/Codex/2026-08-27/can-x20/work/skills-implementation/phase-c-convex-probes/metadata.json",
+  "approved_quarantine_manifest": "/Users/ggfincke/.local/share/ggfincke-skills/quarantine/2026-08-27-skills-audit/manifest.json",
+  "quarantine_verification_receipt": "/Users/ggfincke/Documents/Codex/2026-08-27/can-x20/work/skills-implementation/phase-c-post-quarantine.json",
+  "original_location_note": "Original source paths identify discovery locations before the separately approved root-owned retirement. They need not remain installed. Exact original bytes remain in the recovery snapshot and the approved quarantine; consult its manifest for restore destinations."
+}

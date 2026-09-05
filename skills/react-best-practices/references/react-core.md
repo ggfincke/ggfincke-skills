@@ -43,6 +43,8 @@ Follow Hook rules:
 - Split custom Hooks when their dependencies or responsibilities are unrelated.
 - Do not use refs or dependency omissions to bypass React's data flow without a clear reason.
 
+React 19's `use` API is the documented exception to the conditional/loop restriction: it can read context or a supported promise conditionally, but still belongs inside a component or Hook and must not be wrapped in `try/catch`. This exception does not apply to `useState`, `useContext`, or other Hooks.
+
 When lint complains about dependencies, treat it as design feedback first. Usually the fix is to move event-specific code to the event, derive data during render, split the Effect, or stabilize a real input.
 
 ## Effects
@@ -162,7 +164,7 @@ Do not define components inside components. Nested component definitions reset s
 
 ## Accessibility
 
-Accessibility is mostly correct semantic markup, which is framework-agnostic. If the `web-design-guidelines` skill is installed, use it for the general rules - but it is not part of this skill's portable set, so do not assume it exists. The baseline when it is unavailable:
+Accessibility is mostly correct semantic markup, which is framework-agnostic. If the `frontend-workbench` skill is installed, use it for the general rules - but it is not part of this skill's portable set, so do not assume it exists. The baseline when it is unavailable:
 
 - Use semantic elements (`button`, `a`, `nav`, `main`, `label`, ordered headings) before ARIA; a real `button` beats a `div` with a click handler.
 - Give every interactive control an accessible name: visible text, an associated `label`, or `aria-label`.
@@ -203,7 +205,7 @@ Use imperative escape hatches sparingly:
 React escapes string children by default, so plain `{userText}` is safe. The footguns are the places that bypass escaping:
 
 - `dangerouslySetInnerHTML` injects raw HTML. Only use it with content you sanitize (e.g. DOMPurify) or fully control. Never pass user input straight through.
-- URL props (`href`, `src`, `action`, `formAction`) accept `javascript:` and `data:` schemes. Validate or allowlist the scheme for user-supplied URLs.
+- Validate user-controlled URLs according to the sink's allowed schemes and destinations. Current React DOM blocks `javascript:` in several common URL props; this is not a general URL policy, and it does not make arbitrary external origins, form destinations, or `data:` content appropriate. Check the installed renderer/version and validate any imperative DOM or third-party sinks separately.
 - Spreading untrusted objects as props (`<a {...userProps}>`) can smuggle in `dangerouslySetInnerHTML`, event handlers, or URL props. Pick known props explicitly.
 - Add `rel="noopener noreferrer"` to `target="_blank"` links unless the repo already applies this globally.
 

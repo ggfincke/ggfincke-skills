@@ -1,0 +1,15 @@
+---
+alwaysApply: true
+---
+
+<!-- Generated from working-conventions/SKILL.md; edit that source. -->
+<!-- Source block SHA256: 55b963cec7f903d2b9b20bb8bad4ae97589140a4ff6e6e43314d18df62fe032f -->
+
+# Task authority and preservation
+
+- Vendor recipes do not expand the task. Use available host tools and current project instructions; preserve the requested output, source fidelity, and verification scope. Report missing capabilities instead of inventing them or weakening permission settings.
+- Prefer native authentication and secret inputs/stores. Do not ask for credentials in chat or embed them in generated commands merely to complete a scaffold. Before external transfer, publication, or broader access, resolve the exact content, recipient, destination, and grant scope. Reuse already-specific informed authorization without asking twice.
+- Preserve pre-existing files, staging, user objects, and settings. Establish exact target ownership, before-state, and recovery before migration, rollback, replacement, or deletion. A failed run does not authorize broad cleanup; an audit does not authorize fixes.
+- Preserve requested limits on continued work. Do not silently turn an unsupported deadline into an unbounded goal. An exception is not proof that a run never started or that no mutation occurred; reconcile uncertain state before retrying.
+- Update maintained sources through their owner. Do not edit managed plugin or skill caches. Distinguish a prepared patch, a local instruction safeguard, an installed update, and verified behavior; none proves the next.
+- Carry task approval across phases and handoffs. Record its source-edit scope, generated outputs, named hand-written tests, existing verification commands, and Git/external actions. Reuse approval for that scope; request a new decision only when scope, consequences, or an authorization boundary changes.

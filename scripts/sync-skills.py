@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import always_on
 import skill_inventory
+import skill_deployment
 import sync_transaction
 import tooling_paths
 
@@ -18,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
 PROJECTS_DIR = ROOT / "projects"
 GLOBAL_AGENTS = tuple(tooling_paths.AGENT_INSTRUCTION)
-DEFAULT_GLOBAL_SKILL_TARGETS = ("agents", "claude")
+DEFAULT_GLOBAL_SKILL_TARGETS = ("agents", "claude", "agy")
 SYNC_MARKER = ".ggfincke-skills-sync"
 MARKER_SOURCE_RE = re.compile(r"^installed from (?P<src>.+?)\s*$", re.MULTILINE)
 PROJECT_REPO_RE = re.compile(r"^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$")
@@ -66,14 +69,19 @@ def assert_target_outside_repo(target_root: Path) -> None:
 	try:
 		tooling_paths.require_outside_repo(target_root, ROOT, "install target")
 	except ValueError as exc:
-		raise SystemExit(f"{exc}. Check CODEX_HOME/AGENTS_HOME/CLAUDE_HOME & --project.") from exc
+		raise SystemExit(
+			f"{exc}. Check CODEX_HOME/AGENTS_HOME/CLAUDE_CONFIG_DIR/CLAUDE_HOME/AGY_HOME/GEMINI_HOME & --project."
+		) from exc
 
 
 def default_targets(project: Path | None) -> dict[str, Path]:
 	targets = {agent: tooling_paths.resolve_home(agent) / "skills" for agent in GLOBAL_AGENTS}
+	targets["gemini"] = tooling_paths.resolve_gemini_home() / "skills"
+	targets["agy-shared"] = targets["gemini"]
 	if project is not None:
 		targets["project-claude"] = project / ".claude" / "skills"
 		targets["project-agents"] = project / ".agents" / "skills"
+		targets["project-agy"] = targets["project-agents"]
 	return targets
 
 
@@ -115,6 +123,8 @@ def instruction_agents_for_targets(names: list[str]) -> list[str]:
 			agents.extend(GLOBAL_AGENTS)
 		elif name == "agents":
 			agents.extend(("codex", "agents"))
+		elif name in ("gemini", "agy-shared"):
+			agents.append("agy")
 		elif name in GLOBAL_AGENTS:
 			agents.append(name)
 	return list(dict.fromkeys(agents))
@@ -360,6 +370,153 @@ def _instruction_destination_plans(
 	return tuple(plans), tuple(actions), artifact_scans
 
 
+def _generation_plan(
+	target_label: str,
+	target_root: Path,
+	base_dir: Path,
+	sources: list[Path],
+	actions: list[SkillAction],
+	prunes: list[PruneAction],
+	agents: list[str],
+	items: list[tuple[str, str, str]],
+	*,
+	preserve_observations: bool = False,
+) -> tuple[sync_transaction.Replacement | None, str]:
+	selected = {source.name: source for source in sources}
+	receipt_path = target_root / skill_deployment.GENERATION_FILE
+	prior = {}
+	if receipt_path.exists() or receipt_path.is_symlink():
+		if receipt_path.is_symlink() or not receipt_path.is_file():
+			raise SystemExit(f"refusing unsafe deployment receipt: {receipt_path}")
+		try:
+			prior = json.loads(receipt_path.read_text(encoding="utf-8"))
+		except (OSError, ValueError) as exc:
+			raise SystemExit(f"cannot read deployment receipt {receipt_path}: {exc}") from exc
+		if not isinstance(prior, dict) or prior.get("schema_version") != 1:
+			raise SystemExit(f"unsupported deployment receipt: {receipt_path}")
+	lanes = prior.get("lanes", {})
+	if not isinstance(lanes, dict):
+		raise SystemExit(f"invalid deployment lanes: {receipt_path}")
+	lane_key = str(base_dir.resolve())
+	foreign_owners = {}
+	for owner, lane in lanes.items():
+		if not isinstance(lane, dict) or not isinstance(lane.get("packages", {}), dict):
+			raise SystemExit(f"invalid deployment lane {owner!r}: {receipt_path}")
+		if owner != lane_key:
+			foreign_owners.update((name, owner) for name in lane.get("packages", {}))
+	for name in sorted(selected.keys() & foreign_owners.keys()):
+		raise SystemExit(
+			f"refusing cross-lane takeover: {target_root / name} belongs to "
+			f"{foreign_owners[name]}. Reconcile that recorded ownership before installing "
+			"the same name from another source lane; --force does not transfer ownership."
+		)
+	available = {path.parent.name: path.parent for path in base_dir.glob("*/SKILL.md")}
+	available.update(selected)
+	for entry in target_root.iterdir() if target_root.is_dir() else []:
+		if entry.name not in available and is_managed_install(entry, base_dir):
+			available[entry.name] = entry.resolve() if entry.is_symlink() else marker_source(entry)
+	planned = {
+		action.source.name: action for action in actions if action.target_label == target_label
+	}
+	removed = {action.destination.name for action in prunes if action.target_label == target_label}
+	rows = {}
+	observed: list[Path] = []
+	for name, source in sorted(available.items()):
+		if name in removed or name in foreign_owners:
+			continue
+		destination = target_root / name
+		action = planned.get(name)
+		if action is None and not destination.exists() and not destination.is_symlink():
+			continue
+		source_digest = skill_deployment.package_digest(source) if source.is_dir() else None
+		installed_digest = (
+			source_digest
+			if action
+			else skill_deployment.package_digest(destination)
+			if destination.is_dir()
+			else None
+		)
+		observed.append(source)
+		if action is None:
+			observed.append(destination)
+		source_text = (
+			(source / "SKILL.md").read_text(encoding="utf-8")
+			if (source / "SKILL.md").is_file()
+			else ""
+		)
+		installed_text = (
+			(destination / "SKILL.md").read_text(encoding="utf-8")
+			if action is None and (destination / "SKILL.md").is_file()
+			else ""
+		)
+		contributes = bool(
+			always_on.extract_blocks(source_text) or always_on.extract_blocks(installed_text)
+		)
+		if agents and source_digest != installed_digest and (name in selected or contributes):
+			raise SystemExit(
+				f"refusing mixed-generation sync: {destination} would retain different content "
+				"while global instructions are synchronized. Include that skill with --force, "
+				"or explicitly use --skip-always-on and inspect the reported drift."
+			)
+		rows[name] = {
+			"source": str(source),
+			"source_digest": source_digest,
+			"installed_digest": installed_digest,
+			"mode": action.mode if action else "link" if destination.is_symlink() else "copy",
+		}
+
+	instructions = lanes.get(lane_key, {}).get("instructions", [])
+	if agents:
+		associated = {
+			agent
+			for name, path in default_targets(None).items()
+			if path.resolve() == target_root.resolve()
+			for agent in instruction_agents_for_targets([name])
+		}
+		if not associated:
+			associated = set(instruction_agents_for_targets([target_label]) or agents)
+		region = always_on.render_region(items) if items else ""
+		instructions = []
+		for agent in agents:
+			if agent not in associated:
+				continue
+			logical = tooling_paths.instruction_path(agent)
+			instructions.append(
+				{
+					"agent": agent,
+					"path": str(logical),
+					"region_digest": hashlib.sha256(region.encode()).hexdigest(),
+				}
+			)
+			# instruction replacements observe their own before-state; unchanged files
+			# still participate in the deployment's concurrency check
+			observed.extend((logical, tooling_paths.resolve_write_target(logical)))
+	lanes[lane_key] = {"packages": rows, "instructions": instructions}
+	document = {"schema_version": 1, "lanes": lanes}
+	generation = hashlib.sha256(
+		json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+	).hexdigest()
+	document["generation"] = generation
+	content = (json.dumps(document, sort_keys=True, indent=2) + "\n").encode()
+	drift = [name for name, row in rows.items() if row["source_digest"] != row["installed_digest"]]
+	message = f"generation {generation[:16]} ({len(rows)} packages; retained source drift: {', '.join(drift) or 'none'})"
+	# instruction-only repairs still depend on the retained packages remaining
+	# unchanged, even when their generation receipt already has the desired bytes
+	if (
+		not preserve_observations
+		and receipt_path.is_file()
+		and receipt_path.read_bytes() == content
+	):
+		return None, message
+	return sync_transaction.replacement(
+		f"generation:{target_label}",
+		receipt_path,
+		sync_transaction.BytesPayload(content),
+		additional_observed=tuple(dict.fromkeys(observed)),
+		atomic_file=True,
+	), message
+
+
 def build_sync_plan(
 	sources: list[Path],
 	base_dir: Path,
@@ -416,6 +573,46 @@ def build_sync_plan(
 		)
 		destination_plans.extend(instruction_plans)
 		artifact_scans.extend(instruction_scans)
+
+	# stage the original plan's safety checks before hashing or adding receipts
+	issues = sync_transaction.plan_issues(
+		sync_transaction.RunPlan(tuple(destination_plans), artifact_scans=tuple(artifact_scans))
+	)
+	if issues:
+		raise SystemExit("refusing skill sync:\n  " + "\n  ".join(issues))
+	for index, (target_label, target_root) in enumerate(targets):
+		try:
+			receipt, message = _generation_plan(
+				target_label,
+				target_root,
+				base_dir,
+				sources,
+				skill_actions,
+				prune_actions,
+				agents,
+				items,
+				preserve_observations=bool(instruction_actions),
+			)
+		except (OSError, ValueError) as exc:
+			raise SystemExit(
+				f"cannot establish deployment generation for {target_root}: {exc}"
+			) from exc
+		noops.append(sync_transaction.PlanMessage(target_label, message))
+		if receipt is not None:
+			group = destination_plans[index]
+			destination_plans[index] = sync_transaction.DestinationPlan(
+				group.label, (*group.replacements, receipt), group.prunes
+			)
+	if agents:
+		# all selected global roots consume the same policy source; commit their
+		# packages, aliased instruction files, and receipts as one rollback unit
+		destination_plans = [
+			sync_transaction.DestinationPlan(
+				"global-deployment",
+				tuple(item for group in destination_plans for item in group.replacements),
+				tuple(item for group in destination_plans for item in group.prunes),
+			)
+		]
 
 	transaction = sync_transaction.RunPlan(
 		tuple(destination_plans),
@@ -521,6 +718,12 @@ def install_skill(
 	action = next((item for item in plan.skill_actions), None)
 	if action is None:
 		messages = (*plan.transaction.noops, *plan.transaction.skips)
+		if not dry_run:
+			report = sync_transaction.apply_plan(plan.transaction)
+			if not report.success:
+				raise SystemExit(
+					"skill generation update failed:\n  " + "\n  ".join(_report_lines(plan, report))
+				)
 		return messages[0].message
 	verb = "link" if mode == "link" else "copy"
 	if dry_run:
@@ -592,8 +795,8 @@ def main() -> int:
 		action="append",
 		default=[],
 		help=(
-			"Install target: agents, claude, project-claude, project-agents, all, "
-			"or legacy codex. Can be repeated."
+			"Install target: agents, claude, agy, gemini, project-claude, "
+			"project-agents, project-agy, all, or legacy codex. Can be repeated."
 		),
 	)
 	parser.add_argument("--skill", action="append", default=[], help="Install one skill name")
@@ -638,7 +841,7 @@ def main() -> int:
 			raise SystemExit(
 				"--project-repo installs project-only skills; refusing non-project target(s): "
 				+ ", ".join(leaked)
-				+ ". Use project-agents or project-claude."
+				+ ". Use project-agents, project-claude, or project-agy."
 			)
 		if not PROJECT_REPO_RE.fullmatch(args.project_repo):
 			raise SystemExit(
@@ -658,7 +861,7 @@ def main() -> int:
 		target_names = requested
 	else:
 		base_dir = SKILLS_DIR
-		target_names = args.target or ["all"]
+		target_names = args.target or ["agents", "claude"]
 
 	targets = expand_targets(target_names, project)
 	global_agents = (

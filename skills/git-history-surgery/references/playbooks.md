@@ -25,6 +25,7 @@ Use these recipes after `SKILL.md` orientation and backup. Replace placeholders 
 - `OLD` is the commit being split, dropped, or moved.
 - `NEW_BRANCH` is the destination branch.
 - `BACKUP` is the local backup ref created before rewriting.
+- For an approved publication, record the exact push URL, full destination ref, and full remote OID before rewriting. Resolve all configured push URLs and select the one authorized destination; do not assume the fetch URL is the push destination. Use the exact matching `git ls-remote --exit-code` result for that destination/ref, and stop if it is absent or ambiguous. Keep the approved OID unchanged across later fetches. Do not copy credential-bearing URLs into logs or reports.
 
 Before any playbook:
 
@@ -237,14 +238,18 @@ If conflicts occur, resolve only files in the requested change. Use `git cherry-
 
 Use only after local rewrite verification and approval to update the remote ref.
 
+The values below come from the pre-rewrite publication receipt, not a newly fetched tracking branch. Replace the placeholders before running. A missing remote ref needs a separately verified branch-creation plan rather than an empty lease value.
+
 ```bash
-git fetch origin BRANCH
+publish_url='APPROVED_PUSH_URL'
+publish_ref='refs/heads/BRANCH'
+approved_oid='APPROVED_FULL_REMOTE_OID'
 git status --short --branch --untracked-files=all
-git log --oneline --left-right --cherry-pick origin/BRANCH...HEAD
-git push --force-with-lease origin HEAD:BRANCH
+git log --oneline --left-right --cherry-pick "$approved_oid"...HEAD
+git push --force-with-lease="$publish_ref:$approved_oid" "$publish_url" "HEAD:$publish_ref"
 ```
 
-If `git fetch` shows the remote moved unexpectedly, stop. Do not force-push over new remote work without a fresh user decision.
+Compare a fresh remote observation with the recorded OID before publishing. The explicit lease also rejects a concurrent movement between that check and the push. On a mismatch or rejected lease, stop and show the intervening work; never refresh the approval OID automatically. A background fetch changing local tracking refs must not weaken the lease.
 
 Never use:
 

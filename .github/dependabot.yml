@@ -1,8 +1,16 @@
 # .github/dependabot.yml
-# keep SHA-pinned GitHub Actions current w/ version-bump PRs
+# keep GitHub Actions and both npm dependency trees current
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /tools/worker-broker
     schedule:
       interval: weekly

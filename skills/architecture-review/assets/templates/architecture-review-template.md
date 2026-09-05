@@ -235,6 +235,8 @@ These groups are the implementation plan. Keep them in this review unless the us
 
 ### Group A: [Name]
 
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
 **Findings:** [AR-1, AR-2]
 **Boundary Established:** [Responsibility/dependency rule]
 **Change Class:** [Physical-only / internal contract / public contract / persistent data / runtime-deployment]
@@ -270,6 +272,8 @@ These groups are the implementation plan. Keep them in this review unless the us
 - [Decision or "None"]
 
 ### Group B: [Name]
+
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
 
 [Repeat the complete action-group structure.]
 

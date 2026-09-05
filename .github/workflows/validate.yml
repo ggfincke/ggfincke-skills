@@ -24,6 +24,8 @@ jobs:
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Validate skills
         run: python3 scripts/validate-skills.py
+      - name: Check generated references and instructions
+        run: make generated-check
       - name: Run script regression tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Python format + comment-style check
@@ -44,6 +46,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_pre_commit_hook.py'
       - name: Prettier + ESLint format check
         run: npm run format:check
+      - name: Audit root dependencies
+        run: make audit-root
 
   worker-broker:
     runs-on: ubuntu-latest
@@ -59,4 +63,4 @@ jobs:
       - name: Validate worker broker
         run: npm --prefix tools/worker-broker run check
       - name: Audit worker broker dependencies
-        run: npm --prefix tools/worker-broker audit --audit-level=high
+        run: make audit-broker

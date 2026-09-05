@@ -79,22 +79,26 @@ _If none: "No removal drops the only coverage of important behavior; no coverage
 
 ## Recommended Removal Sequence
 
-_Lowest-risk, self-contained removals first. Each group is approve-able on its own._
+_Lowest-risk, self-contained removals first. Each group is approve-able on its own. Before approval, reconcile every group ID against the Findings and Safety Check: exclude Keep rows and held removals unless new evidence changes their disposition explicitly._
 
 ### Group 1: [Theme] (Low risk)
 
-- Findings: [T1, T4]
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
+- Findings: [T1]
 - [Trivial-coverage / pure duplicates - covering tests verified; delete outright, re-run the affected file]
 
 ### Group 2: [Theme] (Med risk)
 
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
 - Findings: [T2, T3]
 - [Merges / simplifications that touch shared fixtures - preserve the union of real assertions; re-run after each]
 
-### Group 3: [Theme] (Higher risk)
+### Held: [Theme] (Higher risk; not an executable removal group)
 
 - Findings: [T8]
-- [Touches a coverage gate or a shared path - confirm the gate first; gate for go-ahead, re-run the full suite]
+- [T8 is held by the Safety Check. Resolve the coverage conflict and revise its disposition before proposing or approving removal.]
 
 ---
 

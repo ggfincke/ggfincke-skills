@@ -1,17 +1,25 @@
 ---
 name: seed-example-sourcing
-description: "Source a new batch of marketplace seed example templates for TierListBuilder end to end - pick a batch of tier-list ideas, build each template's item roster, source one clean image per item, QC via contact-sheet montages, author the per-template def + provenance manifest, register it in data/seeds/marketplace-core.json, and pass the offline gates (validate + build-inspect + orphan-check + doc-paths). Use when asked to source, add, populate, or seed example folders/templates, to fill items from the examples/future examples.md backlog, to add a batch of brand logos / photos / movie-TV-game posters / box-art as tier-list templates, or to extend the marketplace catalog with new example data. ALSO use when changing how existing seed item art looks: converting a template to transparent PNG, removing or stripping a white background/matte, fixing white boxes on the dark board or marketplace cards, choosing autoPlate off/uniform, or re-sourcing item images from an existing larger roster instead of sourcing fresh. Covers the four image modalities (transparent logos on a uniform plate, transparent renders/character art as bare cutouts, full-bleed photos, portrait posters/box-art) and their plate/label/format rules, the reuse-a-superset check, the white-matte cutout failure modes, the optional per-template `_cover.jpg` hero banner (sourced not composited, textless, with the coverZoom / multi-surface framing check), plus the concurrent-sourcing Workflow orchestration. Not for the live Convex seed upload/activate (a separate user-run deploy step), not for changing a persisted contract field (use contract-propagation), and not for the board or marketplace UI."
+description: "Source and QC TierListBuilder marketplace seed templates or revise existing item art and optional covers. Owns rosters, source provenance, transparent/logo/photo/poster rules, reuse, local manifests, and offline gates. Not live Convex activation, persisted-field changes (contract-propagation), or application UI."
 ---
 
 # Seed Example Sourcing (TierListBuilder)
 
-Author new marketplace seed "example" templates end to end. Each template is a folder of sourced images plus a JSON def; a batch is ~5 templates sourced together via a Workflow fan-out. Everything lives in the **gitignored** local working area (`examples/`, `data/seeds/`) - it is a local preview, never committed by this skill and never live-seeded here.
+Author new marketplace seed "example" templates end to end. Each template is a folder of sourced images plus a JSON def; a batch is usually about five templates, sized to the requested scope and host capacity. Active sources live in the **gitignored** `examples/` and `data/seeds/`; working material lives in `dev-docs/seed-examples/`. This is a local preview, never committed by this skill and never live-seeded here.
 
 ## When this applies
 
-- "Source / add / populate / seed" a batch of example templates, or fill entries from `examples/future examples.md`.
+- "Source / add / populate / seed" a batch of example templates, or fill entries from `dev-docs/seed-examples/backlog.md`.
 - Adding brand logos, transparent renders or character art, photos, or movie/TV/game posters & box art as new tier-list templates.
 - Not for: the live Convex upload/activate (separate user deploy), persisted contract-field changes (use `contract-propagation`), or UI work.
+
+## Task and media boundaries
+
+Keep provenance and working notes inside the task's approved project paths. Write durable memory only after an explicit user request and through the current host's supported memory mechanism; sourcing a batch does not grant that permission.
+
+Record source pages, creators when available, known usage constraints, and the intended use in the existing provenance fields or a task-local sourcing note. A gitignored preview is not blanket permission to reuse or publish an asset. Mark unknown rights honestly, retain acceptable alternatives, and obtain any missing publication authorization before distribution; do not invent a legal conclusion from the file's location.
+
+Follow the current host's image-editing contract. Use its required image-editing tool when applicable; the local Pillow, SVG, and converter recipes below are only for an explicitly requested local method or a host that permits it. Inspect the source image before editing. Do not remove credits/watermarks to make a source appear eligible.
 
 ## Deliverables per template (all gitignored)
 
@@ -20,7 +28,11 @@ Author new marketplace seed "example" templates end to end. Each template is a f
 - `data/seeds/templates/<cat>/<slug>.json` - def per `scripts/seed_pipeline/seed_pipeline/schemas/template.schema.json`. Required: schemaVersion(=2), externalId(`cat:slug`), folder, title(<=80), categoryPath(ENUM), description(<=500), tags(<=12, <=32 each), visibility(`public`), labelPolicy(`explicit-required`), criteria(1-8), items(1+ `{externalId(kebab), image(basename), label}`). Optional: `labels{show}`, `autoPlate`, `coverZoom`, `suggestedTiers`.
 - `examples/<cat>/<slug>/_cover.jpg` - OPTIONAL wide hero banner, auto-detected by filename (no def edit needed). Only some templates want one; see **Cover images** below.
 - `data/seeds/marketplace-core.json` -> append `"cat:slug"` to `templateOrder[]`. An unreferenced def OR an orphan order entry is a hard error.
-- Tick the box in `examples/future examples.md` and add a reconciliation note; bump the registered count.
+- Reconcile `dev-docs/seed-examples/backlog.md` against the newly registered templates and add a completion note; bump the registered count.
+
+Alternate art belongs beneath the authored template's `folder`, at `styles/<style-id>/`, with its own `_manifest.json` and optional `_cover.*`. Keep `styles[].folder` pointed at that nested directory; never create category-level sibling folders such as `<slug>-pixel`. A style ID is one safe path segment, not a path (`pixel`, not `../pixel` or `styles/pixel`). Default images stay directly in the template folder; do not recursively scan its styles as default items.
+
+Keep unused/source candidates in `dev-docs/seed-examples/candidates/<cat>/<slug>/`, with a fresh run subdirectory for each cover-sourcing pass. Put montage and surface-preview output in `dev-docs/seed-examples/previews/`; namespace per-template outputs by category/template/style. The full original backlog/history is preserved at `dev-docs/archive/seed-examples/future-examples-2026-08-27.md`; consult it for duplicate/rejected decisions without editing that historical record.
 
 **categoryPath enum** (only these): gaming, gaming/pokemon[/pokedex|/games], gaming/smash-bros, gaming/zelda, gaming/final-fantasy, movies, movies/mcu, movies/star-wars, anime, music, sports, food, books, tech, other. No node for cars/animals/presidents -> `other`; chocolate -> `food`; **TV series live under `movies`** (no tv node - HBO shows, sitcoms, prestige-tv-dramas are all `movies`).
 
@@ -43,15 +55,15 @@ Read one existing def of the same modality before authoring and copy its shape.
    - Keep the target template's own `NN-slug.png` filenames; only the bytes and the manifest provenance change (add `note: "reused from <superset> (<file>)"`).
    - A superset may split an entry into variants - map the plain id onto the canonical one (e.g. `giratina` -> `giratina-altered-forme`, `deoxys` -> `deoxys-normal`, `tornadus`/`thundurus`/`landorus`/`enamorus` -> `-incarnate-forme`).
    - **! Never blanket-unify on `externalId`.** ~330 ids collide across unrelated domains: `sprite` (soda / MCU), `ghost` (pokemon type / MCU), `twitch` (LoL champ / tech co), `scorpion` (Drake album / Mortal Kombat), plus `wendy`, `toad`, `simon`, `echo`. Only reuse within the same franchise, and eyeball the pair before copying.
-1. **Pick the batch** (~5 templates) from `examples/future examples.md`; first diff on-disk folders vs registered `templateOrder` so you target real gaps, not already-sourced folders (only `mcu-posters`/`mcu-shows` are intentionally image-only).
-2. **Roster** (opus, one agent/template): canonical ordered item list `{externalId(kebab), label, query}`. **Size by RECOGNIZABILITY, not a count.** Give a must-include list, then tell the agent to keep adding entries while they are genuinely notable/recognizable and **STOP the moment it would be reaching for obscure deep-cuts** - do not set a target number or a padding floor beyond the schema's structural one-item minimum (a round-number target forces padding with straws). The final size is whatever clears that bar: could be 12, could be 60. A large roster is fine when every entry is genuinely famous (e.g. `anime-villains` spans dozens of hit series); a franchise with a shallow bench should stay small. Applies to fresh rosters AND supplementary expansions.
-3. **Source** (sonnet, chunks of ~5 items): fetch one clean image per item -> unique temp path -> Pillow normalize -> save `examples/<cat>/<slug>/NN-<externalId>.ext` -> **vision-verify by Reading the saved file**. Return provenance.
+1. **Pick the batch** (~5 templates) from `dev-docs/seed-examples/backlog.md`; first diff category-level template folders against the defs and registered `templateOrder` so you target real gaps. Nested `styles/` folders are alternate art, not additional templates; unregistered candidates belong outside `examples/`.
+2. **Roster** (one bounded assignment/template): canonical ordered item list `{externalId(kebab), label, query}`. **Size by RECOGNIZABILITY, not a count.** Give a must-include list, then tell the agent to keep adding entries while they are genuinely notable/recognizable and **STOP the moment it would be reaching for obscure deep-cuts** - do not set a target number or a padding floor beyond the schema's structural one-item minimum (a round-number target forces padding with straws). The final size is whatever clears that bar: could be 12, could be 60. A large roster is fine when every entry is genuinely famous (e.g. `anime-villains` spans dozens of hit series); a franchise with a shallow bench should stay small. Applies to fresh rosters AND supplementary expansions.
+3. **Source** (bounded chunks, often about five items): fetch one clean image per item -> unique temp path -> Pillow normalize -> save `examples/<cat>/<slug>/NN-<externalId>.ext` -> **vision-verify by Reading the saved file**. Return provenance.
 4. **QC montage** - THE gate. Build a white-plate (logos/photos) or portrait (posters) contact sheet and Read it visually. Agent self-report does not catch mislabeled/contaminated/badly-framed cells; the montage does. Re-source the failures. **Also curate here:** actively CUT any entry that is a reach (obscure deep-cut, or a weak/off-style source like an action-figure photo among comic art) - drop it, do not keep it just to hold a count. If a workflow padded the roster to a number, the montage is where you trim it back to what genuinely belongs.
 5. **Author** defs + manifests (a Python script embedding a META dict of per-template criteria), append `templateOrder`.
 6. **Gates** (all offline, no Convex) - see below.
-7. **Docs + memory**: tick `future examples.md`, add a batch reconciliation note, write a `project_seed_batch*` memory.
+7. **Docs + provenance**: reconcile `dev-docs/seed-examples/backlog.md` and add a task-local batch completion/source note. Write a `project_seed_batch*` memory only if the user explicitly requests durable memory and the host supports that action.
 
-[The batch sourcing Workflow helper](scripts/batch-sourcing-wf.template.js) is ready to adapt for steps 2-3.
+The host-neutral contract below governs steps 2-3. The [batch template](scripts/batch-sourcing-wf.template.js) is an optional legacy Workflow adapter, not an available tool on every host.
 
 ## Transparent backgrounds (renders, character art, product shots)
 
@@ -117,13 +129,18 @@ Beware a stale keep-white call: `street-fighter-characters` was held back over "
 deliberately uses white", until `street-fighter-6` turned out to hold transparent versions of the
 *same* Capcom art proving the flourishes survive. Re-check the assumption before accepting it.
 
-### ! The converter deletes the source jpgs
+### Preserve originals before conversion
 
-A jpg->png pass removes the original, so a later bad edit has nothing to fall back on. Before any
-destructive re-processing, snapshot the folder somewhere **inside the repo** (`examples/` is
-gitignored; the session scratchpad under `/private/tmp` can be wiped mid-session and has been).
-`.seed-cache/architecture-closeout-<ts>/repo-b/examples/` happens to hold a full original-jpg
-snapshot and has already served as the recovery path once.
+Inspect a converter's input-removal behavior before running it. Work on copies in a fresh,
+run-owned candidate directory; do not give a source-deleting converter the only original.
+Before replacing pre-existing assets, record exact paths and hashes and verify a recovery copy
+inside the approved project workspace. A remembered cache or temporary directory is not proof
+that the current source bytes are recoverable.
+
+Validate the converted files, transparency, framing, and declared formats before installing
+them. Remove pre-existing originals only when that exact replacement/removal is authorized
+and recovery is established. Validated, disposable downloads created solely by this run may
+be cleaned within the approved task; do not confuse them with the user's original assets.
 
 ## Cover images (optional hero banner)
 
@@ -144,7 +161,7 @@ A template folder may hold ONE `_cover.{jpg,jpeg,png,webp}`. The build auto-dete
 uv run --project scripts/seed_pipeline python .agents/skills/seed-example-sourcing/scripts/simulate-cover-surfaces.py \
   examples/gaming/street-fighter-6/_cover.jpg=1.6 examples/gaming/mortal-kombat-1/_cover.jpg
 ```
-Look at the sheet, then set `coverZoom` per template. **The LLM vision scorer misranks covers** - it rewards square album art, white-logo banners, and hero-over-villain art; the montage + surface sim is the real gate, same as item QC.
+Sheets go to `dev-docs/seed-examples/previews/surfaces/`. Nested-style input labels include category/template/style so repeated style IDs stay distinguishable. Look at the sheet, then set `coverZoom` per template. **The LLM vision scorer misranks covers** - it rewards square album art, white-logo banners, and hero-over-villain art; the montage + surface sim is the real gate, same as item QC.
 
 **Verify build.** `seed:marketplace:build` reports a `cover variants` count = the number of templates with a `_cover.*`; confirm it rose by exactly the number you added (that is the compile-time proof each new cover was detected from its filename).
 
@@ -158,19 +175,11 @@ npm run seed:marketplace:build     # expect 100% inspect per template
 npm run audit:doc-paths
 ```
 
-`scripts/seed/seed-status.mjs` **no longer exists** (removed during a seed-script cleanup) - the old
-`node scripts/seed/seed-status.mjs` gate is dead. Do the orphan check inline instead; only
-`mcu-posters`/`mcu-shows` may be orphans:
+The maintained full-source validator above rejects missing definitions and orphan order entries. Do not replace it with a print-only orphan comparison. Recheck the current target package scripts and seed CLI before relying on these commands.
 
-```bash
-python3 -c "
-import json,os
-order=set(json.load(open('data/seeds/marketplace-core.json'))['templateOrder']); seen=set()
-for dp,_,fns in os.walk('data/seeds/templates'):
-    for fn in fns:
-        if fn.endswith('.json'): seen.add(json.load(open(os.path.join(dp,fn)))['externalId'])
-print('orphans:',sorted(seen-order),'| missing defs:',sorted(order-seen))"
-```
+Also compare category-level `examples/<cat>/<slug>/` folders against the defs' declared
+default folders. Resolve alternate folders through `styles[].folder`; candidates and previews
+are working material under `dev-docs/seed-examples/`, not exceptions to the active catalog.
 
 Never run two `seed:marketplace:build` invocations concurrently - they write the same
 `.seed-cache/.../variants/` dir and corrupt the webp tiles.
@@ -179,34 +188,42 @@ Run Python/Pillow through the seed venv: `uv run --project scripts/seed_pipeline
 
 ## Sourcing recipe
 
-- UA for every download: `tierlistbuilder-seed/1.0 (garrettfincke@gmail.com)`. Accept only HTTP200 + image/* + >=3KB.
+- Use a nonpersonal User-Agent such as `tierlistbuilder-seed/1.0`. Disclose contact details only if the source requires them and the user approves that disclosure. Accept only HTTP200 + image/* + >=3KB.
 - Commons: `https://commons.wikimedia.org/wiki/Special:FilePath/<FileTitle>?width=1024` (auto-rasterizes SVG; %20 space, %27 apostrophe).
 - **Brand logos are often NOT on Commons** - they sit on **en.wikipedia** as local fair-use uploads. Always also search `en.wikipedia.org/w/api.php?...list=search&srnamespace=6&srsearch=<brand> logo`. A pure-Commons search falsely reports "no logo".
 - **Posters: Wikipedia's fair-use copies are tiny (~250px)**. Get full-res from **IMPAwards** (`impawards.com/<year>/posters/<slug>_xlg.jpg`), **TMDB** (`image.tmdb.org`), **Rotten Tomatoes/Flixster og:image**, **Steam** (`steamstatic.com` capsule, games), or fan wikis.
 - **Very-new brands not on Wikimedia** (e.g. Windsurf editor): grab the official site's `/favicon.svg`; if it has a solid background `<rect>`, delete that line then `rsvg-convert` -> transparent mark.
 - Normalize w/ Pillow: downscale long side to 1024 LANCZOS; keep alpha for png; flatten white RGB q90 for jpg.
-- **Copyright/licensing is irrelevant here** - the assets are a gitignored local preview, never production. Source the best/most-recognizable image regardless of license; do not drop an item for "no free logo".
+- **Provenance and intended use travel with the source.** Prefer a correct image whose known usage conditions fit the requested use. Record uncertainty and alternatives rather than declaring rights irrelevant; local preview does not authorize publication.
 - Tooling present: rsvg-convert, cwebp, Pillow (in the seed venv). NO ImageMagick.
 
 ## Gotchas (hard-won)
 
 - **Unique temp paths per download.** A shared `/tmp/logo_<nn>` cross-contaminates when templates source concurrently (`nn` is only unique within a template) - one template's item 14 overwrites another's. Symptom: a cell shows a different template's image. Fix: `/tmp/<slug>_<nn>`. The montage is what catches it.
 - **The montage is the real QC gate**, not per-item vision-verify (nondeterministic timing lets contamination through).
-- **`future examples.md` checkboxes are stale in both directions** - verify against disk, not the doc.
-- Half-done folders exist (images, no def). Diff disk vs `templateOrder` before picking a batch.
+- **The catalog is authoritative, not backlog checkboxes.** Reconcile the active backlog against disk; the archived checklist preserves history and may be stale in either direction.
+- Diff category-level template folders vs defs and `templateOrder` before picking a batch; keep half-done/unregistered material in `dev-docs/seed-examples/candidates/`.
 - Photo source agents pick badly-framed shots (montages, harsh shadows); re-source from the montage.
-- **Cover candidates go to scratch, ADD-only** - source agents write `SCRATCH/<slug>/`, never into `examples/`, and never delete/overwrite a sibling's file (a stray agent once dumped imgur error placeholders into the repo root). Install the one picked cover yourself after the human eyeballs it.
-- **Cover verifiers must be read-only** (`agentType: 'Explore'`) - a write-capable verify agent can corrupt the candidate set. The vision score is advisory; it misranks covers, so the surface-sim montage decides.
+- **Cover candidates go to scratch, ADD-only** - source agents write `dev-docs/seed-examples/candidates/<cat>/<slug>/<RUN_ID>/`, never into `examples/`, and never delete/overwrite a sibling's file (a stray agent once dumped imgur error placeholders into the repo root). Install the one picked cover yourself after the human eyeballs it.
+- **Cover verifiers must be read-only** (the legacy adapter uses `agentType: 'Explore'`; other hosts use their own read-only controls) - a write-capable verify agent can corrupt the candidate set. The vision score is advisory; it misranks covers, so the surface-sim montage decides.
 - **Agent montage QC is noisy - it FLAGS, you DECIDE.** Sonnet contact-sheet readers called a clean 18/18 dinosaur set "broken 11/18" and false-positived a Minecraft chicken, while genuinely catching a hollowed-out logo wordmark that was invisible at contact-sheet scale. Treat every report as a list to verify, never as a verdict. Verify at full size before acting on a flag.
 - **Verify a template on the background it actually ships on.** Compositing an `autoPlate:{mode:"uniform"}` template (which renders on a light plate) against the dark board produces a pile of bogus "illegible-on-dark" findings. For transparency QC, show each PNG over BOTH a light card and the dark board - a white fringe shows on dark, a punched hole shows on light.
-- **Keep QC artifacts inside the repo** (`examples/_montages/...`, gitignored). Reading images from `/private/tmp` trips a permission prompt on every file, and that scratchpad can be wiped mid-session.
+- **Keep QC artifacts inside the repo** (`dev-docs/seed-examples/previews/...`, gitignored), with category/template/style context in per-template output names. Reading images from `/private/tmp` trips a permission prompt on every file, and that scratchpad can be wiped mid-session.
 
-## Orchestration
+## Dedicated artifact handoff
 
-- Workflow tool: `pipeline(TEMPLATES, rosterAgent, sourceStage)`; `sourceStage` chunks items and `parallel()`s sonnet source agents. Schema-validate both stages' output.
-- Models: **opus** for the roster (accuracy/comprehensiveness), **sonnet** for source/vision (mechanical fetch+verify). ~5-6 agents/template.
-- On transient throttle, resume via `{scriptPath, resumeFromRunId}` - cached agents replay free. Do not pre-wave-pace.
-- Covers ([this skill's cover sourcing Workflow helper](scripts/cover-sourcing-wf.template.js)): sonnet source agents are write-capable (they save scratch candidates); the verify stage MUST be read-only sonnet `Explore`. No opus roster stage - a cover has no item list.
+Use [the artifact workflow](references/artifact-workflow.md) for task-local receipts, source inventory reuse, and isolated-workspace materialization. The [materialization helper](scripts/materialize-inputs.py) copies only declared hash-verified inputs; the [receipt template](assets/artifact-receipt.template.json) records media, counts, provenance, recovery, and visual QC without changing application manifests. Ignored artifact files are outside broker Git-patch acceptance.
+
+## Execution and reconciliation
+
+1. Inspect the current host capabilities. Use native subagents when available and authorized, or execute sequentially. Generic subagent permission does not activate the opt-in `orchestrate` broker workflow. Do not invent a Workflow tool or translate its API directly into another tool's arguments.
+2. Assign exact template/item identities, owned output paths, media boundaries, source/QC requirements, and expected result fields. Choose models only through the host's approved mechanism; omission means its existing default, not a hidden provider preference. Cover sourcing may write only its run-owned candidates; cover verification is read-only.
+3. Keep one result row per requested template and roster item, including failed, missing, duplicate, or invalid results. Reconcile requested = succeeded + failed + pending before authoring manifests. A roster failure leaves its item count unknown, not zero-success. Record unexpected result IDs separately instead of silently accepting or discarding them.
+4. Treat model scores and worker claims as advisory. Verify saved files and inspect the montage/surface previews. Retry only failed owned work after checking existing outputs; a resumed run is not assumed free, cached, or supported.
+
+### Optional legacy Workflow adapter
+
+Only on a host that actually provides compatible `pipeline`, ordered `parallel`, `agent`, schema validation, and top-level script-result semantics, adapt the [batch](scripts/batch-sourcing-wf.template.js) or [cover](scripts/cover-sourcing-wf.template.js) template in task scratch. They are not Node programs or native-subagent API wrappers. Validate that host's current contract before execution; the templates fail before calls when the required globals are absent. Bind any model overrides to an approved current catalog; the templates otherwise inherit host defaults. Use `scriptPath`/`resumeFromRunId` only if that host documents those fields and the prior run identity is verified.
 
 ## Constraints
 

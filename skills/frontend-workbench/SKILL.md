@@ -1,31 +1,32 @@
 ---
 name: frontend-workbench
-description: Route frontend work to the relevant visual-direction, image-first, anti-slop, accessibility, design-system, or Figma guidance without adding a separate skill for each. Use when creating, redesigning, or extending a user-facing web interface, including the build-time accessibility and design-system guidance that work needs. For auditing existing UI code against the Web Interface Guidelines and reporting file:line findings, use web-design-guidelines instead.
+description: Build, redesign, extend, or audit user-facing web interfaces. Select build mode for visual direction, images, accessibility, design systems, or Figma work; select audit mode for existing UI, UX, accessibility, and Web Interface Guidelines reviews with file:line findings. Audit requests do not authorize redesign or implementation.
 ---
 
 # Frontend Workbench
 
-Use this as a router, not a mandate to load every reference. Read the smallest set that matches the task.
+Select **build** or **audit** from the requested outcome before loading references. If a request includes both, preserve its explicit scope and approval for each. Inspect the repository and the current interface; use the specified files or infer a bounded surface from the task before asking for missing context.
+
+## Audit mode
+
+Read the pinned [Web Interface Guidelines](references/guidelines.md), then inspect the requested existing files and relevant rendered behavior. Read [accessibility](references/accessibility.md) only for the audit techniques needed by the target. Produce confirmed `file:line` findings with the affected behavior, evidence, and severity; separate unverified observations. Preserve the repository's review artifact convention when one exists.
+
+Audit mode does not load design-direction, image-first, anti-slop, or Figma build guidance; does not generate images, launch redesign, or edit application sources. An audit is not implementation approval. Vercel-specific copywriting preferences apply only to projects using those conventions or explicit Vercel-style compliance requests. Universal accessibility, interaction, layout, performance, forms, and i18n guidance applies where relevant.
+
+## Build mode
 
 | Task | Read |
 | --- | --- |
-| Create a new page, screen, or visible redesign | [`references/design-direction.md`](references/design-direction.md), [`references/image-first.md`](references/image-first.md), and [`references/anti-slop.md`](references/anti-slop.md) |
-| Make a narrow visual change to an existing product | [`references/design-direction.md`](references/design-direction.md) and [`references/anti-slop.md`](references/anti-slop.md); capture the current UI first |
-| Audit or implement accessibility while building or changing an interface | [`references/accessibility.md`](references/accessibility.md) |
-| Review existing UI code for compliance and report findings as `file:line` | the `web-design-guidelines` skill - it owns the Web Interface Guidelines review pass; this router owns build-time guidance |
-| Create tokens, themes, primitives, or a component library | [`references/design-systems.md`](references/design-systems.md) |
-| Create or update a Figma screen | [`references/figma-design.md`](references/figma-design.md) |
+| New page, screen, or visible redesign | [Design direction](references/design-direction.md), [image-first](references/image-first.md), [anti-slop](references/anti-slop.md) |
+| Narrow visual change | [Design direction](references/design-direction.md), [anti-slop](references/anti-slop.md); capture the current UI first |
+| Interactive controls, forms, navigation, dialogs, motion | [Accessibility](references/accessibility.md) |
+| Tokens, themes, primitives, component library | [Design systems](references/design-systems.md) |
+| Requested Figma work | [Figma design](references/figma-design.md) |
 
-## Shared workflow
+Keep an intentional existing design system. Establish a concrete visual target for new visual work or redesign; use the host's image generation capability when the image-first route calls for it. Implement within the authorized scope and compare rendered output with the target at the same viewport. Narrow changes do not authorize a whole-site redesign.
 
-1. Inspect the repository and current UI before changing an existing interface.
-2. Keep the existing design system when it is intentional; do not replace it with a generic new aesthetic.
-3. For new visual work or redesigns, establish a concrete visual target before coding. Use the built-in `imagegen` skill when the image-first reference requires generation.
-4. Implement the interface in real code, then compare a rendered screenshot against the target at the same viewport.
-5. Apply the accessibility route for interactive controls, forms, custom widgets, navigation, dialogs, motion, or an explicit audit.
+Use React, framework, and motion guidance when relevant; this package owns visual process and UI auditing. It contains its required references and does not depend on a sibling installation.
 
-Use React-, framework-, and motion-specific skills alongside this router when their triggers match. The references here own visual direction and process; they do not replace implementation guidance for a framework.
+## Maintenance
 
-## Sources
-
-Read [`references/sources.md`](references/sources.md) only when updating this package, checking provenance, or refreshing its pinned material.
+[Sources](references/sources.md) records pinned material. Do not fetch mutable remote guidelines during normal use. An explicit upstream refresh requires comparison with the pinned rules and preservation of [the Web Interface Guidelines license](references/LICENSE-web-guidelines.txt).

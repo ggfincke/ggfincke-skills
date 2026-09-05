@@ -116,7 +116,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
     { name: 'worker-broker', version: '0.1.0' },
     {
       instructions:
-        'Delegate bounded repository work. Treat broker-computed Git and verification evidence as authoritative.',
+        'Delegate bounded repository source work. Git patches exclude ignored artifacts. Treat broker-computed Git, verification, and capability evidence as authoritative within their stated scopes.',
     }
   )
 
@@ -125,7 +125,7 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
     {
       title: 'Start worker',
       description:
-        'Start one bounded native worker in an isolated Git worktree and return immediately.',
+        'Start one bounded native worker in an isolated Git worktree and return immediately. Acceptance covers Git-visible source changes, not ignored artifacts. required_capabilities rejects unsupported or unverified guarantees before work begins; allowed_paths is post-execution detection, not runtime containment.',
       inputSchema: StartWorkerRequestSchema,
     },
     async (input) =>

@@ -5,7 +5,12 @@
 import path from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
-import type { BrokerConfig } from './contracts.js'
+import {
+  PROVIDER_NAMES,
+  type BrokerConfig,
+  type ProviderName,
+} from './contracts.js'
+import { runDoctor } from './doctor.js'
 import { runCcusage as runCcusageCommand } from './ccusage.js'
 import { defaultBrokerConfig } from './config.js'
 import { connectDaemon, ensureDaemonClient } from './daemon/client.js'
@@ -32,6 +37,8 @@ export interface ParsedCli
   timeout?: number
   pretty: boolean
   when_idle: boolean
+  smoke?: boolean
+  provider?: ProviderName
 }
 
 export interface CliDependencies
@@ -73,12 +80,15 @@ Commands:
   daemon status          print shared daemon status
   daemon stop            stop the daemon when no jobs are active
   daemon stop --when-idle drain active jobs, then stop the daemon
+  doctor                 inspect binaries and capabilities without starting a daemon
 
 Options:
   --state-dir <path>     override WORKER_BROKER_HOME
   --pretty               pretty-print JSON output
   --json                 machine-readable output
   --timeout <seconds>    per-call daemon wait (default 900)
+  --smoke                doctor only: run bounded disposable native probes
+  --provider <name>      doctor only: select one provider
 `
 }
 
@@ -167,6 +177,19 @@ export function parseCli(argv: string[]): ParsedCli
       markOption(argument)
       parsed.when_idle = true
     }
+    else if (argument === '--smoke')
+    {
+      markOption(argument)
+      parsed.smoke = true
+    }
+    else if (argument === '--provider')
+    {
+      markOption(argument)
+      const provider = optionValue(argument, ++index)
+      if (!(PROVIDER_NAMES as readonly string[]).includes(provider))
+        throw new CliUsageError(`unknown provider: ${provider}`)
+      parsed.provider = provider as ProviderName
+    }
     else if (argument?.startsWith('-'))
       throw new CliUsageError(`unknown option: ${argument}`)
     else if (argument !== undefined) parsed.positionals.push(argument)
@@ -202,6 +225,11 @@ export function parseCli(argv: string[]): ParsedCli
     requireNoPositionals()
     if (parsed.request_path === undefined)
       throw new CliUsageError('run requires --request <file>')
+  }
+  else if (command === 'doctor')
+  {
+    allowOnly('--state-dir', '--pretty', '--json', '--smoke', '--provider')
+    requireNoPositionals()
   }
   else if (command === 'wait')
   {
@@ -335,6 +363,18 @@ async function dispatchCli(
     return (await runCcusage(config.state_dir, parsed.passthrough ?? [])) === 0
       ? 0
       : 1
+  }
+  if (parsed.command === 'doctor')
+  {
+    const report = await runDoctor(
+      config,
+      parsed.smoke ?? false,
+      parsed.provider === undefined ? PROVIDER_NAMES : [parsed.provider]
+    )
+    dependencies.writeStdout(
+      serializeOutput(report, parsed.pretty || parsed.json !== true)
+    )
+    return 0
   }
   if (parsed.command === 'wait')
   {

@@ -1,6 +1,6 @@
 ---
 name: docs-freshness-audit
-description: "Audit existing user-facing docs against the current code for drift and flag stale, wrong, or missing claims (features, CLI flags, config keys, paths, setup steps, screenshots, version numbers), verify each against live code, and reconcile the CHANGELOG and version strings with git history (Keep a Changelog). Produces one findings doc and stays read-only until you approve fixes. Use when asked whether the docs or README are still accurate or out of date, to audit docs against the code for staleness, or to sync the changelog and version from git. Not for authoring or updating docs in general (the documentation plugin), not code-vs-code drift (consolidation-audit), and not internal dev-docs or AGENTS.md/CLAUDE.md."
+description: "Audit existing user-facing docs against the current code for drift and flag stale, wrong, or missing claims (features, CLI flags, config keys, paths, setup steps, screenshots, version numbers), verify each against live code, and reconcile the CHANGELOG and version strings with git history (Keep a Changelog). Produces one findings doc and stays read-only until you approve fixes. Use when asked whether the docs or README are still accurate or out of date, to audit docs against the code for staleness, or to sync the changelog and version from git. Not for authoring or updating docs in general (use the host's available documentation workflow), not code-vs-code drift (consolidation-audit), and not internal dev-docs or AGENTS.md/CLAUDE.md."
 ---
 
 # Docs Freshness Audit
@@ -9,7 +9,7 @@ You are auditing existing, user-facing documentation against the current code to
 
 Copy [the packaged template](assets/templates/docs-freshness-audit-template.md) to one concrete dated document, normally `dev-docs/docs-freshness-audit-YYYY-MM-DD.md`. Never edit or overwrite the packaged template; update an existing audit only when the user points to the same scope. That concrete audit is the sole permitted write during the review; existing user-facing docs remain untouched until approval.
 
-This skill's axis is docs-vs-code. It is the docs-vs-code cousin of consolidation-audit (which is code-vs-code), and it borrows the evidence-before-verdict discipline of verify-review-findings (keeping its own doc-specific verdict set). It is not the documentation plugin: that authors and generates new docs; this audits and corrects what is already shipped. Do not write fresh docs here - find drift, verify it, and propose corrections in place.
+This skill's axis is docs-vs-code. It is the docs-vs-code cousin of consolidation-audit (which is code-vs-code), and it borrows the evidence-before-verdict discipline of verify-review-findings (keeping its own doc-specific verdict set). This audits what is already shipped; general documentation authoring belongs to the host's available writing tools or ordinary documentation workflow. Do not write fresh docs here - find drift, verify it, and propose corrections in place.
 
 Two limbs, run whichever the input calls for (often both):
 
@@ -95,6 +95,10 @@ Only claim what you verified. Do not assert the rest of the docs are accurate - 
 ## Notes
 
 - Siblings: consolidation-audit is the code-vs-code cousin and shares this doc shape and the Current/verified (Considered & Rejected) discipline; verify-review-findings supplies the evidence-before-verdict rule, though there you triage external claims and here you generate findings about the docs; mega-review is the multi-lens orchestrator, not this; phased-implementation is the after-approval handoff. The changelog limb follows the public Keep a Changelog standard (keepachangelog.com), not a skill in this repo.
-- The documentation plugin authors new docs from scratch; this skill audits and corrects what already exists. If the user wants brand-new docs, that is the plugin's job, not this one.
+- For brand-new docs, discover available documentation tools or use the ordinary writing workflow. Do not assume a documentation plugin is installed or request an unrelated installation. This skill owns auditing existing claims.
 - references/usage.md has first-turn invocation variants by input (a single README, the whole docs/ tree, changelog/version-from-git, a manifest/marketplace listing, stale screenshots, a pre-release sweep).
 - assets/templates/docs-freshness-audit-template.md is the packaged template to copy; the concrete audit document is the findings record and source of truth, with scope, doc inventory, per-claim findings table, missing-from-docs, current/verified, and the recommended update sequence.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

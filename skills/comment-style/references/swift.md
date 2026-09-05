@@ -1,5 +1,8 @@
 # Comment Style - Swift
 
+These are defaults. Explicit target-project API documentation requirements and tooling-significant syntax take precedence, including on functions, methods, modules, and tests. Preserve required docblocks; scope any necessary enforcer override to that documented surface.
+
+
 Follows the shared principles in `../SKILL.md`. Swift specifics + how to enforce them.
 
 ## Header
@@ -14,8 +17,8 @@ Path is relative to the repo root. The description is one untagged lowercase phr
 ## Language specifics
 
 - `// MARK: -` for sections.
-- `#Preview`, not `PreviewProvider`.
-- `///` documentation belongs on types (`class`, `struct`, `enum`, `actor`, `protocol`) when a short paragraph helps orient on the larger unit. Ordinary functions and methods use a plain `//` comment instead. Do not use `/* */` blocks.
+- Choose `#Preview` or `PreviewProvider` according to the actual Swift/Xcode and deployment target. The comment checker does not enforce this API choice.
+- `///` documentation belongs on types (`class`, `struct`, `enum`, `actor`, `protocol`) when a short paragraph helps orient on the larger unit, including when a standalone attribute such as `@MainActor` precedes the type. Ordinary functions and methods use a plain `//` comment instead. Do not use prose `/* */` blocks; those characters inside string literals or line comments are not block comments.
 - Allowed `///` summaries are complete sentences: capitalized and period-terminated.
 - Tooling comments are exempt: `swiftlint:`.
 

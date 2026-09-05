@@ -1,8 +1,9 @@
 // projects/tierlistbuilder/seed-example-sourcing/scripts/cover-sourcing-wf.template.js
-// sources _cover.jpg hero-banner CANDIDATES for templates that already have item images,
+// legacy Workflow cover sourcing with read-only scoring and explicit failed results
 
-// then read-only vision-scores them. adapt COVERS + SCRATCH, copy to the scratchpad, run via {scriptPath}.
-// pipeline = sonnet multi-angle source (write-only, ADD never overwrite) -> read-only sonnet verify.
+// then read-only vision-scores them. adapt COVERS + RUN_ID, copy to the scratchpad, run via {scriptPath}.
+// requires compatible Workflow globals; source is ADD-only, verification is read-only.
+// models inherit host defaults unless an approved host binding is supplied.
 // output is RANKED CANDIDATES for a human to eyeball (contact sheet + simulate-cover-surfaces.py); it does NOT install.
 // covers are OPTIONAL: only franchise rosters + music discographies where one evocative textless image fits.
 
@@ -14,20 +15,21 @@ export const meta = {
     {
       title: 'Source',
       detail:
-        'sonnet fetches several textless wide hero candidates per template, unique scratch paths',
+        'fetch textless wide hero candidates per template into unique scratch paths',
     },
     {
       title: 'Verify',
-      detail:
-        'read-only sonnet vision-scores each candidate; human makes the final call',
+      detail: 'read-only vision scoring; human makes the final call',
     },
   ],
 }
 
 const ROOT = '/Users/ggfincke/Projects/Applications/tierlistbuilder'
-const UA = 'tierlistbuilder-seed/1.0 (garrettfincke@gmail.com)'
-// EDIT: per-session scratch root; each template gets SCRATCH/<slug>/. candidates live here, NOT in examples/.
-const SCRATCH = '<SESSION_SCRATCHPAD>/covers'
+const UA = 'tierlistbuilder-seed/1.0'
+// edit the run id for each pass; reuse it only when resuming that pass.
+// candidates stay in SCRATCH/<cat>/<slug>/<RUN_ID>/, never in examples/.
+const RUN_ID = '<RUN_ID>'
+const SCRATCH = `${ROOT}/dev-docs/seed-examples/candidates`
 
 // EDIT THIS: one entry per template that should get a cover.
 // kind: 'franchise' (key art / textless ensemble poster / box-art hero / iconic vista)
@@ -73,7 +75,7 @@ const SOURCE_SCHEMA = {
         properties: {
           file: {
             type: 'string',
-            description: 'basename saved under SCRATCH/<slug>/',
+            description: 'basename saved under SCRATCH/<cat>/<slug>/<RUN_ID>/',
           },
           width: { type: 'number' },
           height: { type: 'number' },
@@ -146,7 +148,7 @@ SEARCH ANGLE (stick to this angle): ${angle.how}
 ${guidance(m)}
 
 RULES:
-- User-Agent for ALL downloads: '${UA}'. Copyright/licensing does NOT matter (local gitignored preview) - pick the best correct image from any reachable source.
+- User-Agent for ALL downloads: '${UA}'. Record source provenance, known usage constraints, and intended use; local preview does not grant publication rights. Mark unknown rights and retain alternatives. Do not disclose personal contact details or remove credits/watermarks. Follow the host image-editing contract and preserve pre-existing originals.
 - Prefer landscape/wide sources; textless. Any baked-in title/logo/credits/watermark makes it weak - avoid.
 - Download to a unique temp path, normalize with Pillow (open, convert RGB, if long side > 3840 downscale to 3840 LANCZOS, save JPEG quality 92) via: uv run --project scripts/seed_pipeline python -c "..."
 - Save 2-3 candidates into this EXACT folder (create it), ADD-ONLY - never delete or overwrite an existing file there: ${folder}
@@ -174,41 +176,86 @@ Be skeptical - wrong-entity traps are the #1 failure. Describe what you ACTUALLY
 - usable: true only if entityCorrect AND resolutionOk AND it is real (not composited) professional imagery.
 If you cannot open the image, set usable=false and say so. Never guess from the filename.`
 
+if (
+  typeof pipeline !== 'function' ||
+  typeof parallel !== 'function' ||
+  typeof agent !== 'function' ||
+  typeof log !== 'function'
+)
+{
+  throw new Error(
+    'Legacy Workflow globals unavailable; use the native-subagent or sequential contract in SKILL.md'
+  )
+}
+if (RUN_ID === '<RUN_ID>')
+  throw new Error('Set a fresh run-owned candidate directory before sourcing')
+
+async function callAgent(prompt, options)
+{
+  try
+  {
+    return (
+      (await agent(prompt, options)) ?? { workerError: 'missing worker result' }
+    )
+  }
+  catch (error)
+  {
+    return { workerError: String(error) }
+  }
+}
+
 const out = await pipeline(
   COVERS,
   async (m) =>
   {
-    const folder = `${SCRATCH}/${m.slug}`
+    const folder = `${SCRATCH}/${m.cat}/${m.slug}/${RUN_ID}`
     const perAngle = await parallel(
       ANGLES.map(
         (a) => () =>
-          agent(sourcePrompt(m, a, folder), {
+          callAgent(sourcePrompt(m, a, folder), {
             label: `source:${m.slug}:${a.key}`,
             phase: 'Source',
             // write-capable on purpose
-            model: 'sonnet',
             schema: SOURCE_SCHEMA,
           })
       )
     )
-    const files = perAngle
-      .filter(Boolean)
-      .flatMap((r) =>
-        (r.saved || []).map((s) => ({ ...s, file: `${folder}/${s.file}` }))
-      )
-    return { ...m, folder, files }
+    const sourceFailures = ANGLES.flatMap((angle, index) =>
+      Array.isArray(perAngle[index]?.saved)
+        ? []
+        : [
+            {
+              angle: angle.key,
+              error: perAngle[index]?.workerError || 'missing source result',
+            },
+          ]
+    )
+    const files = perAngle.flatMap((result) =>
+      Array.isArray(result?.saved)
+        ? result.saved.map((saved) => ({
+            ...saved,
+            file: `${folder}/${saved.file}`,
+          }))
+        : []
+    )
+    return { ...m, folder, files, sourceFailures }
   },
   async (t) =>
   {
     if (!t || !t.files.length)
-      return { slug: t?.slug, verdicts: [], error: 'no candidates saved' }
+      return {
+        slug: t?.slug,
+        id: t?.id,
+        sourceFailures: t?.sourceFailures || [],
+        verdicts: [],
+        error: 'no candidates saved',
+      }
     const verdicts = await parallel(
       t.files.map(
         (f) => () =>
-          agent(verifyPrompt(f, t), {
+          callAgent(verifyPrompt(f, t), {
             label: `verify:${t.slug}`,
             phase: 'Verify',
-            model: 'sonnet',
             agentType: 'Explore',
             schema: VERDICT_SCHEMA,
           })
@@ -219,19 +266,53 @@ const out = await pipeline(
       id: t.id,
       kind: t.kind,
       folder: t.folder,
-      verdicts: verdicts.filter(Boolean).sort((a, b) => b.score - a.score),
+      sourceFailures: t.sourceFailures,
+      expectedCandidates: t.files.length,
+      verdicts: t.files
+        .map((file, index) =>
+        {
+          const verdict = verdicts[index]
+          return verdict?.file === file.file &&
+            typeof verdict.usable === 'boolean' &&
+            Number.isFinite(verdict.score)
+            ? verdict
+            : {
+                file: file.file,
+                usable: false,
+                score: 0,
+                reason:
+                  verdict?.workerError ||
+                  'missing, mismatched, or invalid verification result',
+              }
+        })
+        .sort((a, b) => b.score - a.score),
     }
   }
 )
 
-const clean = out.filter(Boolean)
+const clean = COVERS.map((cover) =>
+{
+  const matches = (out || []).filter((row) => row?.id === cover.id)
+  return matches.length === 1
+    ? matches[0]
+    : {
+        slug: cover.slug,
+        id: cover.id,
+        verdicts: [],
+        error: 'missing or duplicate template result',
+      }
+})
 const templatesNeedingResource = clean
   .filter((r) => !r.verdicts.some((v) => v.usable))
   .map((r) => r.slug)
 log(
-  `sourced+scored ${clean.length} templates; ${templatesNeedingResource.length} with nothing usable${templatesNeedingResource.length ? ': ' + templatesNeedingResource.join(', ') : ''}`
+  `accounted for ${clean.length}/${COVERS.length} templates; ${templatesNeedingResource.length} with nothing usable${templatesNeedingResource.length ? ': ' + templatesNeedingResource.join(', ') : ''}`
 )
 log(
   'NEXT (human): contact-sheet the folders, run simulate-cover-surfaces.py to pick coverZoom, then install the winner as examples/<cat>/<slug>/_cover.jpg'
 )
-return { templates: clean, templatesNeedingResource }
+return {
+  templates: clean,
+  expectedTemplates: COVERS.length,
+  templatesNeedingResource,
+}

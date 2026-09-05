@@ -1,6 +1,6 @@
 ---
 name: security-remediation
-description: Approval-gated security review and remediation run as five reviewer panels - threat model & attack surface, auth/authz & multi-tenant, input-to-sink injection, secrets/crypto/config/logging, and dependencies/build/tests - producing an evidence-based findings report with severity & confidence plus a minimal patch plan, then editing only approved fixes with regression tests. Use when asked to review or fix security issues, find or assess vulnerabilities, audit authentication/authorization or tenant isolation, trace injection/SSRF/XSS/path-traversal, review secrets, crypto, logging, uploads, webhooks, or dependency safety, or harden a feature, endpoint, or diff.
+description: Approval-gated security review and remediation run as five reviewer panels - threat model & attack surface, auth/authz & multi-tenant, input-to-sink injection, secrets/crypto/config/logging, and dependencies/build/tests - producing an evidence-based findings report and minimal patch plan, then implementing approved fixes and only requested or plan-approved tests. Use when asked to review or fix security issues, find or assess vulnerabilities, audit authentication/authorization or tenant isolation, trace injection/SSRF/XSS/path-traversal, review secrets, crypto, logging, uploads, webhooks, or dependency safety, or harden a feature, endpoint, or diff.
 ---
 
 # Security Remediation
@@ -190,9 +190,8 @@ After I approve specific findings or patch groups:
 
 - Implement only the approved scope.
 - Keep the diff minimal and idiomatic for this repository.
-- Add or update focused regression tests.
-- Prefer existing test helpers and fixtures.
-- Include both malicious and legitimate cases.
+- Add or update tests only when the user requested them or the approved patch plan includes them. Approval to fix a finding alone does not expand test scope; an already approved test plan needs no second approval.
+- For approved tests, use the test-coverage-audit plan and existing helpers/fixtures. Cover the few malicious and legitimate cases that protect the affected invariant, not every branch.
 - Run the relevant existing tests if possible.
 - If a test cannot be run, explain why and provide the exact command that should be run.
 - After editing, summarize:
@@ -210,3 +209,7 @@ Do not claim the entire codebase is secure. Only claim what the scoped review an
 - `references/usage.md` has first-turn scope variants (endpoint/authz, injection, upload/download, webhook, dependency) and ready-made follow-up prompts (approve one finding, push back on an overbroad fix, demand stronger evidence, add negative tests, tenant/authz, secrets/logging).
 - For behavior-preserving cleanup that is not security-driven, use the simplification-review skill; for a broad dedupe/refactor pass, use consolidation-audit.
 - To carry out an approved multi-patch plan, use the phased-implementation skill: one patch group at a time, run its tests, and gate between groups.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

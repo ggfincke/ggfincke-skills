@@ -88,6 +88,31 @@ class OutsideRootRejected(unittest.TestCase):
 				self.assertNotIn("Traceback", result.stderr)
 			self.assertEqual(path.read_text(encoding="utf-8"), body)
 
+	# an outside symlink stays untouched while an ordinary in-root file still gets fixed
+	def test_swift_fix_skips_symlink_outside_root(self) -> None:
+		with tempfile.TemporaryDirectory() as d:
+			base = Path(d)
+			root = base / "selected"
+			root.mkdir()
+			outside = base / "Outside.swift"
+			original = b"// Outside.swift\n// preserve external fixture\n\nlet value = 1\n"
+			outside.write_bytes(original)
+			link = root / "Linked.swift"
+			link.symlink_to(outside)
+			inside = root / "Inside.swift"
+			inside.write_text("// stale.swift\n// in-scope fixture\n\nlet value = 1\n")
+			scope = ["--swift", "--root", str(root), "--swift-root", str(root)]
+
+			fixed = support.run_script(CHECKER, ["--fix", *scope])
+			self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
+			self.assertEqual(outside.read_bytes(), original)
+			self.assertTrue(link.is_symlink())
+			self.assertEqual(
+				inside.read_text(), "// Inside.swift\n// in-scope fixture\n\nlet value = 1\n"
+			)
+			checked = support.run_script(CHECKER, ["--check", *scope])
+			self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
 
 class SwiftToolingExemption(unittest.TestCase):
 	# tooling comments remain exempt from ordinary prose checks
@@ -113,6 +138,22 @@ class SwiftToolingExemption(unittest.TestCase):
 			body = "// Sample.swift\n// does things\n\n// the function runs with parameters\nlet x = 1\n"
 			result = self._run_swift(body, root)
 			self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+	def test_valid_swift_syntax_is_not_prose(self) -> None:
+		cases = (
+			('let delimiter = "/*"\nlet raw = #"/* // */"#\n', 0),
+			("/// Owns view state.\n@MainActor\nfinal class Model {}\n", 0),
+			("/* ordinary prose */\nlet value = 1\n", 1),
+		)
+		with tempfile.TemporaryDirectory() as d:
+			for source, expected in cases:
+				with self.subTest(source=source):
+					result = self._run_swift(
+						"// Sample.swift\n// check syntax boundaries\n\n" + source, Path(d)
+					)
+					self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+					if expected:
+						self.assertIn("use line comments, not block comments", result.stdout)
 
 
 class SwiftMultilineStringSafety(unittest.TestCase):
@@ -154,7 +195,7 @@ class SwiftMultilineStringSafety(unittest.TestCase):
 	def test_doc_comment_rule_still_fires_outside_a_literal(self) -> None:
 		with tempfile.TemporaryDirectory() as d:
 			root = Path(d)
-			body = "// Sample.swift\n// render usage text\n\n/// Runs the tool.\nfunc run() {}\n"
+			body = "// Sample.swift\n// render usage text\n\n/// Runs the tool.\n@MainActor\nfunc run() {}\n"
 			(root / "Sample.swift").write_text(body, encoding="utf-8")
 			result = support.run_script(
 				CHECKER,
@@ -181,9 +222,8 @@ class SwiftRawStringScanning(unittest.TestCase):
 
 
 class SwiftPreviewProviderScope(unittest.TestCase):
-	# the rule is about an API choice, so it must read code only - a repo migrating away from
-	# PreviewProvider has to be able to write a comment naming it
-	def test_rule_reads_code_not_comments(self) -> None:
+	# choosing a preview API depends on the deployment target, not comment style
+	def test_preview_api_choice_is_outside_comment_style(self) -> None:
 		with tempfile.TemporaryDirectory() as d:
 			root = Path(d)
 			path = root / "Sample.swift"
@@ -199,7 +239,8 @@ class SwiftPreviewProviderScope(unittest.TestCase):
 				"// Sample.swift\n// preview helpers\n\nstruct P: PreviewProvider {}\n",
 				encoding="utf-8",
 			)
-			self.assertIn("use #Preview instead", support.run_script(CHECKER, scope).stdout)
+			result = support.run_script(CHECKER, scope)
+			self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class TestPathMatching(unittest.TestCase):

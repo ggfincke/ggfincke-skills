@@ -1,6 +1,6 @@
 ---
 name: test-pruning-audit
-description: "Audit an existing test suite and flag the tests that should not exist - low-value, redundant, exhaustive, tautological, brittle, over-mocked, or coverage-number filler - giving each a verdict (Delete / Merge / Simplify / Keep) w/ cited evidence, read-only until you approve what to remove. INVERSE of test-coverage-audit (which finds the MAJOR tests that are MISSING); send anything about test gaps, improving coverage, what to test, or writing/running tests to that skill, not this one. Use only for the prune direction: which tests to delete or prune, trimming test bloat, finding redundant / over-engineered / brittle tests, deciding which existing tests still earn their place, or that the suite tests too much or breaks on every refactor. Not simplification-review: judging that a test should not exist at all is a value call, not a behavior-preserving code cleanup."
+description: "Audit existing tests for low-value, redundant, brittle, exhaustive, or over-mocked coverage and propose evidence-backed Delete, Merge, Simplify, or Keep decisions. Use when asked what tests to remove; missing-test questions belong to test-coverage-audit. Preserve important sole coverage and stay read-only until removals are approved."
 ---
 
 # Test Pruning Audit
@@ -134,3 +134,7 @@ Claim only what you pruned. Do not call the surviving suite well-shaped beyond t
 - Siblings: test-coverage-audit is the inverse - it finds the few MAJOR tests that are MISSING and what is deliberately not worth testing; defer all missing-coverage / test-gap / "what should we test" / write-tests work there. simplification-review owns behavior-preserving in-place test trims (a Simplify borrows its mechanics), but the value call that a test should not exist is only this skill's. verify-review-findings supplies the evidence-before-verdict discipline applied here to hold Delete to the highest bar. mega-review is the multi-lens orchestrator; its test-gaps lens delegates to test-coverage-audit, and a pruning pass is not one of its default lenses. phased-implementation is the after-approval handoff for many removals.
 - references/usage.md has first-turn variants (a whole suite, one test file/module, a diff's new tests, "our tests are too brittle", a pre-refactor prune, a post-merge bloat sweep) and follow-ups (approve a subset, hand to phased-implementation, re-justify a Keep).
 - assets/templates/test-pruning-audit-template.md is the packaged template to copy; the concrete audit document is the findings record and source of truth, with the summary, setup, per-test table, keep/verified, safety check, and removal sequence.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

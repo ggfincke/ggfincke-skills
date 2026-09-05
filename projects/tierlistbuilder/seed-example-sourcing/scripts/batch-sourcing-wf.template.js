@@ -1,7 +1,8 @@
 // projects/tierlistbuilder/seed-example-sourcing/scripts/batch-sourcing-wf.template.js
-// adapt TEMPLATES + META then run with the Workflow tool; pipeline = opus roster -> sonnet source chunks
+// legacy Workflow adapter for roster sourcing with complete failure reconciliation
 
-// copy into the session scratchpad, edit, and invoke via {scriptPath}. sourcing branches on t.modality:
+// use only after the host capability check in SKILL.md; bind models through approved host options.
+// copy into task scratch; this is not a Node script. sourcing branches on t.modality:
 //   'logo'   -> png, transparent, uniform plate, labels hidden
 //   'render' -> png, meaningful alpha, plate off, labels shown
 //   'photo'  -> jpg, flatten white, plate off, labels shown
@@ -14,18 +15,17 @@ export const meta = {
   phases: [
     {
       title: 'Roster',
-      detail: 'opus builds the canonical ordered item list per template',
+      detail: 'build the canonical ordered item list per template',
     },
     {
       title: 'Source',
-      detail:
-        'sonnet fetches + normalizes + vision-verifies one image per item',
+      detail: 'fetch, normalize, and vision-verify one image per item',
     },
   ],
 }
 
 const ROOT = '/Users/ggfincke/Projects/Applications/tierlistbuilder'
-const UA = 'tierlistbuilder-seed/1.0 (garrettfincke@gmail.com)'
+const UA = 'tierlistbuilder-seed/1.0'
 
 // EDIT THIS: one entry per template in the batch.
 // modality: 'logo' | 'render' | 'photo' | 'poster'. must = comma-separated must-include items.
@@ -143,10 +143,35 @@ function pad2(n)
   return (n < 10 ? '0' : '') + n
 }
 
+if (
+  typeof pipeline !== 'function' ||
+  typeof parallel !== 'function' ||
+  typeof agent !== 'function'
+)
+{
+  throw new Error(
+    'Legacy Workflow globals unavailable; use the native-subagent or sequential contract in SKILL.md'
+  )
+}
+
+async function callAgent(prompt, options)
+{
+  try
+  {
+    return (
+      (await agent(prompt, options)) ?? { workerError: 'missing worker result' }
+    )
+  }
+  catch (error)
+  {
+    return { workerError: String(error) }
+  }
+}
+
 const out = await pipeline(
   TEMPLATES,
   (t) =>
-    agent(
+    callAgent(
       `Build the canonical item roster for a TierListBuilder tier-list template.
 
 Template: "${t.title}" (modality: ${t.modality}).
@@ -157,12 +182,27 @@ Per item output: externalId (kebab-case, unique, stable), label (films/games "Ti
       {
         label: `roster:${t.slug}`,
         phase: 'Roster',
-        model: 'opus',
         schema: ROSTER_SCHEMA,
       }
     ),
   async (roster, t) =>
   {
+    if (
+      !Array.isArray(roster?.items) ||
+      !roster.items.length ||
+      new Set(roster.items.map((item) => item.externalId)).size !==
+        roster.items.length
+    )
+    {
+      return {
+        slug: t.slug,
+        cat: t.cat,
+        status: 'failed',
+        items: null,
+        results: [],
+        error: roster?.workerError || 'invalid or duplicate roster identities',
+      }
+    }
     const m = MODALITY[t.modality]
     const items = roster.items.map((it, i) => ({ ...it, nn: pad2(i + 1) }))
     const folderRel = `examples/${t.cat}/${t.slug}`
@@ -170,13 +210,13 @@ Per item output: externalId (kebab-case, unique, stable), label (films/games "Ti
     const chunkResults = await parallel(
       chunks.map(
         (ch, ci) => () =>
-          agent(
+          callAgent(
             `Source ${m.word} images for a TierListBuilder tier-list template. Save one clean image per item.
 
 ROOT = ${ROOT}
 Output folder (create it): ${ROOT}/${folderRel}
 User-Agent for ALL downloads: '${UA}'
-Copyright/licensing does NOT matter (local gitignored preview) - pick the best correct image from any reachable source.
+Record source provenance, known usage constraints, and intended use; local preview does not grant publication rights. Mark unknown rights and retain alternatives. Do not disclose personal contact details or remove credits/watermarks. Follow the host image-editing contract and preserve pre-existing originals.
 
 Items (JSON): ${JSON.stringify(ch, null, 2)}
 
@@ -191,13 +231,46 @@ Every saved file MUST be <nn>-<externalId>.${m.ext} with the exact nn + external
             {
               label: `source:${t.slug}#${ci + 1}`,
               phase: 'Source',
-              model: 'sonnet',
               schema: SOURCE_SCHEMA,
             }
           )
       )
     )
-    const results = chunkResults.filter(Boolean).flatMap((r) => r.results || [])
+    const returned = chunkResults.flatMap((r) =>
+      Array.isArray(r?.results) ? r.results : []
+    )
+    const workerErrors = chunks.flatMap((_, index) =>
+      Array.isArray(chunkResults[index]?.results)
+        ? []
+        : [
+            {
+              chunk: index,
+              error: chunkResults[index]?.workerError || 'missing chunk result',
+            },
+          ]
+    )
+    const expectedIds = new Set(items.map((item) => item.externalId))
+    const unexpectedResults = returned.filter(
+      (row) => !expectedIds.has(row?.externalId)
+    )
+    const results = items.map((item) =>
+    {
+      const matches = returned.filter(
+        (row) => row?.externalId === item.externalId
+      )
+      if (matches.length !== 1 || typeof matches[0].saved !== 'boolean')
+      {
+        return {
+          externalId: item.externalId,
+          saved: false,
+          note:
+            matches.length > 1
+              ? 'duplicate result'
+              : 'missing or invalid result',
+        }
+      }
+      return matches[0]
+    })
     return {
       slug: t.slug,
       cat: t.cat,
@@ -205,8 +278,40 @@ Every saved file MUST be <nn>-<externalId>.${m.ext} with the exact nn + external
       modality: t.modality,
       items,
       results,
+      workerErrors,
+      unexpectedResults,
+      status:
+        results.every((row) => row.saved) &&
+        !workerErrors.length &&
+        !unexpectedResults.length
+          ? 'sourced-needs-qc'
+          : 'incomplete',
+      expected: items.length,
+      succeeded: results.filter((row) => row.saved).length,
+      failed: results.filter((row) => !row.saved).length,
     }
   }
 )
 
-return { templates: out.filter(Boolean) }
+const templates = TEMPLATES.map((template) =>
+{
+  const matches = (out || []).filter(
+    (row) => row?.slug === template.slug && row?.cat === template.cat
+  )
+  return matches.length === 1
+    ? matches[0]
+    : {
+        slug: template.slug,
+        cat: template.cat,
+        status: 'failed',
+        items: null,
+        results: [],
+        error: 'missing or duplicate template result',
+      }
+})
+return {
+  templates,
+  expectedTemplates: TEMPLATES.length,
+  failedTemplates: templates.filter((row) => row.status !== 'sourced-needs-qc')
+    .length,
+}

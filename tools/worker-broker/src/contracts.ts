@@ -32,6 +32,24 @@ export const REASONING_EFFORTS = [
 
 export type ProviderName = (typeof PROVIDER_NAMES)[number]
 export type WorkerMode = (typeof WORKER_MODES)[number]
+export const CAPABILITY_NAMES = [
+  'native_no_nesting',
+  'no_nested_agents',
+  'filesystem_read_only',
+  'filesystem_workspace_only',
+  'network_disabled',
+] as const
+export type CapabilityName = (typeof CAPABILITY_NAMES)[number]
+
+/** Broker evidence for a precisely scoped runtime restriction. */
+export interface CapabilityEvidence
+{
+  capability: CapabilityName
+  scope: string
+  status: 'enforced' | 'unsupported' | 'unverified'
+  layer: 'instructions' | 'detection' | 'prevention'
+  evidence: string
+}
 export type WorkerStatus = (typeof WORKER_STATUSES)[number]
 export type TerminalWorkerStatus = (typeof TERMINAL_WORKER_STATUSES)[number]
 
@@ -127,6 +145,7 @@ export interface StartWorkerRequest
   run?: string | undefined
   depends_on?: string[] | undefined
   allow_nested_agents?: boolean | undefined
+  required_capabilities?: CapabilityName[] | undefined
 }
 
 export interface NormalizedVerificationCommand
@@ -153,6 +172,7 @@ export interface NormalizedWorkerRequest
   run?: string
   depends_on: string[]
   allow_nested_agents: boolean
+  required_capabilities?: CapabilityName[]
 }
 
 export interface ModelWorkerResult
@@ -229,6 +249,7 @@ export interface VerificationResult
 
 export interface WorkerResult
 {
+  capability_evidence?: CapabilityEvidence[]
   job_id: string
   status: TerminalWorkerStatus
   provider: ProviderName
@@ -271,6 +292,7 @@ export interface WorkerResult
 
 export interface WorkerJob
 {
+  capability_evidence?: CapabilityEvidence[]
   job_id: string
   status: WorkerStatus
   request: NormalizedWorkerRequest
@@ -291,6 +313,7 @@ export interface WorkerJob
 /** Bounded lifecycle and assignment projection for routine broker reads. */
 export interface WorkerSummary
 {
+  capability_evidence?: CapabilityEvidence[] | undefined
   job_id: string
   status: WorkerStatus
   provider: ProviderName

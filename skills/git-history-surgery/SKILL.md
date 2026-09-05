@@ -29,7 +29,7 @@ For anything beyond a trivial unpushed amend, read `references/playbooks.md` and
 - Create a backup ref before any destructive or branch-wide rewrite: `git branch backup/<branch-or-head>-<timestamp> HEAD`. If detached, use a clear backup name and include the current short SHA.
 - Prefer non-interactive commands. Use `commit --amend`, `reset --soft`, `rebase --onto`, `cherry-pick -n`, or scripted sequence editing where possible.
 - Do not rewrite protected branches (`main`, `master`, `develop`, `development`, `prod`, `production`, `staging`, `release/*`, `hotfix/*`) unless the user explicitly names the protected branch and confirms the consequence.
-- Never use plain `git push --force`. Use `git push --force-with-lease origin HEAD:<branch>` after verifying the remote branch and upstream state.
+- Never use plain `git push --force` or a bare `--force-with-lease`. Before an approved rewrite, record the exact push URL, full destination ref, and full remote OID the user approved. Publish with `--force-with-lease=<full-ref>:<approved-oid>` and an explicit refspec to that same destination. A fetch must never replace the recorded approval OID.
 - Do not run `git reset --hard`, `git clean`, branch deletion, or stash dropping unless the user explicitly asked for that exact destructive operation.
 - Avoid broad cleanup. History surgery is about the requested commits and refs, not formatting, dependency refreshes, or opportunistic code changes.
 
@@ -48,11 +48,11 @@ Approval can be a direct instruction such as "rewrite and force-push this branch
 ## Execution Pattern
 
 1. Orient: run [this skill's snapshot helper](scripts/git-snapshot.sh), then inspect any commit range involved in the request.
-2. Confirm scope: identify the commits to keep, combine, split, drop, or move.
+2. Confirm scope: identify the commits to keep, combine, split, drop, or move. If remote publication is approved, capture its exact destination and current approved OID before rewriting; preserve that receipt through verification.
 3. Backup: create a local backup branch from the pre-op HEAD.
 4. Rewrite: use the relevant playbook from `references/playbooks.md`.
 5. Verify: inspect `git status --short --branch --untracked-files=all`, `git log --oneline --decorate --graph`, and any tests/checks needed for the changed code.
-6. Publish only if approved: fetch, verify the lease target, then push with `--force-with-lease`.
+6. Publish only if approved: compare the current destination with the recorded approval, then use the explicit approved-OID lease from `references/playbooks.md`. Stop on remote movement or lease failure; a new fetch does not grant new approval.
 7. Report: backup ref, rewritten range, commands that mattered, verification results, and any remaining local or remote work.
 
 ## Recovery Discipline

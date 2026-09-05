@@ -141,3 +141,7 @@ Read my intensity directive as the dial ("quick look" vs "be exhaustive"); honor
 ## Notes
 
 - For a larger approved set, work through it with the phased-implementation skill: one group at a time, re-checking between, rather than applying everything in one pass.
+
+## Shared evidence and approval
+
+Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

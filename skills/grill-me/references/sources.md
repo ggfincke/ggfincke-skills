@@ -15,4 +15,3 @@ Do not fetch mutable remote skill text during normal use. If asked to refresh fr
 - Inlined `grilling` into `grill-me`. Upstream `grill-me` is a one-line pointer (`Run a /grilling session.`) and does nothing if the primitive is not installed.
 - Dropped `disable-model-invocation` from frontmatter (not portable here). Opt-in is the description plus the Codex overlay.
 - Stateless: write no files. Upstream `grill-with-docs` is not adopted.
-- While active, the round/frontier format wins over this repo's always-on action-first one-question and five-item-list rules.

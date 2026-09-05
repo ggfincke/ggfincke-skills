@@ -24,7 +24,8 @@ Optional inputs:
 - `verification_commands`: trusted shell commands, optionally with `timeout_seconds`;
 - `model` and `effort`: provider-specific overrides; Cursor encodes effort in `model` and rejects the generic `effort` field;
 - `depends_on`: job IDs that must reach `completed` before this job leaves the queue. Dependencies must exist at submit time, so submit in topological order or the call fails with `unknown dependency job`. Any non-completed dependency rejects the dependent and the rejection cascades down the chain, so triage the first terminal failure in a chain before letting the rest of the phase drain. Declaring a phase pyramid up front is what collapses N waits into one; the exception is a phase that needs an earlier phase's integrated output, whose base ref would already be stale;
-- `allow_nested_agents`: default `false` and mechanically disabled where the provider supports it.
+- `allow_nested_agents`: default `false`; a prompt prohibition with provider-native control where supported. It does not prove shell-launched agents are impossible.
+- `required_capabilities`: optional explicit guarantees: `native_no_nesting`, `no_nested_agents`, `filesystem_read_only`, `filesystem_workspace_only`, or `network_disabled`. The broker rejects unsupported or unverified requirements before worktree creation or setup. Do not translate a broad user restriction into a weaker native-only requirement. Empty/omitted preserves existing job behavior.
 
 Every edit assignment must include an environment plan. Supply `setup_commands` that provision everything broker verification needs, or put an explicit no-broker-verification declaration in the task or acceptance criteria naming the lead's central verification command and when it will run. “Do not run tests” without either declaration is invalid. Worktrees are bare; for a monorepo whose dependencies are already installed centrally, the standard setup pattern is to create `<worktree>/node_modules` as a symlink to the valid shared `node_modules` tree, then run the broker commands. Use a repository-appropriate relative or absolute target and do not assume a worktree inherits the source checkout's dependencies.
 
@@ -74,13 +75,13 @@ Cancel queued work immediately or request process-group termination for running 
 
 ## `worker-broker wait` (background completion wake)
 
-The out-of-process wait for a wave that outlives one `wait_for_workers` probe. Run it as a background shell command and treat its exit as the single wake for the wave, instead of re-polling. The `worker-broker` bin is not on `PATH`, so run the absolute form and never the bare name:
+The out-of-process wait for a wave that outlives one `wait_for_workers` probe. Use the host's supported background shell/wake mechanism. Discover a configured broker installation and compatible Node runtime, verify those paths, and supply them as quoted variables; a verified `worker-broker` executable on `PATH` is also valid. Do not install, rebuild, or start another daemon merely to make this command available:
 
 ```
-/opt/homebrew/bin/node /Users/ggfincke/Projects/ggfincke-skills/tools/worker-broker/dist/src/cli.js wait --run <run> --json
+"$broker_node" "$broker_cli" wait --run "$run_id" --json
 ```
 
-Select with `--run <run>` or one or more `--job-id <id>`; `--timeout <seconds>` sets the per-call daemon wait (default 900) and the command keeps waiting across calls until the selection is terminal. It connects to the daemon the workers were started on and never spawns one — a spawned daemon would carry a different provider config, so a missing daemon is reported rather than papered over.
+`broker_node`, `broker_cli`, and `run_id` above are task-local values resolved from the current host and approved run, not literal placeholders to execute. If no suitable CLI or background wake exists, use available bounded status/wait tools with backoff and report the capability limit. Select with `--run <run>` or one or more `--job-id <id>`; `--timeout <seconds>` sets the per-call daemon wait (default 900) and the command keeps waiting across calls until the selection is terminal. It connects to the daemon the workers were started on and never spawns one — a spawned daemon would carry a different provider config, so a missing daemon is reported rather than papered over.
 
 The terminal JSON projection is aggregate-only: `selected`, `completed`, `failed`, `rejected`, `cancelled`, `pending`, and `timed_out`, plus `run` when that selector was used. It never repeats per-job summaries or result arrays. Use `get_worker_result` for the selected jobs whose full evidence you need.
 
@@ -119,4 +120,14 @@ Model prose is advisory. Git data, command exit codes, timeouts, and broker stat
 
 One daemon owns a state directory and all clients use it through the socket; do not run multiple broker processes against the same state directory or perform manual single-writer/version workarounds.
 
+Terminal results and summaries include broker-computed `capability_evidence`: each entry names its scope, enforcement status, evidence, and whether it is instructions, detection, or prevention. Older persisted jobs may lack it; that means unverified. Native feature controls are narrower than filesystem/process containment.
+
 Terminal results echo the requested `model` and `effort`, plus `effective_model` when the provider reports it.
+
+## Source and artifact acceptance
+
+Git snapshots follow ordinary ignore rules. A clean patch says nothing about ignored images, data, caches, or files touched and reverted during execution. Use the project-owned artifact workflow for ignored output, including declared input materialization, hashes, recovery, and visual verification. Never force-add ignored roots to turn artifact output into a source patch.
+
+Use `worker-broker doctor --json` through the verified host launcher before depending on native controls. It inspects versions and flag support without starting a daemon; supported flags alone do not prove effective filesystem or network containment. `--smoke --provider <name>` explicitly runs one bounded disposable protocol probe using the configured model or native default. Record the observed model separately; a successful probe does not certify confinement.
+
+Capability requirements currently fail closed for every listed guarantee: native flag support is reported separately from verified enforcement. The Codex no-nesting flag requests a narrow runtime control, but no installed-runtime tool-exclusion proof is retained. Do not call that guarantee enforced or silently remove a requirement to make a job run. Legacy requests can still run with explicit unverified evidence.

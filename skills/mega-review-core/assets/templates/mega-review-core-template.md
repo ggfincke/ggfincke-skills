@@ -140,6 +140,8 @@ _One row per root cause. Tag every lens that surfaced the finding._
 
 ### Group A: [Name and theme]
 
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
+
 **Theme:** [One line]
 **Findings:** [F1, F2]
 **Status:** Proposed / Approved / In Progress / Done / Deferred
@@ -154,6 +156,8 @@ _One row per root cause. Tag every lens that surfaced the finding._
 **Deviations / deferrals:** [Empty until implemented]
 
 ### Group B+: [Continue as needed]
+
+**Authorization:** [source concerns; generated outputs; named hand-written tests; existing verification commands; Git/external actions; approval source]
 
 ## Recommended Implementation Sequence
 

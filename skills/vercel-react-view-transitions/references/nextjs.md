@@ -2,7 +2,9 @@
 
 ## Setup
 
-`<ViewTransition>` works out of the box for `startTransition`/`Suspense` updates. To also animate `<Link>` navigations:
+Check the installed Next.js build, framework-managed React exports, and type declarations before using these examples. A React version printed by `npm ls` is not proof of App Router capability. Do not install a separate canary React or upgrade Next.js to make an animation request work without approval.
+
+The current Next.js guide documents App Router view transitions without configuration. Older builds can expose an experimental flag instead. Only use the following configuration if the installed build supports and requires it for the requested integration, and the change is approved; do not add it by default:
 
 ```js
 // next.config.js
@@ -12,9 +14,9 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-This wraps every `<Link>` navigation in `document.startViewTransition`. Any VT with `default="auto"` fires on **every** link click — use `default="none"` to prevent competing animations.
+React coordinates the native transition for participating boundaries. The flag is not a promise that every Link or Back navigation animates. Check the actual affected route and use `default="none"` when unrelated eligible changes should remain still.
 
-Do **not** install `react@canary` — see SKILL.md "Availability" for details.
+Primary documentation checked 2026-08-27: [Next.js view transition guide](https://nextjs.org/docs/app/guides/view-transitions) and [Link transitionTypes source](https://github.com/vercel/next.js/blob/cce7bf2fc01340ae0fed37eb79906faa53166b4e/docs/01-app/03-api-reference/02-components/link.mdx#transitiontypes). These APIs can vary between builds; installed exports, declarations, and a working fixture decide local availability.
 
 ---
 
@@ -22,21 +24,21 @@ Do **not** install `react@canary` — see SKILL.md "Availability" for details.
 
 When following `implementation.md`, apply these additions:
 
-**After Step 2:** Enable the experimental flag above.
+**After Step 2, if needed:** Confirm whether the installed build needs configuration and obtain approval for any change. Do not enable an obsolete flag in a build that works without it.
 
-**Step 4:** Use `transitionTypes` on `<Link>` — see "The `transitionTypes` Prop" section below for usage and availability.
+**Step 4, for requested navigation motion:** Use `transitionTypes` on `<Link>` only where supported. Otherwise preserve the existing Link and its behavior; directional animation can degrade.
 
-**After Step 6:** For same-route dynamic segments (e.g., `/collection/[slug]`), use the `key` + `name` + `share` pattern — see Same-Route Dynamic Segment Transitions below.
+**After Step 6, if relevant:** Inspect whether a dynamic route update actually remounts content before choosing update or key/name/share behavior below.
 
 ---
 
 ## Layout-Level ViewTransition
 
-**Do NOT add a layout-level VT wrapping `{children}` if pages have their own VTs.** Nested VTs never fire enter/exit when inside a parent VT — page-level enter/exit will silently not work. Remove the layout VT entirely.
+A persistent layout boundary can coexist with a changing child boundary. When the parent itself enters/exits, it normally owns that subtree's enter/exit; this does not mean all nested boundaries are inert. Check which boundary and first DOM node are inserted/removed before changing an existing layout.
 
-A bare `<ViewTransition>` in layout works only if pages have **no** VTs of their own.
+A layout can own an update or cross-fade, while child boundaries own independent changes or shared pairs. Avoid overlapping effects only where a fixture shows they compete.
 
-**Layouts persist across navigations** — `enter`/`exit` only fire on initial mount, not on route changes. Don't use type-keyed maps in layouts.
+**Persistent layouts do not remount on each navigation.** Their enter/exit props will not describe every route change, but type-keyed update behavior may still be useful. Put page enter/exit on a boundary that actually mounts/unmounts.
 
 ---
 
@@ -50,11 +52,13 @@ No wrapper component needed, works in Server Components:
 
 Replaces the manual pattern of `onNavigate` + `startTransition` + `addTransitionType` + `router.push()`. Reserve manual `startTransition` for non-link interactions (buttons, forms).
 
-**Availability:** `transitionTypes` requires `experimental.viewTransition: true` and is available in Next.js 15+ canary builds and Next.js 16+. If unavailable, use `startTransition` + `addTransitionType` + `router.push()` (see Programmatic Navigation below). To check: `grep -r "transitionTypes" node_modules/next/dist/` — if no results, fall back to programmatic navigation.
+**Availability:** Check the installed build's `next/link` and App Router Link declarations, relevant runtime code, and existing type check; do not assume a Next.js major version guarantees this prop. For example, search `rg -n 'transitionTypes' node_modules/next/dist/client` and inspect the result, not just whether a string exists somewhere. If unavailable, retain a normal Link, including prefetch, modifier keys, replace/scroll options, and accessibility. Do not convert links to buttons or intercept ordinary link behavior only to force motion.
 
 ---
 
 ## Programmatic Navigation
+
+Use this for an existing button action that already pushes a destination. It is not a replacement for Back, replace, or an ordinary Link:
 
 ```tsx
 'use client';
@@ -80,7 +84,7 @@ function NavigateButton({ href }: { href: string }) {
 
 ## Server-Side Filtering with `router.replace`
 
-For search/sort/filter that re-renders on the server (via URL params), use `startTransition` + `router.replace`. VTs activate because the state update is inside `startTransition`:
+When the existing filter action already replaces URL parameters, it can be scheduled in `startTransition`. Preserve other query parameters, the hash, and the route's existing scroll policy; do not change push to replace solely for animation:
 
 ```tsx
 'use client';
@@ -93,7 +97,9 @@ function SortControl() {
 
   function handleSort(sort: string) {
     startTransition(() => {
-      router.replace(`?sort=${sort}`);
+      const url = new URL(window.location.href);
+      url.searchParams.set('sort', sort);
+      router.replace(`${url.pathname}${url.search}${url.hash}`, { scroll: false });
     });
   }
 
@@ -101,7 +107,7 @@ function SortControl() {
 }
 ```
 
-List items wrapped in `<ViewTransition key={item.id}>` will animate reorder. This is the server-component alternative to the client-side `useDeferredValue` pattern in `patterns.md`.
+Here `scroll: false` assumes the existing filter preserves scroll; retain the actual app policy. Participating keyed item boundaries can animate reorder when the framework schedules a compatible transition. Verify that behavior instead of assuming the wrapper alone proves it.
 
 ---
 
@@ -137,7 +143,7 @@ Next.js `loading.tsx` is an implicit `<Suspense>` boundary. Wrap the skeleton in
 <ViewTransition enter="slide-up" default="none"><PhotoGrid photos={photos} /></ViewTransition>
 ```
 
-Same rules as explicit `<Suspense>`: use simple string props (not type maps) since Suspense reveals fire without transition types.
+As with explicit Suspense, a later reveal does not inherit earlier navigation types. Use string props or an intentional type-map fallback.
 
 ---
 
@@ -163,24 +169,24 @@ Same rules as explicit `<Suspense>`: use simple string props (not type maps) sin
 
 ## Same-Route Dynamic Segment Transitions
 
-When navigating between dynamic segments of the same route (e.g., `/collection/[slug]`), the page stays mounted — enter/exit never fire. Use `key` + `name` + `share`:
+If the router keeps a boundary mounted when a dynamic segment changes, an update may be enough. When the content identity should reset, a changed key plus a **stable matching name** creates an outgoing/incoming shared pair in one transition:
 
 ```tsx
 <Suspense fallback={<Skeleton />}>
-  <ViewTransition key={slug} name={`collection-${slug}`} share="auto" default="none">
+  <ViewTransition key={slug} name="collection-surface" share="auto" default="none">
     <Content slug={slug} />
   </ViewTransition>
 </Suspense>
 ```
 
-- `key={slug}` forces unmount/remount on change
-- `name` + `share="auto"` creates a shared element crossfade
-- VT inside `<Suspense>` (without keying Suspense) keeps old content visible during loading
+- `key={slug}` deliberately remounts that content and resets its local state. Omit it if state should remain and an update transition suffices.
+- `name="collection-surface"` stays the same on both sides; changing the name with the slug would prevent matching. Only one such surface may be rendered at a time; namespace it when multiple independent collections are present.
+- Keep the Suspense boundary's identity stable. A scheduled transition can preserve already revealed content while new content suspends; if a fallback appears between the two commits, the shared pair will not form. Provide explicit enter/exit fallbacks if that path should animate.
 
 ---
 
 ## Server Components
 
-- `<ViewTransition>` works in both Server and Client Components
-- `<Link transitionTypes>` works in Server Components — no `'use client'` needed
+- Use `<ViewTransition>` in Server Components only when the installed framework exposes it in that environment.
+- A supported `<Link transitionTypes>` can be used in Server Components; confirm the prop is available before adopting it.
 - `addTransitionType` and `startTransition` for programmatic nav require Client Components

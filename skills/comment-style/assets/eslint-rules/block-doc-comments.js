@@ -16,6 +16,10 @@ const LARGE_UNIT_TYPES = new Set([
 ])
 
 const TOOL_DIRECTIVE = /^(?:eslint|@ts-|istanbul|c8\b|v8\b)/i
+// these tags carry checker semantics in JS; prose-only tags do not exempt ordinary functions
+const JSDOC_TYPE_TAG =
+  /(?:^|\n)\s*\*?\s*@(?:type|import|param|arg|argument|returns?|typedef|callback|template|satisfies|public|private|protected|readonly|override|extends|augments|implements|class|constructor|this|enum)\b/
+const JSDOC_DEPRECATED_TAG = /(?:^|\n)\s*\*?\s*@deprecated\b/
 
 const isTestFile = (filename) =>
   /(?:^|\/)(?:tests?|e2e)\//.test(filename) ||
@@ -113,6 +117,7 @@ const rule = {
       cwd: getCwd(context),
     })
     const testFile = isTestFile(filename)
+    const javascriptFile = /\.[cm]?jsx?$/.test(filename)
 
     return {
       Program()
@@ -122,12 +127,18 @@ const rule = {
           if (comment.type !== 'Block' || isJsxComment(comment, sourceCode))
             continue
           const isDocumentation = comment.value.startsWith('*')
+          const directive = comment.value.replace(/^\s*\*?/gm, '').trim()
+          if (TOOL_DIRECTIVE.test(directive)) continue
           if (!isDocumentation)
           {
-            if (!TOOL_DIRECTIVE.test(comment.value.trim()))
-            {
-              context.report({ node: comment, messageId: 'blockComment' })
-            }
+            context.report({ node: comment, messageId: 'blockComment' })
+            continue
+          }
+          if (
+            JSDOC_DEPRECATED_TAG.test(comment.value) ||
+            (javascriptFile && JSDOC_TYPE_TAG.test(comment.value))
+          )
+          {
             continue
           }
           if (testFile)
