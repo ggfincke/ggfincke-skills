@@ -1,0 +1,18 @@
+{
+  "$comment": "Canonical MCP server registry. Consumed by scripts/sync-mcp.py; see docs/mcp-lanes.md for schema rules before editing.",
+  "version": 1,
+  "servers": {
+    "figma": {
+      "description": "Official Figma remote MCP server: reads design context from files and captures live web UI as editable canvas layers. Client-allowlisted by Figma; works from Claude Code, blocked for opencode until admitted.",
+      "transport": "remote",
+      "url": "https://mcp.figma.com/mcp",
+      "tools": ["claude-code"]
+    },
+    "figma-local": {
+      "description": "Figma desktop Dev Mode MCP server. Requires the Figma desktop app running with the Dev Mode MCP toggle enabled; no OAuth. Selection-based context.",
+      "transport": "remote",
+      "url": "http://127.0.0.1:3845/mcp",
+      "tools": ["opencode"]
+    }
+  }
+}

@@ -52,6 +52,7 @@ class SymlinkPayload:
 class BytesPayload:
 	content: bytes
 	preserve_metadata_from: Path | None = None
+	private: bool = False
 
 
 Payload = Union[CopyTreePayload, CopyFilePayload, SymlinkPayload, BytesPayload]
@@ -173,6 +174,11 @@ class FileOps:
 	def symlink(self, target: Path | str, destination: Path, target_is_directory: bool) -> None:
 		self.before("symlink", destination)
 		destination.symlink_to(target, target_is_directory=target_is_directory)
+
+	def create_private_file(self, destination: Path) -> None:
+		self.before("create-private-file", destination)
+		descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+		os.close(descriptor)
 
 	def write_bytes(self, destination: Path, content: bytes) -> None:
 		self.before("write", destination)
@@ -486,6 +492,8 @@ def _stage_replacement(item: Replacement, stage: Path, ops: FileOps) -> None:
 		ops.symlink(payload.target, stage, payload.target_is_directory)
 		return
 	if isinstance(payload, BytesPayload):
+		if payload.private:
+			ops.create_private_file(stage)
 		ops.write_bytes(stage, payload.content)
 		if payload.preserve_metadata_from is not None and payload.preserve_metadata_from.exists():
 			ops.copystat(payload.preserve_metadata_from, stage)
@@ -493,10 +501,12 @@ def _stage_replacement(item: Replacement, stage: Path, ops: FileOps) -> None:
 	raise AssertionError(f"unknown payload for {item.operation_id}")
 
 
-def _clone_backup(source: Path, backup: Path, ops: FileOps) -> None:
+def _clone_backup(source: Path, backup: Path, ops: FileOps, *, private: bool = False) -> None:
 	if source.is_symlink():
 		ops.symlink(os.readlink(source), backup, source.resolve(strict=False).is_dir())
 	else:
+		if private:
+			ops.create_private_file(backup)
 		ops.copy2(source, backup)
 
 
@@ -545,7 +555,12 @@ def _apply_destination(
 			applied_replacements.append(applied)
 			if had_original:
 				if item.atomic_file and not destination.is_dir():
-					_clone_backup(destination, staged_item.backup, ops)
+					_clone_backup(
+						destination,
+						staged_item.backup,
+						ops,
+						private=isinstance(item.payload, BytesPayload) and item.payload.private,
+					)
 					applied.backup_ready = True
 					_validate_observed(item.observed, item.operation_id)
 					_validate_backup(staged_item.backup, planned, item.operation_id)

@@ -13,11 +13,36 @@ AGENT_INSTRUCTION = {
 	"codex": ("CODEX_HOME", ".codex", "AGENTS.md"),
 	"agents": ("AGENTS_HOME", ".agents", "AGENTS.md"),
 	"claude": ("CLAUDE_HOME", ".claude", "CLAUDE.md"),
+	"agy": ("AGY_HOME", ".gemini/antigravity-cli", "GEMINI.md"),
 }
 
 
 def resolve_path(path: Path) -> Path:
 	return path.expanduser().resolve()
+
+
+def resolve_gemini_home(
+	*,
+	environ: Mapping[str, str] | None = None,
+	user_home: Path | None = None,
+) -> Path:
+	values = os.environ if environ is None else environ
+	raw = values.get("GEMINI_HOME")
+	if raw is not None and raw != "":
+		return resolve_path(Path(raw))
+	return resolve_path((user_home or Path.home()) / ".gemini")
+
+
+def _home_override(agent: str, environ: Mapping[str, str]) -> Path | None:
+	env_var = AGENT_INSTRUCTION[agent][0]
+	# the native Claude setting wins; CLAUDE_HOME remains a sync-only fallback
+	keys = ("CLAUDE_CONFIG_DIR", env_var) if agent == "claude" else (env_var,)
+	for key in keys:
+		raw = environ.get(key)
+		# exactly empty means unset; whitespace remains a literal path
+		if raw is not None and raw != "":
+			return Path(raw)
+	return None
 
 
 def resolve_home(
@@ -26,12 +51,27 @@ def resolve_home(
 	environ: Mapping[str, str] | None = None,
 	user_home: Path | None = None,
 ) -> Path:
-	# exactly empty means unset; whitespace stays literal until policy says otherwise
 	values = os.environ if environ is None else environ
-	env_var, default, _ = AGENT_INSTRUCTION[agent]
-	raw = values.get(env_var)
-	base = (user_home or Path.home()) / default if raw is None or raw == "" else Path(raw)
+	base = _home_override(agent, values)
+	if base is None:
+		if agent == "agy":
+			base = resolve_gemini_home(environ=values, user_home=user_home) / "antigravity-cli"
+		else:
+			base = (user_home or Path.home()) / AGENT_INSTRUCTION[agent][1]
 	return resolve_path(base)
+
+
+def claude_state_path(
+	*,
+	environ: Mapping[str, str] | None = None,
+	user_home: Path | None = None,
+) -> Path:
+	values = os.environ if environ is None else environ
+	base = _home_override("claude", values)
+	# without a profile override, native state is beside ~/.claude, not inside it
+	if base is None:
+		base = user_home or Path.home()
+	return resolve_path(base) / ".claude.json"
 
 
 def instruction_path(
@@ -40,6 +80,10 @@ def instruction_path(
 	environ: Mapping[str, str] | None = None,
 	user_home: Path | None = None,
 ) -> Path:
+	if agent == "agy":
+		return (
+			resolve_gemini_home(environ=environ, user_home=user_home) / AGENT_INSTRUCTION[agent][2]
+		)
 	return resolve_home(agent, environ=environ, user_home=user_home) / AGENT_INSTRUCTION[agent][2]
 
 
