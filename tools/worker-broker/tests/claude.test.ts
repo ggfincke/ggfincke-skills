@@ -51,11 +51,12 @@ const config: BrokerConfig = {
 test('Claude arguments separate planning from isolated worktree edits', () =>
 {
   const editArgs = buildClaudeArgs(context('edit'), config, 'edit prompt')
-  assert.deepEqual(editArgs.slice(0, 4), [
+  assert.deepEqual(editArgs.slice(0, 5), [
     '-p',
     'edit prompt',
     '--output-format',
     'stream-json',
+    '--verbose',
   ])
   assert.ok(editArgs.includes('--dangerously-skip-permissions'))
   assert.equal(editArgs.includes('--permission-mode'), false)

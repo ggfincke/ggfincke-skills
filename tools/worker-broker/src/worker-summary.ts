@@ -3,6 +3,7 @@
 
 import { z } from 'zod'
 import {
+  CAPABILITY_NAMES,
   FAILURE_CLASSES,
   PROVIDER_NAMES,
   REASONING_EFFORTS,
@@ -45,6 +46,19 @@ function boundedPreview(maxCodePoints: number): z.ZodString
 
 export const WorkerSummarySchema = z
   .object({
+    capability_evidence: z
+      .array(
+        z
+          .object({
+            capability: z.enum(CAPABILITY_NAMES),
+            scope: z.string(),
+            status: z.enum(['enforced', 'unsupported', 'unverified']),
+            layer: z.enum(['instructions', 'detection', 'prevention']),
+            evidence: z.string(),
+          })
+          .strict()
+      )
+      .optional(),
     job_id: z.string(),
     status: z.enum(WORKER_STATUSES),
     provider: z.enum(PROVIDER_NAMES),
@@ -93,6 +107,8 @@ export function summarizeWorkerJob(job: WorkerJob): WorkerSummary
     scope_violation_count: result?.scope_violations.length ?? 0,
   }
   if (job.request.stage !== undefined) summary.stage = job.request.stage
+  if (job.capability_evidence !== undefined)
+    summary.capability_evidence = structuredClone(job.capability_evidence)
   if (job.request.workflow !== undefined)
     summary.workflow = job.request.workflow
   if (job.request.run !== undefined) summary.run = job.request.run

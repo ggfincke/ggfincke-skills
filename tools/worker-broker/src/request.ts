@@ -4,6 +4,7 @@
 import path from 'node:path'
 import { z } from 'zod'
 import {
+  CAPABILITY_NAMES,
   PROVIDER_NAMES,
   REASONING_EFFORTS,
   WORKER_MODES,
@@ -72,10 +73,24 @@ export const StartWorkerRequestSchema = z
       )
       .optional(),
     allow_nested_agents: z.boolean().optional(),
+    required_capabilities: z.array(z.enum(CAPABILITY_NAMES)).optional(),
   })
   .strict()
   .superRefine((request, context) =>
   {
+    if (
+      request.allow_nested_agents === true &&
+      request.required_capabilities?.some((capability) =>
+        ['native_no_nesting', 'no_nested_agents'].includes(capability)
+      )
+    )
+    {
+      context.addIssue({
+        code: 'custom',
+        path: ['required_capabilities'],
+        message: 'a no-nesting requirement conflicts with allow_nested_agents',
+      })
+    }
     if (request.provider === 'cursor' && request.effort !== undefined)
     {
       context.addIssue({
@@ -217,6 +232,10 @@ function normalizeParsedRequest(
     normalized.workflow = requireNonEmpty(request.workflow, 'workflow')
   if (request.run !== undefined)
     normalized.run = requireNonEmpty(request.run, 'run')
+  if (request.required_capabilities !== undefined)
+    normalized.required_capabilities = [
+      ...new Set(request.required_capabilities),
+    ]
   return normalized
 }
 

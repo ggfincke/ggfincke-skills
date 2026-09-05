@@ -105,10 +105,10 @@ Do not expand a running assignment. Cancel it and start a replacement with the c
 The run-discipline list above carries the norms; these are the mechanics that satisfy them.
 
 1. Immediately after launching, call `wait_for_workers` once with the `run` and a bounded timeout (default 300 seconds, maximum 900). It is a liveness probe, not a completion channel: read its `pending` entries — `job_id`, `status`, `stage`, `phase`, `elapsed_ms`, `last_message` — as the wave's first real snapshot, and never re-call it on an unchanged pending set.
-2. For any wave that outlives that probe, start the broker's wait CLI as a background shell command and let its exit be the single wake. `worker-broker` is not on `PATH`, so run the absolute form — `/opt/homebrew/bin/node /Users/ggfincke/Projects/ggfincke-skills/tools/worker-broker/dist/src/cli.js wait --run <run> --json` — and never the bare name, which exits 127 and leaves the wave with no wake at all. [worker-contract.md](references/worker-contract.md) carries the same command and its three exit codes. For one job mid-flight, `get_worker_artifact` with `artifact: "activity"`, `tail: true`, `max_bytes: 2000` is the cheap liveness read.
+2. For a wave that outlives the probe, use a supported background wait/wake channel. Resolve the broker CLI and its compatible Node runtime from the host's configured installation (or a verified `worker-broker` on `PATH`); do not assume a personal checkout or Homebrew prefix. [worker-contract.md](references/worker-contract.md) gives the invocation and exit codes. If the host cannot run a background wait, use its bounded wait/status tools with backoff and report that limit. For one job mid-flight, `get_worker_artifact` with `artifact: "activity"`, `tail: true`, `max_bytes: 2000` is the cheap liveness read.
 3. On every wake — a completion exit, monitor event, or user message — lead with a one-to-two-line progress line: `N/M workers done; <what just finished>; next: <step>; ~<time> remaining`. Then continue working.
 4. At each wave boundary (all results collected, integration starting, validation running), post the same short progress line unprompted.
-5. For waves expected to run 15+ minutes while the user is likely away, send a PushNotification on wave completion or first failure.
+5. For waves expected to run 15+ minutes while the user is likely away, use a host-supported notification channel only when available and authorized. Otherwise report completion or first failure in the task; do not invent `PushNotification` or claim a notification was sent.
 
 Keep updates to one or two lines; the audit/plan artifact holds the detail. Never fabricate progress for a worker whose result has not arrived.
 
@@ -143,11 +143,12 @@ Do not push, publish, or open pull requests unless the user separately authorize
 
 ## Commit discipline
 
-Never leave orchestration commits behind. Temporary integration commits during a
-run are for sequenced waves that must share prior integrated work in the next
-base — not because the broker demands a clean checkout. Once the final wave is
-integrated and validated, soft-reset them (`git reset <pre-orchestration-base>`)
-so the user reviews one dirty working-tree diff. Commit permanently only when the
-user explicitly asks, and then propose logically-grouped commits per the
-working-conventions skill, each carrying the harness attribution defined in
-[integration-checklist.md](references/integration-checklist.md).
+Temporary integration commits require authorization. Use them only when an approved sequence needs an immutable base for its next wave. Otherwise use lead-owned or ordinary subagent work that can inspect the intended working state.
+
+For any approved regrouping or rewrite, use the maintained `git-history-surgery` skill instead of a parallel reset recipe. Hand it the original HEAD, exact owned commit range, pre-existing staged/unstaged/untracked state, recovery reference, and approved operation. Establish an isolated integration checkout before temporary commits when user work is present; a backup branch does not preserve the original index split. If the history owner is unavailable, report that missing procedure before rewriting.
+
+Keep unrelated staging unchanged and reconcile concurrent index changes before continuing. Permanent commits follow working-conventions and the attribution in [integration-checklist.md](references/integration-checklist.md). Local regrouping does not authorize publication.
+
+## Artifact boundary
+
+Broker patch acceptance covers Git-visible source changes only. Declare ignored media, seed data, previews, and other artifacts separately and use the target project's dedicated materialization/receipt workflow. Do not force-add ignored content. When that capability is unavailable, use an authorized native or sequential path and report the artifact outcome independently of source patch acceptance. Recheck target commands and lifecycle assumptions before reusing a project recipe.

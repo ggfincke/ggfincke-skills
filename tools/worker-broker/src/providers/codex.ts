@@ -177,11 +177,7 @@ export class CodexProvider implements WorkerProvider
           usageWrites = usageWrites
             .then(async () =>
             {
-              await persistCodexUsageEvent(
-                this.config.state_dir,
-                event,
-                source
-              )
+              await persistCodexUsageEvent(this.config.state_dir, event, source)
             })
             .catch(() =>
             {

@@ -88,6 +88,7 @@ Before launching any broker worker, emit the resolved plan as a fenced block wit
 
 ```orchestrate-plan
 {
+  "runId": "auth-research-7c4e",
   "workflow": "implement",
   "task": "one-line task summary",
   "stages": [
@@ -101,8 +102,8 @@ Before launching any broker worker, emit the resolved plan as a fenced block wit
       "scope": "map auth boundaries and session flows"
     }
   ],
-  "totalWorkers": 7,
-  "maxWorkers": 9
+  "totalWorkers": 3,
+  "maxWorkers": 3
 }
 ```
 
@@ -113,7 +114,7 @@ Before launching any broker worker, emit the resolved plan as a fenced block wit
 - `workers` is the planned count per stage; `maxWorkers` is the hard budget the approval covers across the whole run.
 - `mode` and `scope` per stage make read vs edit exposure visible before anything runs.
 - For every edit wave, declare the lane ETA threshold in the plan; use 30 minutes by default and re-gate when `serializes_behind` makes the projected lane exceed it.
-- Keep counts honest: if a stage's fan-out is unknown, state the cap you will enforce, not a guess.
+- Keep counts honest: `totalWorkers` equals the sum of stage `workers`, and cannot exceed `maxWorkers`. If a stage's fan-out is unknown, state the cap you will enforce, not a guess. Resolve example provider/model/effort values against the current configured catalog before presenting a real plan; they are illustrations, not portable defaults.
 - Do not emit a zero-worker plan; no broker delegation budget exists to approve.
 
 ## Approval gate
