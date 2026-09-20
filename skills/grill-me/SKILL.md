@@ -14,9 +14,15 @@ Activate only from an affirmative current-task request. Do not activate for a co
 
 ## Rounds and the frontier
 
-Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled - the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.
+Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled - the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round, giving your recommended answer for each question. Then wait for the user's answers before the next round.
 
-Each question should be formatted like so:
+Prefer the host's **native multiple-choice question panel** over listing questions in chat. Use a question tool available in the current mode, offer concise choices, mark your recommendation, and leave room for a free-text answer. Use the panel for the final shared-understanding confirmation too. A preselected recommendation is not an answer.
+
+With an asynchronous question tool, keep the turn open and wait for the user's reply instead of immediately sending a final response. If the user reports that the panel disappeared, reopen the unanswered questions and wait again.
+
+When the user asks for a light interview, prioritize consequential decisions and use short batches rather than a long questionnaire. Split a large frontier into manageable batches before asking dependent questions.
+
+If no suitable question panel is available, or the user prefers chat, number questions using this format:
 
 ```
 ❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
