@@ -1,4 +1,4 @@
 # requirements-tooling.txt
 # preserve user-owned Codex TOML formatting during transactional sync
 
-tomlkit==0.13.3
+tomlkit==0.15.1
