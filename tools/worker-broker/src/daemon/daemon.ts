@@ -30,6 +30,7 @@ import { JobManager } from '../job-manager.js'
 import { isSafeJobId, STATE_SCHEMA_VERSION } from '../job-store.js'
 import { ClaudeProvider } from '../providers/claude.js'
 import { CodexProvider } from '../providers/codex.js'
+import { AgyProvider } from '../providers/agy.js'
 import { CoralProvider } from '../providers/coral.js'
 import { CursorProvider } from '../providers/cursor.js'
 import { RequestValidationError } from '../request.js'
@@ -56,19 +57,23 @@ import {
   type WaitForWorkersResult,
 } from './protocol.js'
 
-const DAEMON_METHODS = new Set<DaemonMethod>([
-  'hello',
-  'daemon_status',
-  'shutdown',
-  'start_worker',
-  'list_workers',
-  'get_worker_status',
-  'get_worker_result',
-  'get_worker_artifact',
-  'get_run_status',
-  'wait_for_workers',
-  'cancel_worker',
-])
+const DAEMON_METHODS: Record<DaemonMethod, true> = {
+  hello: true,
+  daemon_status: true,
+  shutdown: true,
+  list_targets: true,
+  create_run: true,
+  close_run: true,
+  start_worker: true,
+  list_workers: true,
+  get_worker_status: true,
+  get_worker_result: true,
+  get_worker_artifact: true,
+  get_run_status: true,
+  wait_for_workers: true,
+  cancel_worker: true,
+}
+
 const DEFAULT_WAIT_SECONDS = 60
 
 type HandshakeState = 'pending' | 'processing' | 'complete' | 'rejected'
@@ -271,7 +276,7 @@ function parseFrame(line: string): DaemonRequestFrame
   if (!Number.isInteger(value.id)) requestError('request id must be an integer')
   if (
     typeof value.method !== 'string' ||
-    !DAEMON_METHODS.has(value.method as DaemonMethod)
+    !Object.hasOwn(DAEMON_METHODS, value.method)
   )
   {
     requestError(`unknown daemon method: ${String(value.method)}`)
@@ -752,6 +757,7 @@ export async function startDaemon(
     new ClaudeProvider(config),
     new CursorProvider(config),
     new CoralProvider(config),
+    new AgyProvider(config),
   ])
   const connections = new Set<Socket>()
   let server: Server
@@ -892,6 +898,21 @@ export async function startDaemon(
           beginDrain()
           return result
         })
+      case 'list_targets':
+        return await manager.listTargets()
+      case 'create_run':
+        if (draining) requestError('worker broker is draining')
+        return await manager.createRun(params)
+      case 'close_run':
+        if (
+          params.cancel_active !== undefined &&
+          typeof params.cancel_active !== 'boolean'
+        )
+          requestError('cancel_active must be boolean')
+        return await manager.closeRun(
+          requireString(params, 'run'),
+          params.cancel_active === true
+        )
       case 'start_worker':
         return await lifecycle(async () =>
         {
@@ -929,7 +950,10 @@ export async function startDaemon(
       case 'get_worker_artifact':
         return await workerArtifact(manager, params)
       case 'get_run_status':
-        return await runStatus(manager, requireString(params, 'run'))
+        return {
+          ...(await runStatus(manager, requireString(params, 'run'))),
+          ...(await manager.runDetails(requireString(params, 'run'))),
+        }
       case 'wait_for_workers':
         return await waitForWorkers(manager, params)
       case 'cancel_worker':

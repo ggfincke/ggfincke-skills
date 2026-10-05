@@ -1,13 +1,13 @@
 ---
 name: orchestrate
-description: Opt-in worker-broker orchestration for multi-part repository work that needs an explicit provider, model, worker-budget, and approval plan. Use only when the user affirmatively asks to run or invoke orchestrate for the current task, such as `/orchestrate`, an imperative `$orchestrate` directive, or an unambiguous natural-language request to use orchestrate. Do not activate for contextual mentions, prior use, inspection or discussion of the skill, generic requests to use workflows or subagents, or while a current instruction not to orchestrate remains unreversed.
+description: Opt-in worker-broker delegation for explicit requests to use orchestrate, local Ollama models, Antigravity, or named external workers on the current repository task. Do not activate for discussion, inspection, generic subagent requests, or an unreversed instruction not to orchestrate.
 ---
 
 # Orchestrate
 
 ## Activation boundary
 
-Treat loading or mentioning this skill as distinct from invoking its worker workflow. Activate only from an affirmative current-task directive such as `/orchestrate ...`, `$orchestrate ...` used imperatively, or “use orchestrate for this.”
+Treat loading or mentioning this skill as distinct from invoking its worker workflow. Activate only from an affirmative current-task directive such as `/orchestrate ...`, `$orchestrate ...` used imperatively, “use orchestrate for this,” “use a local Ollama reviewer,” or “have Antigravity review this.”
 
 Do not activate for:
 
@@ -37,16 +37,30 @@ Do not delegate merely to avoid understanding the change. Keep tightly coupled e
 
 After intake, continue the orchestrate workflow only when at least one bounded worker-broker assignment meets the routing-policy conditions. If none does, do not emit a zero-worker plan: state that no broker run is warranted and continue under the ordinary lead or subagent workflow unless the user asked only for an orchestration proposal.
 
-## Model plan and approval gate
+## Task permission and run contract
 
-Before any `start_worker` call, resolve and present a model plan per [model-plan.md](references/model-plan.md):
+A direct current-task request is enough; do not require a second approval card or `--yes`.
+Use [model-plan.md](references/model-plan.md) to resolve only the requested providers,
+models, modes, and budget. Local execution must be explicitly authorized. Generic
+subagent permission remains the host's native workflow.
 
-1. Parse `workflow=`, per-stage `<stage>=provider[:model[:effort]]` overrides, and `--yes` from the invocation; infer the workflow template when not pinned.
-2. Resolve each stage's provider, model, effort, mode, and worker count from the precedence chain (broker defaults, global and repository profile bindings, gate edits, inline arguments).
-3. Emit the resolved plan — persist via the host's `orchestrate_plan_upsert` tool when exposed and then print the `orchestrate-plan` fenced block as its render anchor, else the fenced block alone — and gate on user approval (which may arrive as an `<orchestrate_plan_response>` envelope; see model-plan.md). Launch workers without approval only on an explicit `--yes`; with no responsive user and no `--yes`, report the plan and stop.
-4. Treat the approved plan as a budget: exceeding `maxWorkers` or changing a stage's provider or model re-gates before more workers launch.
+1. Call `list_targets` to inspect passive readiness. Never work around a blocked target.
+2. Announce the bounded assignments and selected models. Default to four total
+   assignments, or one when the user asks for one reviewer. Local workers are
+   read-only and serialized globally; Antigravity is read-only and release-gated.
+3. Call `create_run` with the repository, selected targets, budget, and battery
+   exception only when explicitly requested. Use its returned `id` on every
+   `start_worker` call. Model defaults become fixed bindings in that contract.
+4. Reuse the same run across waves. Failed and cancelled admissions still spend
+   budget. Ask before expanding the budget, changing providers/models, or enabling
+   battery use; never create another run merely to evade a limit.
+5. Close the run when finished. `close_run` with `cancel_active: true` revokes it
+   and cancels outstanding assignments. Runs stop admitting new launches after
+   twelve hours; continuing an expired run needs renewed task permission.
 
-The session model is the orchestrator; the plan governs the approved broker execution path and its workers. It does not gate lead-owned work or ordinary subagents.
+Recognizing conversational permission is the lead's responsibility. The broker
+validates the declared scope and limits; it cannot independently authenticate chat
+consent. Lead-owned work and ordinary native subagents remain outside this workflow.
 
 ## Run checkpoint
 
@@ -80,7 +94,7 @@ Include every field required by [worker-contract.md](references/worker-contract.
 - normalized repository-relative allowed path prefixes;
 - forbidden behavior and scope boundaries;
 - acceptance criteria and broker-run verification commands;
-- setup commands whenever verification needs the repository toolchain — worktrees start bare with no installed dependencies, so a bare tool name fails with exit 127 no matter how good the patch is;
+- for providers supporting edits, setup commands whenever verification needs the repository toolchain — worktrees start bare with no installed dependencies, so a bare tool name fails with exit 127 no matter how good the patch is;
 - model and effort from the approved model plan's stage binding, or an explicit per-assignment override.
 
 Every edit assignment must carry an environment plan: either `setup_commands` that provision the broker verification environment, or an explicit no-broker-verification declaration naming the lead's central verification command and when it will run. A bare “do not run tests” instruction is invalid. Use the standard monorepo `node_modules` symlink setup described in [worker-contract.md](references/worker-contract.md) when a shared install is appropriate.
@@ -94,7 +108,7 @@ Use configured providers according to [routing-policy.md](references/routing-pol
 1. Before an edit wave, group jobs by repository and overlapping `allowed_paths` into serialization lanes. Include setup and verification in each lane's wall-clock estimate, declare an ETA threshold in the plan (30 minutes by default), and account for shared manifests such as `tests/package.json` that can turn a whole wave into one FIFO lane.
 2. Call `start_worker` once per bounded assignment and retain each returned job ID. Its atomic `serializes_behind` list names the exact earlier overlapping edit jobs present at admission; stop and re-gate the wave if its projected lane ETA exceeds the declared threshold. Use `depends_on` when a worker must wait for prior jobs to complete; a non-completed dependency rejects the dependent and the rejection cascades down the chain. Dependencies must already exist at submit time, so submit in topological order. Only one phase runs at a time; declaring the whole pyramid up front is what collapses N waits into one. The exception is a phase that needs an earlier phase's integrated output: `base_ref` resolves to an immutable commit when a job is submitted, so submit that phase after the integration lands rather than queueing it ahead.
 3. Use `get_run_status` for run dashboards, `list_workers` with optional `run` or `workflow` filters for inventory, and `get_worker_status` when one job needs attention. These routine calls return bounded summaries with counts and previews, not full task, error, or result arrays; fetch full terminal evidence through `get_worker_result`. On the first terminal failure in a wave, pause new launches, classify it from `failure_class` and broker evidence, record the classification and chosen action, then continue. Unrelated read-only jobs may proceed; do not defer triage to wave end.
-4. Let read-only work run concurrently. Conflicting edit jobs start FIFO; keep semantic conflicts and integration order explicit with `depends_on`.
+4. Let cloud read-only work run concurrently within the run budget. Local workers run one at a time across all runs. Conflicting edit jobs start FIFO; keep semantic conflicts and integration order explicit with `depends_on`.
 5. Use `cancel_worker` when an assignment is obsolete, mis-scoped, or no longer safe, but apply the salvage gate below before canceling, relaunching, or discarding any non-completed terminal job.
 6. Call `get_worker_result` only for terminal jobs.
 

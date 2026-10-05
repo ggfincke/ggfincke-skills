@@ -16,6 +16,7 @@ import {
 import { parseStartWorkerRequest } from '../src/request.js'
 
 const BASE_REQUEST = {
+  run: 'test-run',
   mode: 'read',
   repo: '/repo',
   task: 'inspect the fixture',

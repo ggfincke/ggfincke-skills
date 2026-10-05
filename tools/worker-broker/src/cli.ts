@@ -67,7 +67,7 @@ function usage(): string
   return `worker-broker <command> [options]
 
 Commands:
-  run --request <file>   run one assignment and wait for its terminal result
+  run --request <file>   run one assignment with a create_run contract and wait for its result
   wait --run <run> | --job-id <id>...
                          block until every selected worker is terminal
                          (0 all completed, 1 terminal w/ failures,

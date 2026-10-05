@@ -4,9 +4,20 @@ Use the worker broker as an asynchronous execution boundary. The lead agent owns
 
 ## Tools
 
+### `list_targets`, `create_run`, and `close_run`
+
+`list_targets({})` discovers configured targets without inference or downloads.
+`create_run({repo, targets: [{provider, model?, modes?: ["read"]}],
+max_assignments?: 4, allow_battery?: false})` records explicit task scope and
+returns a durable ID, pinned model bindings, and a twelve-hour expiry. Local
+battery permission must be explicit; unknown power never permits local execution.
+`close_run({run, cancel_active?: false})` closes an idle run; explicit cancellation
+also revokes outstanding assignments. Failures and cancellations do not refund
+accepted assignments. Never create a second run to bypass the first budget.
+
 ### `start_worker`
 
-Submit one assignment and return immediately with a job ID and compact worker metadata.
+Supply the required `run` returned by `create_run`. Submit one assignment and return immediately with a job ID and compact worker metadata.
 
 Required inputs:
 
@@ -29,7 +40,7 @@ Optional inputs:
 
 Every edit assignment must include an environment plan. Supply `setup_commands` that provision everything broker verification needs, or put an explicit no-broker-verification declaration in the task or acceptance criteria naming the lead's central verification command and when it will run. “Do not run tests” without either declaration is invalid. Worktrees are bare; for a monorepo whose dependencies are already installed centrally, the standard setup pattern is to create `<worktree>/node_modules` as a symlink to the valid shared `node_modules` tree, then run the broker commands. Use a repository-appropriate relative or absolute target and do not assume a worktree inherits the source checkout's dependencies.
 
-Coral headless workers reject nested-agent requests and use deterministic read-only or workspace-write tool catalogs. The workspace-write catalog includes shell execution but excludes Coral's task subagent and direct Git mutation tools; broker scope evidence remains authoritative.
+Coral and Antigravity workers accept read-only mode only, without setup/verification shell commands or nested agents. Antigravity remains unavailable until its native read-only and ambient-hook restrictions are verified. The lead runs any project verification.
 
 Edit jobs require at least one allowed path. Prefixes are literal, not globs: use `src/auth`, not `src/auth/**`. The broker rejects absolute paths, traversal, Git metadata, and glob characters.
 
@@ -47,7 +58,7 @@ A job summary carries bounded lifecycle and assignment metadata: `task_preview` 
 
 ### `get_run_status`
 
-Input: `{ run }`. Return totals by status and per-stage rollups for a run. Use this for dashboards.
+Input: `{ run }`. Return the run contract, spent/remaining assignments, current power, totals by status, and per-stage rollups. Use this for dashboards.
 
 ### `get_worker_status`
 

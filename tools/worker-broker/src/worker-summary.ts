@@ -73,6 +73,7 @@ export const WorkerSummarySchema = z
     run: z.string().optional(),
     depends_on: z.array(z.string()),
     model: z.string().optional(),
+    effective_model: z.string().optional(),
     effort: z.enum(REASONING_EFFORTS).optional(),
     branch: z.string().optional(),
     worktree: z.string().optional(),
@@ -92,6 +93,9 @@ export function summarizeWorkerJob(job: WorkerJob): WorkerSummary
 {
   const result = job.result
   const summary: WorkerSummary = {
+    ...(result?.effective_model
+      ? { effective_model: result.effective_model }
+      : {}),
     job_id: job.job_id,
     status: job.status,
     provider: job.request.provider,

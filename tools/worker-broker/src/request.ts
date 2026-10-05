@@ -64,8 +64,7 @@ export const StartWorkerRequestSchema = z
     run: z
       .string()
       .min(1)
-      .describe('orchestration run identifier, metadata only')
-      .optional(),
+      .describe('required durable run identifier returned by create_run'),
     depends_on: z
       .array(z.string().min(1))
       .describe(
@@ -100,7 +99,26 @@ export const StartWorkerRequestSchema = z
           'Cursor reasoning effort must be encoded in the model identifier',
       })
     }
-    if (request.provider === 'coral' && request.effort !== undefined)
+    if (['coral', 'agy'].includes(request.provider))
+    {
+      if (
+        request.mode !== 'read' ||
+        request.allow_nested_agents === true ||
+        (request.setup_commands?.length ?? 0) > 0 ||
+        (request.verification_commands?.length ?? 0) > 0
+      )
+      {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'local and Antigravity workers require read mode without shell phases or nested agents',
+        })
+      }
+    }
+    if (
+      ['coral', 'agy'].includes(request.provider) &&
+      request.effort !== undefined
+    )
     {
       context.addIssue({
         code: 'custom',

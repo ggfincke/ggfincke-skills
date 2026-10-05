@@ -117,6 +117,7 @@ function worker(jobId: string, status: WorkerStatus): WorkerJob
       repo: '/repo',
       base_ref: 'HEAD',
       task: 'CLI fixture',
+      run: 'test-run',
       allowed_paths: ['src'],
       acceptance_criteria: [],
       setup_commands: [],
@@ -167,6 +168,7 @@ function dependencies(
     mode: 'edit',
     repo: '/repo',
     task: 'CLI fixture',
+    run: 'test-run',
     allowed_paths: ['src'],
   },
   errors: string[] = []
@@ -299,6 +301,7 @@ test('CLI run, list, and result are daemon-backed', async () =>
         mode: 'edit',
         repo: '/repo',
         task: 'CLI fixture',
+        run: 'test-run',
         allowed_paths: ['src'],
       },
     },
