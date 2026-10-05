@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # scripts/sync-agents.py
-# validate, plan, and transactionally install canonical Claude custom agents
+# validate, plan, and transactionally install canonical native custom agents
 
 from __future__ import annotations
 
@@ -59,10 +59,10 @@ def agent_name(path: Path) -> str:
 	return name
 
 
-def find_agents(selected: list[str]) -> list[Path]:
-	if not AGENTS_DIR.is_dir():
-		raise SystemExit(f"missing agents directory: {AGENTS_DIR}")
-	agents = {agent_name(path): path for path in sorted(AGENTS_DIR.glob("*.md"))}
+def find_agents(selected: list[str], source_dir: Path = AGENTS_DIR) -> list[Path]:
+	if not source_dir.is_dir():
+		raise SystemExit(f"missing agents directory: {source_dir}")
+	agents = {agent_name(path): path for path in sorted(source_dir.glob("*.md"))}
 	if selected:
 		missing = sorted(set(selected) - set(agents))
 		if missing:
@@ -79,7 +79,9 @@ def same_install(source: Path, destination: Path, mode: str) -> bool:
 	return destination.read_bytes() == source.read_bytes()
 
 
-def build_plan(sources: list[Path], target: Path, mode: str, force: bool) -> AgentSyncPlan:
+def build_plan(
+	sources: list[Path], target: Path, mode: str, force: bool, label: str = "claude-agents"
+) -> AgentSyncPlan:
 	replacements: list[sync_transaction.Replacement] = []
 	actions: list[AgentAction] = []
 	noops: list[sync_transaction.PlanMessage] = []
@@ -93,9 +95,7 @@ def build_plan(sources: list[Path], target: Path, mode: str, force: bool) -> Age
 				f"snapshotted safely: {copy_payload.unsupported_symlink}"
 			)
 		if same_install(source, destination, mode):
-			noops.append(
-				sync_transaction.PlanMessage("claude-agents", f"ok existing {mode}: {destination}")
-			)
+			noops.append(sync_transaction.PlanMessage(label, f"ok existing {mode}: {destination}"))
 			continue
 		if destination.exists() or destination.is_symlink():
 			if destination.is_dir() and not destination.is_symlink():
@@ -103,7 +103,7 @@ def build_plan(sources: list[Path], target: Path, mode: str, force: bool) -> Age
 			if not force:
 				skips.append(
 					sync_transaction.PlanMessage(
-						"claude-agents",
+						label,
 						f"skip existing (use --force): {destination}",
 					)
 				)
@@ -127,7 +127,7 @@ def build_plan(sources: list[Path], target: Path, mode: str, force: bool) -> Age
 		)
 		actions.append(AgentAction(operation_id, source, destination, mode))
 
-	destination_plan = sync_transaction.DestinationPlan("claude-agents", tuple(replacements))
+	destination_plan = sync_transaction.DestinationPlan(label, tuple(replacements))
 	transaction = sync_transaction.RunPlan(
 		(destination_plan,),
 		tuple(noops),
@@ -180,19 +180,38 @@ def install_agent(
 
 def main() -> int:
 	parser = argparse.ArgumentParser(
-		description="Install canonical Claude custom-agent definitions."
+		description="Install canonical Claude or broker Antigravity agent definitions."
 	)
 	parser.add_argument("--agent", action="append", default=[], help="Install one agent name")
-	parser.add_argument("--target", type=Path, default=default_target())
+	parser.add_argument("--tool", choices=("claude", "agy"), default="claude")
+	parser.add_argument("--target", type=Path)
 	parser.add_argument("--mode", choices=("copy", "link"), default="link")
 	parser.add_argument("--force", action="store_true")
 	parser.add_argument("--dry-run", action="store_true")
 	args = parser.parse_args()
 
-	target = tooling_paths.resolve_path(args.target)
+	default = (
+		default_target()
+		if args.tool == "claude"
+		else tooling_paths.resolve_gemini_home() / "config/agents"
+	)
+	target = tooling_paths.resolve_path(args.target or default)
+	source_dir = AGENTS_DIR if args.tool == "claude" else ROOT / "tools/worker-broker/agents"
+	if args.tool == "agy" and args.force:
+		raise SystemExit(
+			"Antigravity broker agent collisions require explicit reconciliation; --force is disabled"
+		)
 	assert_target_outside_repo(target)
-	plan = build_plan(find_agents(args.agent), target, args.mode, args.force)
-	print(f"[claude-agents] {target}")
+	sources = find_agents(args.agent, source_dir)
+	if args.tool == "agy":
+		for source in sources:
+			destination = target / source.name
+			if (destination.exists() or destination.is_symlink()) and not same_install(
+				source, destination, args.mode
+			):
+				raise SystemExit(f"refusing Antigravity agent collision: {destination}")
+	plan = build_plan(sources, target, args.mode, args.force, label=f"{args.tool}-agents")
+	print(f"[{args.tool}-agents] {target}")
 	if args.dry_run:
 		for line in _dry_run_lines(plan):
 			print("  " + line)

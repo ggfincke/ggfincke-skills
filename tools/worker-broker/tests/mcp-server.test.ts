@@ -237,10 +237,13 @@ test('MCP preserves schemas and translates every tool through the daemon client'
     const tools = (await client.listTools()).tools
     assert.deepEqual(tools.map((tool) => tool.name).sort(), [
       'cancel_worker',
+      'close_run',
+      'create_run',
       'get_run_status',
       'get_worker_artifact',
       'get_worker_result',
       'get_worker_status',
+      'list_targets',
       'list_workers',
       'start_worker',
       'wait_for_workers',
@@ -253,6 +256,7 @@ test('MCP preserves schemas and translates every tool through the daemon client'
       'cursor',
       'coral',
       'claude',
+      'agy',
     ])
 
     const invalid = await client.callTool({

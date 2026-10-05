@@ -2,7 +2,7 @@
   "name": "@ggfincke/worker-broker",
   "version": "0.1.0",
   "private": true,
-  "description": "Local native-harness worker broker for Claude Code orchestration",
+  "description": "Opt-in native worker broker for Codex with bounded runs and local power guards",
   "type": "module",
   "bin": {
     "worker-broker": "dist/src/cli.js",

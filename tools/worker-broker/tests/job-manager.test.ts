@@ -25,7 +25,13 @@ import {
   terminateProcessGroup,
   UnconfirmedProcessGroupExitError,
 } from '../src/process-runner.js'
-import { git, initializeTestRepo, waitUntil } from './helpers.js'
+import {
+  authorizeFixtureRun,
+  TEST_RUN_ID,
+  git,
+  initializeTestRepo,
+  waitUntil,
+} from './helpers.js'
 
 const SUCCESS: ProviderOutcome = {
   exit_code: 0,
@@ -179,6 +185,7 @@ async function withJobManagerFixture(
   const { config, stateDir } = await fixtureConfig()
   try
   {
+    await authorizeFixtureRun(stateDir, repo)
     await run({ config, repo })
   }
   finally
@@ -214,6 +221,7 @@ test('job manager rejects final changes outside the assignment', async () =>
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'write within src',
       allowed_paths: ['src'],
     })
@@ -237,6 +245,7 @@ test('terminal manager hot paths use summaries while explicit result reads stay 
       provider: 'codex',
       mode: 'read',
       repo,
+      run: TEST_RUN_ID,
       task: 'evict terminal full state',
       allowed_paths: [],
     })
@@ -297,6 +306,7 @@ test('terminal state stays unpublished until its authoritative write commits', a
       provider: 'codex',
       mode: 'read',
       repo,
+      run: TEST_RUN_ID,
       task: 'commit terminal state before publishing it',
       allowed_paths: [],
       setup_commands: ['true'],
@@ -377,6 +387,7 @@ test('setup-created out-of-scope paths stay out of worker evidence', async () =>
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'use setup-provided dependencies',
       allowed_paths: ['src'],
       setup_commands: ['ln -s README.md setup-link'],
@@ -418,6 +429,7 @@ test('a later setup-path mutation is rejected with a base-applicable salvage pat
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'change one generated sibling',
       allowed_paths: ['generated/sibling.txt'],
       setup_commands: ['mkdir -p generated && echo setup > generated/😀.txt'],
@@ -511,6 +523,7 @@ test('a missing post-setup tree fails as broker evidence loss with a full patch'
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'preserve evidence when setup attribution is unavailable',
       allowed_paths: ['result.txt'],
       setup_commands: ['echo setup > setup.txt'],
@@ -544,6 +557,7 @@ test('verification mutations are included in final scope enforcement', async () 
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'verify without scope drift',
       allowed_paths: ['src'],
       verification_commands: ['printf drift > outside.txt'],
@@ -599,6 +613,7 @@ test('failed concurrent admission stays invisible and preserves FIFO conflicts',
         provider: 'codex',
         mode: 'edit',
         repo,
+        run: TEST_RUN_ID,
         task: 'failed admission must not remain queued',
         allowed_paths: ['src/auth'],
       })
@@ -608,6 +623,7 @@ test('failed concurrent admission stays invisible and preserves FIFO conflicts',
         provider: 'codex',
         mode: 'edit',
         repo,
+        run: TEST_RUN_ID,
         task: 'first auth change',
         allowed_paths: ['src/auth'],
       })
@@ -640,6 +656,7 @@ test('failed concurrent admission stays invisible and preserves FIFO conflicts',
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'second auth change',
       allowed_paths: ['src/auth/session.ts'],
     })
@@ -647,6 +664,7 @@ test('failed concurrent admission stays invisible and preserves FIFO conflicts',
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'third auth change',
       allowed_paths: ['src/auth/session.ts'],
     })
@@ -690,6 +708,7 @@ test('queued edit jobs preserve FIFO fairness across overlapping scopes', async 
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'first scope',
       allowed_paths: ['src/first'],
     })
@@ -698,6 +717,7 @@ test('queued edit jobs preserve FIFO fairness across overlapping scopes', async 
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'bridging scope',
       allowed_paths: ['src/first', 'src/second'],
     })
@@ -705,6 +725,7 @@ test('queued edit jobs preserve FIFO fairness across overlapping scopes', async 
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'later second scope',
       allowed_paths: ['src/second'],
     })
@@ -733,6 +754,7 @@ test('dependencies wait for completion and reject after a failed dependency', as
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'fail dependency',
       allowed_paths: ['src'],
     })
@@ -740,6 +762,7 @@ test('dependencies wait for completion and reject after a failed dependency', as
       provider: 'codex',
       mode: 'read',
       repo,
+      run: TEST_RUN_ID,
       task: 'wait on dependency',
       allowed_paths: [],
       depends_on: [dependency.job_id],
@@ -755,6 +778,7 @@ test('dependencies wait for completion and reject after a failed dependency', as
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         task: 'unknown dependency',
         allowed_paths: [],
         depends_on: ['missing-job'],
@@ -764,7 +788,7 @@ test('dependencies wait for completion and reject after a failed dependency', as
   })
 })
 
-test('a job record written before setup_commands existed still runs', async () =>
+test('legacy queued jobs without run contracts are rejected without execution', async () =>
 {
   await withJobManagerFixture(async ({ config, repo }) =>
   {
@@ -794,10 +818,9 @@ test('a job record written before setup_commands existed still runs', async () =
     const provider = new ControlledProvider()
     const manager = new JobManager(config, [provider])
     await manager.initialize()
-    await waitUntil(() => provider.started.includes(jobId))
-    provider.release(jobId)
     const finished = await waitForFullJob(manager, jobId)
-    assert.equal(finished.status, 'completed')
+    assert.equal(finished.status, 'rejected')
+    assert.deepEqual(provider.started, [])
     assert.deepEqual(finished.result?.setup, [])
   })
 })
@@ -815,6 +838,7 @@ test('initialization restores a persisted queued job to the scheduler', async ()
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         base_ref: 'HEAD',
         task: 'resume queued work',
         allowed_paths: [],
@@ -870,6 +894,7 @@ test('restart reconciliation closes interrupted activity before finalizing', asy
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         base_ref: 'HEAD',
         task: 'recover interrupted work',
         allowed_paths: [],
@@ -959,6 +984,7 @@ test('restart requeues clean work once but terminalizes dirty salvage', async ()
         provider: 'codex' as const,
         mode: 'read' as const,
         repo,
+        run: TEST_RUN_ID,
         base_ref: 'HEAD',
         allowed_paths: [],
         acceptance_criteria: [],
@@ -1112,6 +1138,7 @@ test('restart fail-stops before snapshot when group exit is unconfirmed', async 
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         base_ref: 'HEAD',
         task: 'do not snapshot an unowned live worktree',
         allowed_paths: [],
@@ -1174,6 +1201,7 @@ test('restart fail-stops before snapshot when durable PID clear fails', async ()
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         base_ref: 'HEAD',
         task: 'retain ownership when restart clear fails',
         allowed_paths: [],
@@ -1289,6 +1317,7 @@ test('running-write failure and gated cancellation never start execution', async
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         task: 'fail before execution starts',
         allowed_paths: [],
       })
@@ -1308,6 +1337,7 @@ test('running-write failure and gated cancellation never start execution', async
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         task: 'cancel during running write',
         allowed_paths: [],
       })
@@ -1342,6 +1372,7 @@ test('a running job reaches cancelled after its provider observes abort', async 
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'cancel active work',
       allowed_paths: ['src'],
     })
@@ -1409,6 +1440,7 @@ test('setup, provider, and verification persist exact live process ownership', a
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         task: 'track every subprocess phase',
         allowed_paths: [],
         setup_commands: [controlledProcessCommand(setupMarker, setupRelease)],
@@ -1518,6 +1550,7 @@ test('process ownership write failures stop the phase and fail PID-free', async 
           provider: 'codex',
           mode: 'read',
           repo,
+          run: TEST_RUN_ID,
           task: `fail process ownership ${failurePoint}`,
           allowed_paths: [],
           setup_commands: ['true'],
@@ -1625,6 +1658,7 @@ test('provider process-clear failure remains a PID-free broker fault', async () 
         provider: 'codex',
         mode: 'read',
         repo,
+        run: TEST_RUN_ID,
         task: 'fail provider process clear',
         allowed_paths: [],
       })
@@ -1712,6 +1746,7 @@ test('active phases propagate unconfirmed group exit without terminalizing', asy
           provider: 'codex',
           mode: 'read',
           repo,
+          run: TEST_RUN_ID,
           base_ref: 'HEAD',
           task: `fail-stop during ${phase}`,
           allowed_paths: [],
@@ -1842,6 +1877,7 @@ test('activity is persisted incrementally before provider completion', async () 
       provider: 'codex',
       mode: 'read',
       repo,
+      run: TEST_RUN_ID,
       task: 'report live activity',
       allowed_paths: [],
     })
@@ -1897,6 +1933,7 @@ test('dirty parent checkout does not block start and stays out of the worktree',
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'start despite parent dirt',
       allowed_paths: ['src'],
     })

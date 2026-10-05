@@ -27,6 +27,11 @@ export function defaultBrokerConfig(
     codex_binary: environment.WORKER_BROKER_CODEX_BINARY ?? 'codex',
     cursor_binary: environment.WORKER_BROKER_CURSOR_BINARY ?? 'cursor-agent',
     coral_binary: environment.WORKER_BROKER_CORAL_BINARY ?? 'coral',
+    agy_binary: environment.WORKER_BROKER_AGY_BINARY ?? 'agy',
+    default_agy_model:
+      environment.WORKER_BROKER_AGY_MODEL ?? 'gemini-3.8-flash-high',
+    default_coral_model: 'qwen3.8:27b-mlx',
+    coral_host: 'http://127.0.0.1:11434',
     claude_binary: environment.WORKER_BROKER_CLAUDE_BINARY ?? 'claude',
   }
   if (environment.WORKER_BROKER_CODEX_MODEL !== undefined)

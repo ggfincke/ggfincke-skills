@@ -20,12 +20,13 @@ REGISTRY_PATH = ROOT / "mcp" / "servers.json"
 REGISTRY_VERSION = 1
 
 # mcp sync targets
-MCP_TARGETS = ("opencode", "claude-code")
+MCP_TARGETS = ("opencode", "claude-code", "codex")
 
 # config section each tool nests server entries under
 SECTION_KEYS = {
 	"opencode": "mcp",
 	"claude-code": "mcpServers",
+	"codex": "mcp_servers",
 }
 
 SERVER_NAME_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
@@ -63,6 +64,11 @@ def resolve_target(
 	environ: Mapping[str, str] | None = None,
 	user_home: Path | None = None,
 ) -> Path:
+	if tool == "codex":
+		return (
+			tooling_paths.resolve_home("codex", environ=environ, user_home=user_home)
+			/ "config.toml"
+		)
 	if tool == "claude-code":
 		return tooling_paths.claude_state_path(environ=environ, user_home=user_home)
 	if tool != "opencode":
@@ -227,9 +233,22 @@ def desired_claude(servers: tuple[ServerSpec, ...]) -> dict[str, dict[str, Any]]
 	return entries
 
 
+def desired_codex(servers: tuple[ServerSpec, ...]) -> dict[str, dict[str, Any]]:
+	entries: dict[str, dict[str, Any]] = {}
+	for server in _tool_servers(servers, "codex"):
+		if isinstance(server, RemoteServer):
+			entries[server.name] = {"url": server.url}
+		else:
+			entries[server.name] = {"command": server.command[0], "args": list(server.command[1:])}
+			if server.environment:
+				entries[server.name]["env"] = dict(server.environment)
+	return entries
+
+
 DESIRED_SECTIONS = {
 	"opencode": desired_opencode,
 	"claude-code": desired_claude,
+	"codex": desired_codex,
 }
 
 
