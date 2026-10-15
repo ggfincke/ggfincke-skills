@@ -64,12 +64,30 @@ Implement the simplest design that fully preserves the requirements, invariants,
 
 Do not equate simplicity with fewer files or fewer lines. Do not introduce abstractions, configuration, indirection, or extension points without a present repository-backed need. When adding a meaningful abstraction, state what concrete variation or policy it captures.
 
+## Collaboration defaults
+
+_From the `working-conventions` skill; full detail & enforcers there._
+
+- Reviews, audits, and "let's discuss" are read-only until I say go ("lgtm", "do it"); then execute the whole approved scope without re-asking. For decisions, give numbered or multiple-choice options with your recommended default.
+- Once I say "full access", stop asking for routine permissions in that session. Still stop before sending, submitting, publishing, paying, deleting my data, or anything outward-facing.
+- Subagents: size the count to the work by default; go tight when I say tight, wide when I say wide; caps I give are hard limits. Cheap models for search and sourcing, strong models for implementation and verification, and use whatever model or effort I name. Review and verify agents stay read-only; an all-pass verdict or an implementer's self-report is not proof. Stop all subagents at wrap-up.
+- On long runs, post short progress unprompted (`N/M done; next: ...`) and use background waits, not blocking ones. In long autonomous runs, make the edits first and verify once at the end. If scope or cost balloons without results, stop and propose a reassessment.
+- "Be thorough" / "be extremely thorough" means: freeze the scope, gather independent evidence, report coverage counts, separate verified from candidate findings, and check the live web for current facts. Thorough analysis, concise reply; don't over-spec plans.
+- A passing build or lint is not proof of a fix. For UI bugs, restate the exact element, reproduce, and check visually after the fix; after two failed attempts, add logging or do a postmortem instead of guessing again.
+- Minimal diff: don't touch what I didn't name or add unrequested UI, labels, or docs, and do obvious mechanical follow-ups now instead of filing them for later. Pre-1.0 repos with no users get clean breaks: no compat shims, deprecation paths, or dual code (real data migrations only where real users exist); a repo's AGENTS.md overrides.
+- Audit and plan docs go in `dev-docs/*.md` with a phases or recommended-order section at the top; merge new findings in instead of appending; work them a phase at a time and finish with a whole-doc pass. Templates are read-only: clone, then fill. Verify pasted findings from other tools before acting on them.
+- `dev-docs/`, `AGENTS.md`, and `.agents/` are git-excluded locally; never `git add -f` them. CLAUDE.md just points to AGENTS.md. Don't save one-off environment facts or session progress ledgers to memory.
+
 ## Commit discipline
 
 _From the `working-conventions` skill; full detail & enforcers there._
 
-- When I ask you to commit and the working tree spans multiple concerns, do not commit one mixed blob. Propose logically-grouped commits - grouped by concern (e.g. backend / frontend / related), each a coherent unit, matching the repo's existing commit style and message format - and get my pick before committing.
-- For a single-concern change, just commit it; this is for multi-concern trees.
+- When I ask you to commit and the working tree spans multiple concerns, do not commit one mixed blob. Propose logically-grouped commits - grouped by concern (e.g. backend / frontend / related), each a coherent unit, matching the repo's existing commit style and message format - and get my pick before committing. For a single-concern change, just commit it.
+- Commit, push, tag, or merge only when I ask. A narrow request (commit, PR, merge, "wrap it up") means only that: no extra work or status essay. "Amend" means amend and force-push my branch, no new PR.
+- Every tool that wrote part of a change adds its own trailer naming the model: `Co-Authored-By: Claude <model> <noreply@anthropic.com>`, `Co-authored-by: Codex <codex@openai.com>`, `Co-authored-by: Gemini <model> <noreply@google.com>`, `Co-authored-by: Cursor <cursoragent@cursor.com>`. Never invent names or emails; keep existing co-authors when amending. No AI trailers in school or coursework repos.
+- Before creating a branch, propose 2-4 names. Prefix by content (`feat/`, `fix/`, `refactor/`, `ci/`, `build/`, `deps/<date>`); never `claude/` or `codex/`, never "phase N" or release numbers. Dependency bumps: one `deps/<date>` branch, close each Dependabot PR individually.
+- Squash-merge PRs by default. "Merge on green CI" is a grant I give per PR; verify head, base, and checks right before merging. After merging, sweep merged branches and worktrees; don't create `backup/*` branches.
+- After a pause or an unexpected change, re-check `git status` and `git log` before editing. Other sessions may be working in the same tree; don't "fix" their changes.
 
 ## Opt-in external workers
 
@@ -93,7 +111,7 @@ _From the `working-conventions` skill; full detail & enforcers there._
 
 _From the `working-conventions` skill; full detail & enforcers there._
 
-- Do not add, expand, or modify tests as a side effect of an implementation, fix, or refactor task unless I asked for tests or approved a plan that already includes them. If you added tests unprompted this turn, remove them and say so.
-- When tests are wanted: major, important tests only - never exhaustive coverage. Plan them deliberately with the test-coverage-audit skill, and execute an approved test plan with phased-implementation.
+- Do not add, expand, or modify tests as a side effect of an implementation, fix, or refactor task unless I asked for tests or approved a plan that already includes them. If you added tests unprompted this turn, remove them and say so (consolidating existing tests is fine).
+- When tests are wanted: major, important tests only - never exhaustive coverage - in their own final phase. When pruning, lean aggressive but protect auth/security, data integrity, serialization contracts, and non-trivial algorithms. Plan tests with the test-coverage-audit skill, and execute an approved test plan with phased-implementation.
 
 <!-- END ggfincke-skills:always-on -->
