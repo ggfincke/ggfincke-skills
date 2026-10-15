@@ -22,6 +22,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Install Python tooling
+        run: python3 -m pip install -r requirements-tooling.txt
       - name: Validate skills
         run: python3 scripts/validate-skills.py
       - name: Check generated references and instructions
@@ -42,6 +44,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install root tooling
         run: npm ci
+      - name: Install Python tooling
+        run: python3 -m pip install -r requirements-tooling.txt
       - name: Run staged-hook regression
         run: python3 -m unittest discover -s tests -p 'test_pre_commit_hook.py'
       - name: Prettier + ESLint format check
