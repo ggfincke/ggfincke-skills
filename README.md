@@ -18,7 +18,7 @@ This repo is the source of truth. Skills live here in a portable format, then ge
 - `scripts/sync-skills.py`: copies or symlinks skills into the shared Agents root, Claude Code, Antigravity CLI (agy), or a target project, and emits always-on rules into each agent's global instruction file.
 - `scripts/sync-agents.py`: copies or symlinks canonical Claude custom agents into `~/.claude/agents`.
 - `mcp/servers.json`: canonical registry of MCP servers, one entry per server with the tools it targets.
-- `scripts/sync-mcp.py`: merges that registry transactionally into each tool's native config (`~/.config/opencode/opencode.json`, `~/.claude.json`); see [`docs/mcp-lanes.md`](docs/mcp-lanes.md).
+- `scripts/sync-mcp.py`: merges that registry transactionally into OpenCode, Claude Code, and Codex native configs; see [`docs/mcp-lanes.md`](docs/mcp-lanes.md).
 - `scripts/always_on.py`, `scripts/skill_inventory.py`, `scripts/sync_transaction.py`, and `scripts/tooling_paths.py`: canonical seams for always-on extraction, skill inventory/validation, transactional sync, and external tooling paths.
 - `scripts/hooks/`: git hooks; `pre-commit` formats staged files, then validates and tests the resulting index snapshot.
 - `tests/`: regression tests for sync, always-on parsing, comment style, branch sweep, pre-commit hook behavior, inventory/path resolution, and sync transactions.
@@ -38,14 +38,17 @@ Agent-specific behavior can be added later, but it should be explicit because it
 
 ## Quick Start
 
-Use Node.js 24+, Python 3.9+, and `uv` (or Ruff 0.16.2 already on `PATH`). Install both Node dependency trees in a fresh checkout, then run the full repository gate:
+Use Node.js 24+, Python 3.9+, and `uv` (or Ruff 0.16.2 already on `PATH`). Install the Python tooling and both Node dependency trees in a fresh checkout, then run the full repository gate:
 
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-tooling.txt
 npm ci
 npm --prefix tools/worker-broker ci
-python3 scripts/validate-skills.py   # or: make validate
-make check                            # validation + generated outputs + tests + broker + format checks + audits
+make check PYTHON=.venv/bin/python   # validation + generated outputs + tests + broker + format checks + audits
 ```
+
+The Python dependency preserves Codex TOML comments and local settings during MCP sync. Skill validation alone remains available with `python3 scripts/validate-skills.py` (or `make validate`).
 
 Validation is strict by default: frontmatter beyond `name`/`description` fails
 unless you pass `--lenient-frontmatter`.
@@ -76,11 +79,11 @@ python3 scripts/sync-agents.py --mode link
 MCP server registrations live in `mcp/servers.json` — one canonical entry per server naming the tools it targets — and are merged into each tool's native config by:
 
 ```bash
-python3 scripts/sync-mcp.py --dry-run   # preview per-file changes
-python3 scripts/sync-mcp.py             # apply (or: make sync-mcp)
+.venv/bin/python scripts/sync-mcp.py --dry-run   # preview per-file changes
+.venv/bin/python scripts/sync-mcp.py             # apply (or: make sync-mcp PYTHON=.venv/bin/python)
 ```
 
-The merge is surgical: only registry-owned names inside each tool's MCP section (`mcp` for opencode, `mcpServers` for Claude Code) are added or updated; every other key and foreign server entry is preserved untouched. Re-runs with an unchanged registry are no-ops, and a malformed target config refuses the run instead of guessing. Registry semantics, schema rules, and the roadmap for Codex/Cursor/Claude Desktop targets live in [`docs/mcp-lanes.md`](docs/mcp-lanes.md).
+The merge updates registry-owned server entries inside each tool's MCP section (`mcp` for OpenCode, `mcpServers` for Claude Code, `mcp_servers` for Codex). Codex also retains unknown server fields, machine-local environment bindings, comments, and a valid existing broker Node executable. Unrelated settings and foreign server entries are preserved. Re-runs with an unchanged registry are no-ops, and a malformed target config refuses the run. Registry semantics, schema rules, and the roadmap for Cursor/Claude Desktop targets live in [`docs/mcp-lanes.md`](docs/mcp-lanes.md).
 
 Remote servers authenticate per client on first use (`opencode mcp auth <server>`; Claude Code triggers OAuth on its first tool call).
 

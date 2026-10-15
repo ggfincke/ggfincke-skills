@@ -18,7 +18,7 @@ import skill_inventory
 import tooling_paths
 
 ROOT = Path(__file__).resolve().parents[1]
-PROVIDERS = ("codex", "claude", "cursor", "coral")
+PROVIDERS = ("codex", "claude", "cursor", "coral", "agy")
 
 
 def read_json_status(path: Path) -> tuple[dict, str]:
@@ -201,6 +201,7 @@ def broker_launcher(repo: Path = ROOT) -> tuple[list[str] | None, dict[str, str]
 		for provider in PROVIDERS
 		for kind in ("BINARY", "MODEL")
 	)
+	registrations.sort(key=lambda item: item[0] != "codex")
 	for host, registration in registrations:
 		args = registration.get("args", [])
 		command = registration.get("command")

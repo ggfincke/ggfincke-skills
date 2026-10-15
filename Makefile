@@ -81,7 +81,7 @@ sync-agents: check ## Symlink Claude custom agents into the personal agent root
 sync-agents-force: check ## Replace Claude custom agents with canonical symlinks
 	$(PYTHON) $(SCRIPTS)/sync-agents.py --mode link --force
 
-sync-mcp: check ## Merge the canonical MCP registry into opencode + Claude Code configs
+sync-mcp: check ## Merge the canonical MCP registry into OpenCode, Claude Code, and Codex configs
 	$(PYTHON) $(SCRIPTS)/sync-mcp.py
 
 sync-mcp-dry-run: check ## Preview MCP registry merges without writing anything

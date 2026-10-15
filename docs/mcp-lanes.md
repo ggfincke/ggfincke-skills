@@ -28,7 +28,7 @@ python3 scripts/sync-mcp.py --server figma     # one server only (repeatable)
 			"url": "required for remote; must be http(s)",
 			"command": ["required for local; non-empty strings"],
 			"environment": {"optional for local; string -> string"},
-			"tools": ["subset of: opencode, claude-code"],
+			"tools": ["subset of: opencode, claude-code, codex"],
 			"enabled": true
 		}
 	}
@@ -39,11 +39,19 @@ Names are lowercase words separated by `-` or `_`. Unknown keys fail validation;
 `$comment` is the one exempt metadata key. Disabled entries stay in the registry
 as documentation but are skipped by sync.
 
+## Python setup
+
+Codex TOML sync uses the declared `requirements-tooling.txt` dependency. Install
+it in the repository virtual environment (`uv pip install --python .venv/bin/python
+-r requirements-tooling.txt`) and use `.venv/bin/python scripts/sync-mcp.py --tool
+codex --server worker-broker`. Run the full gate with `make check PYTHON=.venv/bin/python`.
+CI installs the same pinned dependency.
+
 ## Ownership semantics
 
 The merge is structural and surgical. Within a target's MCP section:
 
-- Names present in the registry are **owned**: added or overwritten on every sync.
+- Names present in the registry are **owned**: added or updated on every sync. Codex merges owned fields, retaining unknown fields, machine-local environment bindings, comments, and a valid existing Node executable. The canonical broker script path uses `${REPO_ROOT}`, resolved to this checkout without shell expansion.
 - All other names are **foreign**: preserved byte-for-value in their original order.
 - Everything outside the MCP section (`provider`, `model`, `numStartups`, ...)
   is untouched.
@@ -57,6 +65,7 @@ content because it cannot prove it wrote it.
 | Tool | Config file | Section | Remote entry | Local entry |
 | --- | --- | --- | --- | --- |
 | opencode | `~/.config/opencode/opencode.json` | `mcp` | `{"type": "remote", "url": ...}` | `{"type": "local", "command": [...], "environment"?}` |
+| Codex | `~/.codex/config.toml` (`CODEX_HOME` honored) | `mcp_servers` | `{url}` | `{command, args, env?}` |
 | Claude Code | `~/.claude.json` | `mcpServers` | `{"type": "http", "url": ...}` | `{"command", "args"?, "env"?}` |
 
 OpenCode honors `OPENCODE_HOME`. Claude uses a nonempty native
@@ -116,9 +125,16 @@ prune) or re-extend its `tools` list.
 
 ## Roadmap
 
-- Phase 2 targets: Codex (`~/.codex/config.toml`, TOML emit), Cursor
+- Future targets: Cursor
   (`~/.cursor/mcp.json`), Claude Desktop (`~/Library/Application Support/
-  Claude/claude_desktop_config.json`). Absorb `worker-broker`'s manual
-  registration into the registry.
+  Claude/claude_desktop_config.json`). Codex worker-broker registration is now canonical.
 - Possible phase 3: an opt-in `--prune` backed by marker state if manual removal
   proves annoying in practice.
+
+## Broker agent installation
+
+`python3 scripts/sync-agents.py --tool agy` installs the canonical broker-only agent
+from `tools/worker-broker/agents` into `~/.gemini/config/agents`. It changes no
+Antigravity settings or credentials. Existing foreign definitions are not replaced.
+The broker refuses execution until native read-only and ambient-hook controls are
+verified; a present agent file alone does not enable the provider.
