@@ -54,3 +54,10 @@ For each action group, distinguish the five authorization dimensions above. Gene
 ## Shared evidence and approval
 
 Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.
+
+## External workers
+
+<!-- always-on:start title="Opt-in external workers" -->
+- Use the worker broker only after an explicit current-task request for orchestrate or named external workers. A direct request is sufficient; ordinary subagent requests remain native. Local Ollama inference requires explicit task permission; prefer installed local models, exclude Ollama cloud, and never download implicitly.
+- Reuse one broker run across task waves, defaulting to four assignments (one for a single-reviewer request). Ask only before expanding scope or resources. Local workers require AC unless this run explicitly permits battery use; unknown power blocks them. Never bypass broker restrictions with shell launches, extra runs, or native model overrides.
+<!-- always-on:end -->

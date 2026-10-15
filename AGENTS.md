@@ -71,6 +71,13 @@ _From the `working-conventions` skill; full detail & enforcers there._
 - When I ask you to commit and the working tree spans multiple concerns, do not commit one mixed blob. Propose logically-grouped commits - grouped by concern (e.g. backend / frontend / related), each a coherent unit, matching the repo's existing commit style and message format - and get my pick before committing.
 - For a single-concern change, just commit it; this is for multi-concern trees.
 
+## Opt-in external workers
+
+_From the `working-conventions` skill; full detail & enforcers there._
+
+- Use the worker broker only after an explicit current-task request for orchestrate or named external workers. A direct request is sufficient; ordinary subagent requests remain native. Local Ollama inference requires explicit task permission; prefer installed local models, exclude Ollama cloud, and never download implicitly.
+- Reuse one broker run across task waves, defaulting to four assignments (one for a single-reviewer request). Ask only before expanding scope or resources. Local workers require AC unless this run explicitly permits battery use; unknown power blocks them. Never bypass broker restrictions with shell launches, extra runs, or native model overrides.
+
 ## Task authority and preservation
 
 _From the `working-conventions` skill; full detail & enforcers there._

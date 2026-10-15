@@ -20,7 +20,8 @@
         "codex",
         "cursor",
         "coral",
-        "claude"
+        "claude",
+        "agy"
       ]
     },
     "model": {
