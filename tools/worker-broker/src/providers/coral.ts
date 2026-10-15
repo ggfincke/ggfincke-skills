@@ -74,10 +74,11 @@ export function buildCoralArgs(
     )
   }
   const args = ['exec', '--cwd', context.worktree, '--model', model]
-  if (config.coral_host !== undefined) args.push('--host', config.coral_host)
+  const host = context.request.local_endpoint ?? config.coral_host
+  if (host !== undefined) args.push('--host', host)
   args.push(
     '--permission-profile',
-    context.request.mode === 'edit' ? 'workspace-write' : 'read-only',
+    'read-only',
     '--output-format',
     'stream-json',
     '--result-file',
@@ -99,6 +100,8 @@ export class CoralProvider implements WorkerProvider
 
   async run(context: ProviderRunContext): Promise<ProviderOutcome>
   {
+    if (context.request.mode !== 'read')
+      throw new Error('Coral workers are read-only')
     const prompt = assignmentPrompt(context)
     await writePrivateFile(context.prompt_path, prompt)
     const nativeResultPath = path.join(context.job_dir, 'coral-result.json')
@@ -110,6 +113,7 @@ export class CoralProvider implements WorkerProvider
       stdout_path: context.event_log_path,
       stderr_path: context.stderr_path,
       signal: context.signal,
+      timeout_ms: 30 * 60 * 1000,
       on_process_started: context.on_process_started,
       on_process_finished: context.on_process_finished,
       on_stdout_line: (line) =>
@@ -132,7 +136,8 @@ export class CoralProvider implements WorkerProvider
     }
     if (workerSessionId !== undefined)
       outcome.worker_session_id = workerSessionId
-    if (processResult.exit_code === 0)
+    if (processResult.timed_out) throw new Error('Coral worker timed out')
+    if (processResult.exit_code === 0 && !context.signal.aborted)
     {
       const nativeResult = parseCoralExecResult(
         await readJson(nativeResultPath)
@@ -141,6 +146,13 @@ export class CoralProvider implements WorkerProvider
       {
         throw new Error(`Coral exec ended with ${nativeResult.status}`)
       }
+      if (
+        nativeResult.model !==
+        (context.request.model ?? this.config.default_coral_model)
+      )
+        throw new Error(
+          'Coral observed model differs from the pinned run model'
+        )
       const modelResult = parseModelResultText(nativeResult.response, 'Coral')
       await writePrivateFile(
         context.model_result_path,

@@ -15,7 +15,12 @@ import type {
   WorkerProvider,
 } from '../src/contracts.js'
 import { JobManager } from '../src/job-manager.js'
-import { initializeTestRepo, waitUntil } from './helpers.js'
+import {
+  authorizeFixtureRun,
+  TEST_RUN_ID,
+  initializeTestRepo,
+  waitUntil,
+} from './helpers.js'
 
 class ParityProvider implements WorkerProvider
 {
@@ -77,17 +82,18 @@ test('portable schema accepts every real terminal JobManager result shape', asyn
   const manager = new JobManager(config(stateDir), [provider])
   try
   {
+    await authorizeFixtureRun(stateDir, repo, 'requested-fixture')
     const completedAdmission = await manager.start({
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'return a completed result',
       allowed_paths: ['src'],
       model: 'requested-fixture',
       effort: 'high',
       stage: 'implementation',
       workflow: 'standard',
-      run: 'schema-parity',
     })
     await manager.waitForTerminal(completedAdmission.job.job_id)
     const completed = await manager.get(completedAdmission.job.job_id)
@@ -95,6 +101,7 @@ test('portable schema accepts every real terminal JobManager result shape', asyn
       provider: 'codex',
       mode: 'read',
       repo,
+      run: TEST_RUN_ID,
       task: 'return a provider failure',
       allowed_paths: [],
     })
@@ -104,6 +111,7 @@ test('portable schema accepts every real terminal JobManager result shape', asyn
       provider: 'codex',
       mode: 'edit',
       repo,
+      run: TEST_RUN_ID,
       task: 'return a scope rejection',
       allowed_paths: ['src'],
     })
@@ -113,6 +121,7 @@ test('portable schema accepts every real terminal JobManager result shape', asyn
       provider: 'codex',
       mode: 'read',
       repo,
+      run: TEST_RUN_ID,
       task: 'wait for cancellation',
       allowed_paths: [],
     })
@@ -124,13 +133,13 @@ test('portable schema accepts every real terminal JobManager result shape', asyn
     assert.equal(completed.status, 'completed')
     assert.equal(completed.result?.stage, 'implementation')
     assert.equal(completed.result?.workflow, 'standard')
-    assert.equal(completed.result?.run, 'schema-parity')
+    assert.equal(completed.result?.run, TEST_RUN_ID)
     assert.equal(completed.result?.model, 'requested-fixture')
     assert.equal(completed.result?.effort, 'high')
     assert.equal(completed.result?.effective_model, 'effective-fixture')
     assert.equal(failed.status, 'failed')
     assert.equal(failed.result?.failure_class, 'model')
-    assert.equal(failed.result?.model, undefined)
+    assert.equal(failed.result?.model, 'requested-fixture')
     assert.equal(failed.result?.effort, undefined)
     assert.equal(failed.result?.effective_model, undefined)
     assert.equal(rejected.status, 'rejected')

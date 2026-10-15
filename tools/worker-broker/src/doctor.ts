@@ -16,9 +16,19 @@ import {
 import { readBuildId } from './daemon/protocol.js'
 import { defaultBrokerConfig } from './config.js'
 import { normalizeRequest } from './request.js'
+import { ensureDaemonClient } from './daemon/client.js'
+import { waitForOneTerminal } from './wait-command.js'
 import { CodexProvider } from './providers/codex.js'
 import { ClaudeProvider } from './providers/claude.js'
 import { CursorProvider } from './providers/cursor.js'
+import { AgyProvider } from './providers/agy.js'
+import {
+  installedLocalModels,
+  localEndpoint,
+  readPowerState,
+  requireLocalPower,
+} from './local-policy.js'
+import { discoverTargets } from './targets.js'
 import { CoralProvider } from './providers/coral.js'
 
 interface ToolProbe
@@ -115,7 +125,7 @@ async function resolveBinary(binary: string): Promise<string | null>
 
 function binaryFor(config: BrokerConfig, provider: ProviderName): string
 {
-  return config[`${provider}_binary`]
+  return config[`${provider}_binary`] ?? provider
 }
 
 function modelFor(
@@ -136,6 +146,26 @@ async function smokeProvider(
       status: 'unverified',
       reason: 'Coral has no configured model binding.',
     }
+  if (provider === 'coral')
+  {
+    try
+    {
+      requireLocalPower(await readPowerState(), false)
+      const endpoint = localEndpoint(
+        config.coral_host ?? 'http://127.0.0.1:11434'
+      )
+      if (
+        !(await installedLocalModels(endpoint)).includes(
+          modelFor(config, provider) ?? ''
+        )
+      )
+        throw new Error('installed local model unavailable')
+    }
+    catch (error)
+    {
+      return { status: 'blocked', reason: String(error) }
+    }
+  }
   const directory = await mkdtemp(
     path.join(os.tmpdir(), `worker-broker-smoke-${provider}-`)
   )
@@ -157,6 +187,7 @@ async function smokeProvider(
   ).stdout
   const request = normalizeRequest({
     provider,
+    run: 'doctor-disposable-smoke',
     mode: 'read',
     repo: directory,
     allowed_paths: [],
@@ -165,14 +196,73 @@ async function smokeProvider(
       ? {}
       : { model: modelFor(config, provider) }),
   })
+  if (provider === 'coral')
+  {
+    const client = await ensureDaemonClient(config)
+    let runId: string | undefined
+    let timer: NodeJS.Timeout | undefined
+    try
+    {
+      const run = await client.call('create_run', {
+        repo: directory,
+        targets: [{ provider, model: request.model! }],
+        max_assignments: 1,
+      })
+      runId = run.id
+      const admission = await client.call('start_worker', {
+        ...request,
+        run: run.id,
+      })
+      timer = setTimeout(() =>
+      {
+        void client
+          .call('close_run', { run: run.id, cancel_active: true })
+          .catch(() => undefined)
+      }, 60000)
+      const summary = await waitForOneTerminal(
+        client,
+        admission.worker.job_id,
+        70
+      )
+      const job = await client.call('get_worker_result', {
+        job_id: summary.job_id,
+      })
+      const result = job.result
+      return {
+        status:
+          summary.status === 'completed' && result?.summary?.includes(marker)
+            ? 'passed'
+            : 'failed',
+        directory,
+        run: run.id,
+        job_id: job.job_id,
+        requested_model: request.model,
+        observed_model: result?.effective_model,
+        source_unchanged: result?.changed_files.length === 0,
+        reason: result?.error,
+        enforcement_verified: false,
+      }
+    }
+    finally
+    {
+      clearTimeout(timer)
+      if (runId)
+        await client
+          .call('close_run', { run: runId, cancel_active: true })
+          .catch(() => undefined)
+      await client.close()
+    }
+  }
   const providers: Record<ProviderName, WorkerProvider> = {
     codex: new CodexProvider(config),
     claude: new ClaudeProvider(config),
     cursor: new CursorProvider(config),
     coral: new CoralProvider(config),
+    agy: new AgyProvider(config),
   }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 60_000)
+
   try
   {
     const outcome = await providers[provider].run({
@@ -276,6 +366,7 @@ export async function runDoctor(
       mode: 'read',
       repo: process.cwd(),
       task: 'doctor',
+      run: 'doctor-passive-probe',
       allowed_paths: [],
     })
     const flags = [
@@ -322,5 +413,6 @@ export async function runDoctor(
     build_id: readBuildId(),
     node: process.version,
     providers,
+    targets: await discoverTargets(config),
   }
 }

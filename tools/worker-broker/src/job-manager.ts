@@ -3,6 +3,16 @@
 
 import { EventEmitter } from 'node:events'
 import { capabilityEvidence, requireCapabilities } from './capabilities.js'
+import { CreateRunSchema, RunStore, type WorkerRun } from './run-store.js'
+import {
+  installedLocalModels,
+  localEndpoint,
+  readPowerState,
+  requireLocalPower,
+  type PowerState,
+} from './local-policy.js'
+import { discoverTargets, agyReadiness } from './targets.js'
+import { randomUUID } from 'node:crypto'
 import { randomBytes } from 'node:crypto'
 import { access, rename } from 'node:fs/promises'
 import path from 'node:path'
@@ -171,10 +181,210 @@ export class JobManager
   private admissionTail: Promise<void> = Promise.resolve()
   private scheduling = false
   private shuttingDown = false
+  private readonly runs: RunStore
+  private powerTimer: NodeJS.Timeout | undefined
+  private checkingPower = false
 
-  constructor(config: BrokerConfig, providers: readonly WorkerProvider[])
+  async createRun(input: unknown): Promise<WorkerRun>
+  {
+    await this.initialize()
+    if (this.shuttingDown) throw new Error('worker broker is shutting down')
+    const request = CreateRunSchema.parse(input)
+    const targets: WorkerRun['targets'] = []
+    for (const target of request.targets)
+    {
+      if (
+        ['coral', 'agy'].includes(target.provider) &&
+        target.modes.some((mode) => mode !== 'read')
+      )
+        throw new Error('local and Antigravity workers are read-only')
+      const model =
+        target.model ?? this.config[`default_${target.provider}_model`]
+      if (!model)
+        throw new Error(`an explicit model is required for ${target.provider}`)
+      const binding: WorkerRun['targets'][number] = { ...target, model }
+      if (target.provider === 'coral')
+      {
+        binding.endpoint = localEndpoint(
+          this.config.coral_host ?? 'http://127.0.0.1:11434'
+        )
+        if (!(await this.policy.models(binding.endpoint)).includes(model))
+          throw new Error(`installed local model unavailable: ${model}`)
+        requireLocalPower(await this.policy.power(), request.allow_battery)
+      }
+      if (target.provider === 'agy')
+      {
+        const reason = await agyReadiness(this.config, request.repo)
+        if (reason) throw new Error(reason)
+      }
+      targets.push(binding)
+    }
+    const now = Date.now()
+    const run: WorkerRun = {
+      schema_version: 1,
+      id: randomUUID(),
+      repo: await resolveRepository(request.repo),
+      targets,
+      max_assignments: request.max_assignments,
+      allow_battery: request.allow_battery,
+      created_at: new Date(now).toISOString(),
+      expires_at: new Date(now + 12 * 60 * 60 * 1000).toISOString(),
+    }
+    await this.runs.write(run)
+    return run
+  }
+
+  async listTargets(): Promise<Awaited<ReturnType<typeof discoverTargets>>>
+  {
+    return await discoverTargets(this.config)
+  }
+
+  async runDetails(id: string): Promise<{
+    contract: WorkerRun
+    spent: number
+    remaining: number
+    power: PowerState
+  }>
+  {
+    const contract = await this.runs.read(id)
+    const spent = (await this.store.listSummaries()).filter(
+      (job) => job.run === id
+    ).length
+    return {
+      contract,
+      spent,
+      remaining: Math.max(0, contract.max_assignments - spent),
+      power: await this.policy.power(),
+    }
+  }
+
+  async closeRun(id: string, cancelActive = false): Promise<WorkerRun>
+  {
+    await this.initialize()
+    const closing = this.admissionTail.then(async () =>
+    {
+      const run = await this.runs.read(id)
+      const active = [...this.jobs.values()].filter(
+        (job) => job.request.run === id && !isTerminalWorkerStatus(job.status)
+      )
+      if (active.length && !cancelActive)
+        throw new Error('run still has outstanding workers')
+      run.closed_at ??= new Date().toISOString()
+      await this.runs.write(run)
+      if (cancelActive)
+        await Promise.all(
+          active.map((job) =>
+            this.cancel(job.job_id, 'run closed and cancelled')
+          )
+        )
+      return run
+    })
+    this.admissionTail = closing.then(
+      () => undefined,
+      () => undefined
+    )
+    return await closing
+  }
+
+  private async checkRun(job: WorkerJob, admission = false): Promise<void>
+  {
+    if (!job.request.run)
+      throw new Error('create_run is required before start_worker')
+    const run = await this.runs.read(job.request.run)
+    if (run.closed_at || Date.parse(run.expires_at) <= Date.now())
+      throw new Error('run is closed or expired')
+    if (
+      run.repo !== job.request.repo &&
+      run.repo !== (await resolveRepository(job.request.repo))
+    )
+      throw new Error('repository is outside the run scope')
+    job.request.repo = run.repo
+    const candidates = run.targets.filter(
+      (target) =>
+        target.provider === job.request.provider &&
+        target.modes.includes(job.request.mode) &&
+        (job.request.model === undefined || target.model === job.request.model)
+    )
+    if (candidates.length !== 1)
+      throw new Error(
+        'provider, model, or mode is outside the run scope or ambiguous'
+      )
+    const target = candidates[0]!
+    job.request.model = target.model
+    if (target.provider === 'coral')
+    {
+      if (!target.endpoint) throw new Error('local run has no pinned endpoint')
+      job.request.local_endpoint = target.endpoint
+      requireLocalPower(await this.policy.power(), run.allow_battery)
+      if (!(await this.policy.models(target.endpoint)).includes(target.model))
+        throw new Error('installed local model unavailable')
+    }
+    if (target.provider === 'agy')
+    {
+      const reason = await agyReadiness(
+        this.config,
+        job.worktree ?? job.request.repo
+      )
+      if (reason) throw new Error(reason)
+    }
+    if (target.provider === 'coral')
+      requireLocalPower(await this.policy.power(), run.allow_battery)
+    const current = await this.runs.read(run.id)
+    if (current.closed_at || Date.parse(current.expires_at) <= Date.now())
+      throw new Error('run is closed or expired')
+    if (admission)
+    {
+      const spent = (await this.store.listSummaries()).filter(
+        (summary) => summary.run === run.id
+      ).length
+      if (spent >= run.max_assignments)
+        throw new Error('run assignment budget exhausted')
+    }
+  }
+
+  async enforceLocalPower(): Promise<void>
+  {
+    if (this.checkingPower || this.shuttingDown) return
+    this.checkingPower = true
+    try
+    {
+      const active = [...this.jobs.values()].filter(
+        (job) =>
+          job.request.provider === 'coral' &&
+          !isTerminalWorkerStatus(job.status)
+      )
+      if (!active.length) return
+      const power = await this.policy.power()
+      for (const job of active)
+      {
+        try
+        {
+          const run = await this.runs.read(job.request.run ?? '')
+          requireLocalPower(power, run.allow_battery)
+        }
+        catch (error)
+        {
+          await this.cancel(job.job_id, errorMessage(error))
+        }
+      }
+    }
+    finally
+    {
+      this.checkingPower = false
+    }
+  }
+
+  constructor(
+    private readonly config: BrokerConfig,
+    providers: readonly WorkerProvider[],
+    private readonly policy: {
+      power: () => Promise<PowerState>
+      models: (endpoint: string) => Promise<string[]>
+    } = { power: readPowerState, models: installedLocalModels }
+  )
   {
     this.store = new JobStore(config.state_dir)
+    this.runs = new RunStore(config.state_dir)
     this.providers = new Map(
       providers.map((provider) => [provider.name, provider])
     )
@@ -190,6 +400,11 @@ export class JobManager
   private async initializeOnce(): Promise<void>
   {
     await this.store.initialize()
+    this.powerTimer = setInterval(() =>
+    {
+      void this.enforceLocalPower().catch(() => undefined)
+    }, 5000)
+    this.powerTimer.unref()
     const interruptedSummaries = (await this.store.listSummaries())
       .filter((summary) => !isTerminalWorkerStatus(summary.status))
       .sort((left, right) => left.created_at.localeCompare(right.created_at))
@@ -223,6 +438,18 @@ export class JobManager
     const hasProcessToken = job.process_token !== undefined
     if (job.status === 'queued' && !hasProcessId && !hasProcessToken)
     {
+      try
+      {
+        await this.checkRun(job)
+      }
+      catch (error)
+      {
+        await this.finish(
+          job,
+          this.baseResult(job, 'rejected', errorMessage(error), 'broker_fault')
+        )
+        return
+      }
       const currentAttempt = job.restart_requeues ?? 0
       await this.preserveInterruptedEventLog(
         job,
@@ -292,7 +519,12 @@ export class JobManager
       recoveryError === undefined &&
       priorStatus === 'running' &&
       interruptedWorktreeIsClean &&
-      (job.restart_requeues ?? 0) < 1
+      (job.restart_requeues ?? 0) < 1 &&
+      job.request.provider !== 'coral' &&
+      (await this.checkRun(job).then(
+        () => true,
+        () => false
+      ))
     )
     {
       try
@@ -494,6 +726,8 @@ export class JobManager
   {
     const admission = this.admissionTail.then(async () =>
     {
+      if (this.shuttingDown) throw new Error('worker broker is shutting down')
+      await this.checkRun(job, true)
       await this.store.write(job)
       const serializesBehind = this.editSerializationConflicts(job)
       this.jobs.set(job.job_id, job)
@@ -606,7 +840,10 @@ export class JobManager
     return progress
   }
 
-  async cancel(jobId: string): Promise<WorkerSummary>
+  async cancel(
+    jobId: string,
+    reason = 'job cancelled by request'
+  ): Promise<WorkerSummary>
   {
     await this.initialize()
     const job = this.jobs.get(jobId)
@@ -626,14 +863,12 @@ export class JobManager
     }
     if (job.status === 'queued')
     {
-      await this.finish(
-        job,
-        this.baseResult(job, 'cancelled', 'job cancelled while queued')
-      )
+      await this.finish(job, this.baseResult(job, 'cancelled', reason))
       return structuredClone(summarizeWorkerJob(job))
     }
 
-    this.controllers.get(jobId)?.abort()
+    job.cancellation_reason = reason
+    this.controllers.get(jobId)?.abort(new Error(reason))
     return structuredClone(summarizeWorkerJob(job))
   }
 
@@ -683,6 +918,7 @@ export class JobManager
     if (this.shuttingDown) return
     await this.initialize()
     this.shuttingDown = true
+    clearInterval(this.powerTimer)
     const active = [...this.jobs.values()].filter(
       (job) => !isTerminalWorkerStatus(job.status)
     )
@@ -741,6 +977,14 @@ export class JobManager
 
   private canRun(job: WorkerJob): boolean
   {
+    if (
+      job.request.provider === 'coral' &&
+      [...this.jobs.values()].some(
+        (other) =>
+          other.status === 'running' && other.request.provider === 'coral'
+      )
+    )
+      return false
     if (this.earlierConflictingEditIsQueued(job)) return false
     if (job.request.mode === 'read') return true
     for (const running of this.jobs.values())
@@ -799,6 +1043,20 @@ export class JobManager
         }
         if (this.terminalTransitions.has(job.job_id)) continue
         if (!this.canRun(job)) continue
+        try
+        {
+          await this.checkRun(job)
+        }
+        catch (error)
+        {
+          await this.finish(
+            job,
+            this.baseResult(job, 'rejected', errorMessage(error))
+          )
+          continue
+        }
+        if (job.status !== 'queued' || this.terminalTransitions.has(job.job_id))
+          continue
         const controller = new AbortController()
         this.controllers.set(job.job_id, controller)
         job.status = 'running'
@@ -1080,6 +1338,8 @@ export class JobManager
       await this.phase(job, activePhase, 'started')
       try
       {
+        await this.checkRun(job)
+        controller.signal.throwIfAborted()
         providerOutcome = await provider.run({
           job_id: job.job_id,
           provider_attempt: job.restart_requeues ?? 0,
@@ -1624,6 +1884,11 @@ export class JobManager
 
   private async finish(job: WorkerJob, result: WorkerResult): Promise<void>
   {
+    if (job.cancellation_reason)
+    {
+      result.status = 'cancelled'
+      result.error = job.cancellation_reason
+    }
     const existing = this.terminalTransitions.get(job.job_id)
     if (existing !== undefined)
     {

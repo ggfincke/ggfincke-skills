@@ -82,7 +82,7 @@ test('Coral arguments select deterministic headless profiles and isolation', () 
       editArgs.indexOf('--permission-profile'),
       editArgs.indexOf('--permission-profile') + 2
     ),
-    ['--permission-profile', 'workspace-write']
+    ['--permission-profile', 'read-only']
   )
 })
 

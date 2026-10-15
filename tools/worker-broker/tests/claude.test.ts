@@ -99,6 +99,7 @@ test('Claude model and supported effort overrides reach the native CLI', () =>
 test('Claude keeps unsupported ultra effort as advisory metadata', () =>
 {
   const request = normalizeRequest({
+    run: 'test-run',
     provider: 'claude',
     mode: 'read',
     repo: '/repo',

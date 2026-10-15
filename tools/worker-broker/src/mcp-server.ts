@@ -1,6 +1,7 @@
 // tools/worker-broker/src/mcp-server.ts
 // expose daemon-backed broker lifecycle, orchestration, waits, & artifacts
 
+import { CreateRunSchema } from './run-store.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { isTerminalWorkerStatus, WORKER_STATUSES } from './contracts.js'
@@ -118,6 +119,49 @@ export function createWorkerBrokerServer(client: DaemonClient): McpServer
       instructions:
         'Delegate bounded repository source work. Git patches exclude ignored artifacts. Treat broker-computed Git, verification, and capability evidence as authoritative within their stated scopes.',
     }
+  )
+
+  server.registerTool(
+    'list_targets',
+    {
+      description:
+        'Passively discover configured workers and blocking reasons; never starts inference or downloads models.',
+      inputSchema: {},
+    },
+    async () =>
+      await invoke(async () =>
+        success(
+          { targets: await client.call('list_targets', {}) },
+          'worker targets'
+        )
+      )
+  )
+  server.registerTool(
+    'create_run',
+    {
+      description:
+        'Record a task-authorized worker run. Direct user requests suffice; local execution and battery exceptions require explicit permission. Reuse this run across waves; never create another to evade its budget.',
+      inputSchema: CreateRunSchema,
+    },
+    async (input) =>
+      await invoke(async () =>
+        success(await client.call('create_run', input), 'created worker run')
+      )
+  )
+  server.registerTool(
+    'close_run',
+    {
+      description:
+        'Close a run; cancel_active explicitly revokes and cancels outstanding workers.',
+      inputSchema: {
+        run: z.string().uuid(),
+        cancel_active: z.boolean().optional(),
+      },
+    },
+    async (input) =>
+      await invoke(async () =>
+        success(await client.call('close_run', input), 'closed worker run')
+      )
   )
 
   server.registerTool(

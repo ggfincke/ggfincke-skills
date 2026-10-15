@@ -1,7 +1,13 @@
 // tools/worker-broker/src/contracts.ts
 // define broker requests, lifecycle state, provider outcomes, & computed results
 
-export const PROVIDER_NAMES = ['codex', 'cursor', 'coral', 'claude'] as const
+export const PROVIDER_NAMES = [
+  'codex',
+  'cursor',
+  'coral',
+  'claude',
+  'agy',
+] as const
 export const WORKER_MODES = ['read', 'edit'] as const
 export const TERMINAL_WORKER_STATUSES = [
   'completed',
@@ -142,7 +148,7 @@ export interface StartWorkerRequest
   effort?: ReasoningEffort | undefined
   stage?: string | undefined
   workflow?: string | undefined
-  run?: string | undefined
+  run: string
   depends_on?: string[] | undefined
   allow_nested_agents?: boolean | undefined
   required_capabilities?: CapabilityName[] | undefined
@@ -160,6 +166,7 @@ export interface NormalizedWorkerRequest
   mode: WorkerMode
   repo: string
   base_ref: string
+  local_endpoint?: string
   task: string
   allowed_paths: string[]
   acceptance_criteria: string[]
@@ -303,6 +310,7 @@ export interface WorkerJob
   worktree?: string
   process_id?: number
   process_token?: string
+  cancellation_reason?: string
   restart_requeues?: number
   created_at: string
   started_at?: string
@@ -327,6 +335,7 @@ export interface WorkerSummary
   workflow?: string | undefined
   run?: string | undefined
   depends_on: string[]
+  effective_model?: string | undefined
   model?: string | undefined
   effort?: ReasoningEffort | undefined
   branch?: string | undefined
@@ -368,4 +377,6 @@ export interface BrokerConfig
   default_coral_model?: string
   default_claude_model?: string
   coral_host?: string
+  agy_binary?: string
+  default_agy_model?: string
 }

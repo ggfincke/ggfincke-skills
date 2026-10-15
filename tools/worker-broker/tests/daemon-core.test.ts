@@ -28,7 +28,8 @@ import {
 import { STATE_SCHEMA_VERSION } from '../src/job-store.js'
 import { classifyFailure } from '../src/job-manager.js'
 import { JobStore } from '../src/job-store.js'
-import { waitUntil } from './helpers.js'
+import { RunStore } from '../src/run-store.js'
+import { initializeTestRepo, TEST_RUN_ID, waitUntil } from './helpers.js'
 
 function fixtureConfig(stateDir: string): BrokerConfig
 {
@@ -145,7 +146,7 @@ test('daemon answers hello and status over its unix socket', async () =>
       ? (responses[0].result as Record<string, unknown>)
       : undefined
     assert.equal(identity?.protocol_version, DAEMON_PROTOCOL_VERSION)
-    assert.equal(DAEMON_PROTOCOL_VERSION, 3)
+    assert.equal(DAEMON_PROTOCOL_VERSION, 4)
     assert.equal(identity?.state_schema_version, STATE_SCHEMA_VERSION)
     assert.equal(identity?.state_dir, stateDir)
     assert.equal(responses[1]?.ok, true)
@@ -168,6 +169,16 @@ test('daemon rejects a result read before the worker is terminal', async () =>
 {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-daemon-'))
   const jobId = 'queued-result-fixture'
+  await new RunStore(stateDir).write({
+    schema_version: 1,
+    id: TEST_RUN_ID,
+    repo: '/tmp/repo',
+    targets: [{ provider: 'codex', model: 'fixture', modes: ['read'] }],
+    max_assignments: 4,
+    allow_battery: false,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 3600000).toISOString(),
+  })
   const store = new JobStore(stateDir)
   await store.write({
     job_id: jobId,
@@ -176,6 +187,7 @@ test('daemon rejects a result read before the worker is terminal', async () =>
       provider: 'codex',
       mode: 'read',
       repo: '/tmp/repo',
+      run: TEST_RUN_ID,
       base_ref: 'HEAD',
       task: 'remain queued while result access is checked',
       allowed_paths: [],
@@ -220,6 +232,16 @@ test('daemon range reads a sparse artifact without corrupting UTF-8 edges', asyn
   const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-daemon-'))
   const jobId = 'sparse-artifact-fixture'
   const byteLength = 96 * 1024 * 1024
+  await new RunStore(stateDir).write({
+    schema_version: 1,
+    id: TEST_RUN_ID,
+    repo: '/tmp/repo',
+    targets: [{ provider: 'codex', model: 'fixture', modes: ['read'] }],
+    max_assignments: 4,
+    allow_battery: false,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 3600000).toISOString(),
+  })
   const store = new JobStore(stateDir)
   await store.write({
     job_id: jobId,
@@ -228,6 +250,7 @@ test('daemon range reads a sparse artifact without corrupting UTF-8 edges', asyn
       provider: 'codex',
       mode: 'read',
       repo: '/tmp/repo',
+      run: TEST_RUN_ID,
       base_ref: 'HEAD',
       task: 'remain queued while sparse artifact excerpts are checked',
       allowed_paths: [],
@@ -333,6 +356,7 @@ test('daemon classifies assignment validation without masking repo failure', asy
           provider: 'codex',
           mode: 'read',
           repo: '/repo',
+          run: TEST_RUN_ID,
           task: 'malformed assignment',
           allowed_paths: [],
           allow_nested_agents: 'yes',
@@ -344,6 +368,7 @@ test('daemon classifies assignment validation without masking repo failure', asy
           provider: 'codex',
           mode: 'edit',
           repo: '/repo',
+          run: TEST_RUN_ID,
           task: 'empty edit scope',
           allowed_paths: [],
         },
@@ -354,6 +379,7 @@ test('daemon classifies assignment validation without masking repo failure', asy
           provider: 'codex',
           mode: 'edit',
           repo: '/repo',
+          run: TEST_RUN_ID,
           task: 'traversal edit scope',
           allowed_paths: ['../outside'],
         },
@@ -388,6 +414,7 @@ test('daemon classifies assignment validation without masking repo failure', asy
           mode: 'read',
           repo: path.join(stateDir, 'missing-repo'),
           task: 'valid assignment for a missing repository',
+          run: TEST_RUN_ID,
           allowed_paths: [],
         },
       },
@@ -488,6 +515,16 @@ test('idle draining shutdown removes the socket and identity', async () =>
 test('job store normalizes old state only in memory and never rewrites records', async () =>
 {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-store-'))
+  await new RunStore(stateDir).write({
+    schema_version: 1,
+    id: TEST_RUN_ID,
+    repo: '/tmp/repo',
+    targets: [{ provider: 'codex', model: 'fixture', modes: ['read'] }],
+    max_assignments: 4,
+    allow_battery: false,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 3600000).toISOString(),
+  })
   const store = new JobStore(stateDir)
   const current: WorkerJob = {
     job_id: 'current-schema-fixture',
@@ -496,6 +533,7 @@ test('job store normalizes old state only in memory and never rewrites records',
       provider: 'codex',
       mode: 'read',
       repo: '/tmp/repo',
+      run: TEST_RUN_ID,
       base_ref: 'HEAD',
       task: 'schema fixture',
       allowed_paths: [],
@@ -589,4 +627,68 @@ test('failure classifier covers every broker failure taxonomy class', () =>
     classifyFailure('verification', { exit_code: null, timed_out: true }),
     'verification'
   )
+})
+
+test('real daemon socket discovers targets and enforces the create, status, close run lifecycle', async () =>
+{
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), 'broker-run-wire-'))
+  const repo = await initializeTestRepo()
+  const daemon = await startDaemon({
+    ...fixtureConfig(stateDir),
+    coral_host: 'http://127.0.0.1:1',
+  })
+  const socket = await connect(daemonSocketPath(stateDir))
+  try
+  {
+    await exchange(socket, [hello()])
+    const [targets] = await exchange(socket, [
+      { id: 2, method: 'list_targets', params: {} },
+    ])
+    assert.equal(targets?.ok, true)
+    const [created] = await exchange(socket, [
+      {
+        id: 3,
+        method: 'create_run',
+        params: { repo, targets: [{ provider: 'codex', model: 'fixture' }] },
+      },
+    ])
+    assert.equal(created?.ok, true)
+    const run = (created?.ok ? (created.result as { id: string }) : undefined)
+      ?.id
+    assert.ok(run)
+    const [status] = await exchange(socket, [
+      { id: 4, method: 'get_run_status', params: { run } },
+    ])
+    assert.equal(status?.ok, true)
+    if (status?.ok)
+      assert.equal((status.result as { remaining: number }).remaining, 4)
+    const [closed] = await exchange(socket, [
+      { id: 5, method: 'close_run', params: { run } },
+    ])
+    assert.equal(closed?.ok, true)
+    const [rejected] = await exchange(socket, [
+      {
+        id: 6,
+        method: 'start_worker',
+        params: {
+          run,
+          repo,
+          provider: 'codex',
+          mode: 'read',
+          task: 'must never launch',
+          allowed_paths: [],
+        },
+      },
+    ])
+    assert.equal(rejected?.ok, false)
+    if (rejected?.ok === false) assert.match(rejected.error.message, /closed/u)
+    assert.deepEqual(await new JobStore(stateDir).listSummaries(), [])
+  }
+  finally
+  {
+    socket.destroy()
+    await daemon.close()
+    await rm(repo, { recursive: true, force: true })
+    await rm(stateDir, { recursive: true, force: true })
+  }
 })

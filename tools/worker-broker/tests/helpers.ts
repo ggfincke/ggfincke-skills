@@ -1,6 +1,8 @@
 // tools/worker-broker/tests/helpers.ts
 // build isolated Git fixtures & bounded async assertions for broker tests
 
+import { RunStore } from '../src/run-store.js'
+import { resolveRepository } from '../src/git-worktree.js'
 import { execFile } from 'node:child_process'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import os from 'node:os'
@@ -39,4 +41,24 @@ export async function waitUntil(
       throw new Error('timed out waiting for test condition')
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
+}
+
+export const TEST_RUN_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
+export async function authorizeFixtureRun(
+  stateDir: string,
+  repo: string,
+  model = 'fixture'
+): Promise<void>
+{
+  await new RunStore(stateDir).write({
+    schema_version: 1,
+    id: TEST_RUN_ID,
+    repo: await resolveRepository(repo),
+    targets: [{ provider: 'codex', model, modes: ['read', 'edit'] }],
+    max_assignments: 100,
+    allow_battery: false,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 3600000).toISOString(),
+  })
 }

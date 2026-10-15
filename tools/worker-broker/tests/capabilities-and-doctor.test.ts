@@ -17,9 +17,14 @@ import { capabilityEvidence, requireCapabilities } from '../src/capabilities.js'
 import { probeTool, runDoctor } from '../src/doctor.js'
 import { JobManager } from '../src/job-manager.js'
 import { normalizeRequest } from '../src/request.js'
-import { initializeTestRepo, waitUntil } from './helpers.js'
+import {
+  authorizeFixtureRun,
+  TEST_RUN_ID,
+  initializeTestRepo,
+  waitUntil,
+} from './helpers.js'
 
-test('unsupported required capabilities launch nothing and legacy requests remain usable', async () =>
+test('unsupported required capabilities launch nothing and authorized requests remain usable', async () =>
 {
   const repo = await initializeTestRepo()
   const state = await mkdtemp(path.join(os.tmpdir(), 'capability-admission-'))
@@ -59,6 +64,7 @@ test('unsupported required capabilities launch nothing and legacy requests remai
       mode: 'read',
       repo,
       task: 'inspect fixture',
+      run: TEST_RUN_ID,
       allowed_paths: [],
     }
     await assert.rejects(
@@ -91,6 +97,7 @@ test('unsupported required capabilities launch nothing and legacy requests remai
         ?.status,
       'unverified'
     )
+    await authorizeFixtureRun(state, repo)
     const admission = await manager.start(input)
     await waitUntil(
       async () =>

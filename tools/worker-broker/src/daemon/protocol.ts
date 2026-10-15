@@ -1,6 +1,9 @@
 // tools/worker-broker/src/daemon/protocol.ts
 // pin the daemon wire contract: versions, identity, frames, methods, & the client surface
 
+import type { CreateRunInput, WorkerRun } from '../run-store.js'
+import type { WorkerTarget } from '../targets.js'
+import type { PowerState } from '../local-policy.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,7 +16,7 @@ import type {
 } from '../contracts.js'
 
 // bump only on incompatible wire changes; a mismatched hello is rejected outright
-export const DAEMON_PROTOCOL_VERSION = 3
+export const DAEMON_PROTOCOL_VERSION = 4
 
 const DAEMON_SOCKET_NAME = 'daemon.sock'
 const DAEMON_IDENTITY_NAME = 'daemon.json'
@@ -152,6 +155,10 @@ export interface RunStatusStage
 
 export interface RunStatusResult
 {
+  contract?: WorkerRun
+  spent?: number
+  remaining?: number
+  power?: PowerState
   run: string
   workflows: string[]
   totals: Record<WorkerStatus, number>
@@ -204,6 +211,12 @@ export interface DaemonMethods
   hello: { params: DaemonHelloParams; result: DaemonIdentity }
   daemon_status: { params: Record<string, never>; result: DaemonStatusResult }
   shutdown: { params: ShutdownParams; result: DaemonStatusResult }
+  list_targets: { params: Record<string, never>; result: WorkerTarget[] }
+  create_run: { params: CreateRunInput; result: WorkerRun }
+  close_run: {
+    params: { run: string; cancel_active?: boolean | undefined }
+    result: WorkerRun
+  }
   start_worker: { params: StartWorkerRequest; result: StartWorkerResult }
   list_workers: { params: ListWorkersParams; result: WorkerSummary[] }
   get_worker_status: { params: JobIdParams; result: WorkerSummary }
