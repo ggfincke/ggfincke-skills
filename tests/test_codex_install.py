@@ -14,7 +14,7 @@ mcp = sync.mcp_servers
 
 
 class CodexInstall(unittest.TestCase):
-	def test_adoption_preserves_comments_environment_and_symlink_then_is_idempotent(self) -> None:
+	def test_adoption_preserves_comments_and_symlink_owns_env_then_is_idempotent(self) -> None:
 		with tempfile.TemporaryDirectory() as directory:
 			home = Path(directory)
 			physical = home / "owned.toml"
@@ -41,10 +41,10 @@ class CodexInstall(unittest.TestCase):
 			for retained in [
 				"# keep this comment",
 				'model = "chosen"',
-				'WORKER_BROKER_HOME = "/private/state"',
 				"https://example.invalid",
 			]:
 				self.assertIn(retained, after)
+			self.assertNotIn("WORKER_BROKER_HOME", after)
 			self.assertIn(str(support.SCRIPTS_DIR.parent / "broker.js"), after)
 			self.assertIsNone(
 				sync.build_tool_plan(

@@ -4,7 +4,13 @@
 import { spawn } from 'node:child_process'
 import { access } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  configDifferences,
+  configFingerprint,
+  DAEMON_CONFIG_VARIABLE,
+} from '../config.js'
 import type { BrokerConfig } from '../contracts.js'
 import { errorMessage } from '../errors.js'
 import {
@@ -289,37 +295,19 @@ async function connectAndHandshake(
   }
 }
 
+// hand the daemon this frontend's resolved config so its fingerprint matches by construction;
+// the broker's own node is appended as a last-resort interpreter for node-script provider CLIs
 function daemonEnvironment(config: BrokerConfig): NodeJS.ProcessEnv
 {
-  const environment: NodeJS.ProcessEnv = {
+  const searchPath = [process.env.PATH, path.dirname(process.execPath)]
+    .filter((entry) => entry !== undefined && entry !== '')
+    .join(path.delimiter)
+  return {
     ...process.env,
+    PATH: searchPath,
     WORKER_BROKER_HOME: config.state_dir,
-    WORKER_BROKER_CODEX_BINARY: config.codex_binary,
-    WORKER_BROKER_CURSOR_BINARY: config.cursor_binary,
-    WORKER_BROKER_CORAL_BINARY: config.coral_binary,
-    WORKER_BROKER_CLAUDE_BINARY: config.claude_binary,
+    [DAEMON_CONFIG_VARIABLE]: JSON.stringify(config),
   }
-  if (config.default_codex_model !== undefined)
-  {
-    environment.WORKER_BROKER_CODEX_MODEL = config.default_codex_model
-  }
-  if (config.default_cursor_model !== undefined)
-  {
-    environment.WORKER_BROKER_CURSOR_MODEL = config.default_cursor_model
-  }
-  if (config.default_coral_model !== undefined)
-  {
-    environment.WORKER_BROKER_CORAL_MODEL = config.default_coral_model
-  }
-  if (config.default_claude_model !== undefined)
-  {
-    environment.WORKER_BROKER_CLAUDE_MODEL = config.default_claude_model
-  }
-  if (config.coral_host !== undefined)
-  {
-    environment.WORKER_BROKER_CORAL_HOST = config.coral_host
-  }
-  return environment
 }
 
 async function spawnDaemon(config: BrokerConfig): Promise<void>
@@ -367,11 +355,34 @@ async function waitForSocketRemoval(socketPath: string): Promise<void>
   }
 }
 
-function buildMismatchError(message: string): Error & { code: string }
+function staleDaemonError(
+  code: string,
+  message: string
+): Error & { code: string }
 {
   const error = new Error(message) as Error & { code: string }
-  error.code = 'build_mismatch'
+  error.code = code
   return error
+}
+
+// name what differs so a refused reconnect says which side to fix
+function staleDaemonReason(
+  identity: DaemonIdentity,
+  expectedBuildId: string,
+  config: BrokerConfig
+): { code: string; detail: string } | undefined
+{
+  if (identity.build_id !== expectedBuildId)
+    return {
+      code: 'build_mismatch',
+      detail: `daemon build ${identity.build_id} differs from client build ${expectedBuildId}`,
+    }
+  if (identity.config_fingerprint !== configFingerprint(config))
+    return {
+      code: 'config_mismatch',
+      detail: `daemon config differs from client config in ${configDifferences(identity.config, config).join(', ')}`,
+    }
+  return undefined
 }
 
 function isConnectionFailure(error: unknown): boolean
@@ -426,7 +437,7 @@ export async function connectDaemon(
   )
 }
 
-// spawn when needed and reconcile a build mismatch by draining an idle stale daemon
+// spawn when needed and reconcile a build or config mismatch by draining an idle stale daemon
 export async function ensureDaemonClient(
   config: BrokerConfig
 ): Promise<DaemonClient>
@@ -437,24 +448,26 @@ export async function ensureDaemonClient(
 
   for (let restartAttempt = 0; restartAttempt <= 3; restartAttempt += 1)
   {
-    const identity = client.identity()
-    if (identity.build_id === expectedBuildId) return client
+    const stale = staleDaemonReason(client.identity(), expectedBuildId, config)
+    if (stale === undefined) return client
 
     const status = await client.call('daemon_status', {})
     const busyJobs = [...status.active_jobs, ...status.queued_jobs]
     if (busyJobs.length > 0)
     {
       await client.close()
-      throw buildMismatchError(
-        `daemon build ${identity.build_id} differs from client build ${expectedBuildId}; active or queued jobs: ${busyJobs.join(', ')}`
+      throw staleDaemonError(
+        stale.code,
+        `${stale.detail}; active or queued jobs: ${busyJobs.join(', ')}`
       )
     }
 
     if (restartAttempt === 3)
     {
       await client.close()
-      throw buildMismatchError(
-        `daemon build remained ${identity.build_id} after 3 restart attempts; expected ${expectedBuildId}`
+      throw staleDaemonError(
+        stale.code,
+        `${stale.detail} after 3 restart attempts`
       )
     }
 

@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
+  BrokerConfig,
   EditSerializationConflict,
   StartWorkerRequest,
   WorkerJob,
@@ -86,6 +87,9 @@ export interface DaemonIdentity
   started_at: string
   socket_path: string
   state_dir: string
+  // * frontends compare this to their own resolved config before reusing the daemon
+  config_fingerprint: string
+  config: BrokerConfig
 }
 
 export interface DaemonHelloParams

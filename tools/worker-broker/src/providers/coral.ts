@@ -70,7 +70,7 @@ export function buildCoralArgs(
   if (model === undefined)
   {
     throw new Error(
-      'Coral requires a model override or WORKER_BROKER_CORAL_MODEL'
+      'Coral requires a model override or providers.coral.model in the broker config'
     )
   }
   const args = ['exec', '--cwd', context.worktree, '--model', model]

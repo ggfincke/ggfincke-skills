@@ -83,20 +83,31 @@ MCP server registrations live in `mcp/servers.json` — one canonical entry per 
 .venv/bin/python scripts/sync-mcp.py             # apply (or: make sync-mcp PYTHON=.venv/bin/python)
 ```
 
-The merge updates registry-owned server entries inside each tool's MCP section (`mcp` for OpenCode, `mcpServers` for Claude Code, `mcp_servers` for Codex). Codex also retains unknown server fields, machine-local environment bindings, comments, and a valid existing broker Node executable. Unrelated settings and foreign server entries are preserved. Re-runs with an unchanged registry are no-ops, and a malformed target config refuses the run. Registry semantics, schema rules, and the roadmap for Cursor/Claude Desktop targets live in [`docs/mcp-lanes.md`](docs/mcp-lanes.md).
+The merge updates registry-owned server entries inside each tool's MCP section (`mcp` for OpenCode, `mcpServers` for Claude Code, `mcp_servers` for Codex). Codex and Claude Code retain unknown server fields (such as Claude's `timeout`) and a valid existing broker Node executable; Codex also keeps comments. The registry owns each registered server's environment, so stale bindings are dropped. Unrelated settings and foreign server entries are preserved. Re-runs with an unchanged registry are no-ops, and a malformed target config refuses the run. Registry semantics, schema rules, and the roadmap for Cursor/Claude Desktop targets live in [`docs/mcp-lanes.md`](docs/mcp-lanes.md).
 
 Remote servers authenticate per client on first use (`opencode mcp auth <server>`; Claude Code triggers OAuth on its first tool call).
 
-The worker broker is a Node 24+ package. Install, build, and register its stdio server with Claude Code:
+The worker broker is a Node 24+ package. Install and build it, then register its stdio server with Claude Code and Codex through the MCP sync:
 
 ```bash
 npm --prefix tools/worker-broker ci
 npm --prefix tools/worker-broker run build
-claude mcp add --transport stdio --scope user worker-broker \
-  -- /absolute/path/to/node /absolute/path/to/ggfincke-skills/tools/worker-broker/dist/src/server.js
+.venv/bin/python scripts/sync-mcp.py --server worker-broker
 ```
 
-The broker exposes native Codex, Cursor, Coral, and Claude workers. Override their executable paths or defaults with `WORKER_BROKER_CODEX_BINARY`, `WORKER_BROKER_CODEX_MODEL`, `WORKER_BROKER_CURSOR_BINARY`, `WORKER_BROKER_CURSOR_MODEL`, `WORKER_BROKER_CORAL_BINARY`, `WORKER_BROKER_CORAL_MODEL`, `WORKER_BROKER_CORAL_HOST`, `WORKER_BROKER_CLAUDE_BINARY`, and `WORKER_BROKER_CLAUDE_MODEL`. Cursor effort belongs in the Cursor model identifier rather than the broker's generic `effort` field. Coral rejects generic effort and nested-agent overrides. Claude forwards `low`, `medium`, `high`, `xhigh`, and `max`; `ultra` remains assignment metadata because the Claude CLI does not accept it.
+The broker exposes native Codex, Cursor, Coral, Claude, and Antigravity workers. Set machine-local executable paths and default models in `~/.config/worker-broker/config.json` (`$XDG_CONFIG_HOME` honored), never in MCP registration env:
+
+```json
+{
+  "providers": {
+    "codex": { "binary": "/absolute/path/to/codex" },
+    "coral": { "binary": "/absolute/path/to/coral", "model": "qwen3.8:27b-mlx" }
+  },
+  "coral_host": "http://127.0.0.1:11434"
+}
+```
+
+Provider keys are `codex`, `cursor`, `coral`, `claude`, and `agy`, each with optional `binary` and `model`. A missing file uses built-in defaults; an invalid one fails loudly. Prefer absolute binary paths, since bare names resolve through whichever frontend's `PATH` loads the config. Every frontend hands its resolved config to the shared daemon, and a frontend whose config differs drains and replaces an idle daemon (or refuses with `config_mismatch` while workers are active), so edits take effect without restarting Claude Code or Codex. Cursor effort belongs in the Cursor model identifier rather than the broker's generic `effort` field. Coral rejects generic effort and nested-agent overrides. Claude forwards `low`, `medium`, `high`, `xhigh`, and `max`; `ultra` remains assignment metadata because the Claude CLI does not accept it.
 
 Claude Code is the orchestration UI. Worker jobs remain isolated broker records surfaced through MCP tool output and job artifacts; they do not appear as native Claude Code child conversations. T3 is not part of this setup.
 

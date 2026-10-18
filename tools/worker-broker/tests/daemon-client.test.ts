@@ -7,6 +7,7 @@ import { createServer, type Server, type Socket } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { configFingerprint } from '../src/config.js'
 import type { BrokerConfig } from '../src/contracts.js'
 import { connectDaemon, ensureDaemonClient } from '../src/daemon/client.js'
 import {
@@ -56,6 +57,8 @@ function identity(stateDir: string, buildId = readBuildId()): DaemonIdentity
     started_at: new Date(0).toISOString(),
     socket_path: daemonSocketPath(stateDir),
     state_dir: stateDir,
+    config_fingerprint: configFingerprint(brokerConfig(stateDir)),
+    config: brokerConfig(stateDir),
   }
 }
 
