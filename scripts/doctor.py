@@ -195,12 +195,8 @@ def broker_launcher(repo: Path = ROOT) -> tuple[list[str] | None, dict[str, str]
 	receipts = []
 	chosen = None
 	chosen_env = dict(os.environ)
-	allowed_env = {"PATH", "WORKER_BROKER_HOME", "WORKER_BROKER_CORAL_HOST"}
-	allowed_env.update(
-		f"WORKER_BROKER_{provider.upper()}_{kind}"
-		for provider in PROVIDERS
-		for kind in ("BINARY", "MODEL")
-	)
+	# provider binaries and models come from the broker config file, not registration env
+	allowed_env = {"PATH", "WORKER_BROKER_HOME"}
 	registrations.sort(key=lambda item: item[0] != "codex")
 	for host, registration in registrations:
 		args = registration.get("args", [])

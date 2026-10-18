@@ -100,7 +100,7 @@ test('Antigravity accepts verified init plus structured success and rejects wide
     on_process_finished: () => undefined,
   }
   const provider = new AgyProvider({
-    ...defaultBrokerConfig({}),
+    ...defaultBrokerConfig({ XDG_CONFIG_HOME: '/nonexistent' }),
     agy_binary: binary,
   })
   const script = async (events: unknown[], linger = false) =>

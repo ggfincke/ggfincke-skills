@@ -13,7 +13,11 @@ import process from 'node:process'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
 import { secureDirectory, writePrivateFile } from '../artifact.js'
-import { defaultBrokerConfig } from '../config.js'
+import {
+  configFingerprint,
+  DAEMON_CONFIG_VARIABLE,
+  parseDaemonConfig,
+} from '../config.js'
 import {
   codexEventLogAttempt,
   isTerminalWorkerStatus,
@@ -751,6 +755,8 @@ export async function startDaemon(
     started_at: new Date().toISOString(),
     socket_path: socketPath,
     state_dir: config.state_dir,
+    config_fingerprint: configFingerprint(config),
+    config,
   }
   const manager = new JobManager(config, [
     new CodexProvider(config),
@@ -1133,7 +1139,7 @@ export async function startDaemon(
 
 async function main(): Promise<void>
 {
-  await startDaemon(defaultBrokerConfig())
+  await startDaemon(parseDaemonConfig(process.env[DAEMON_CONFIG_VARIABLE]))
 }
 
 const entryPath = process.argv[1]
