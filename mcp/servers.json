@@ -19,14 +19,15 @@
       ]
     },
     "worker-broker": {
-      "description": "Opt-in bounded repository workers for Codex, with durable run budgets and local power guards.",
+      "description": "Opt-in bounded repository workers with durable run budgets and local power guards. Provider binaries and models live in the machine-local broker config, not here.",
       "transport": "local",
       "command": [
         "node",
         "${REPO_ROOT}/tools/worker-broker/dist/src/server.js"
       ],
       "tools": [
-        "codex"
+        "codex",
+        "claude-code"
       ]
     }
   }

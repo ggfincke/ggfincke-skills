@@ -6,6 +6,13 @@ set -e
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+# tooling venv lives in the main checkout & is shared by its worktrees; fall back to PATH python3
+python=python3
+venv_python="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.venv/bin/python"
+if [ -x "$venv_python" ]; then
+	python=$venv_python
+fi
+
 config_dir=$(mktemp -d "${TMPDIR:-/tmp}/ggfincke-lint-staged-config.XXXXXX")
 snapshot_root=$(mktemp -d "${TMPDIR:-/tmp}/ggfincke-pre-commit.XXXXXX")
 trap 'rm -rf -- "$config_dir" "$snapshot_root"' EXIT
@@ -20,6 +27,6 @@ npx lint-staged --config "$config_dir/lint-staged.config.mjs"
 git checkout-index --all --prefix="$snapshot_root/"
 # hook GIT_* vars make nested git (worktree add) treat a gitfile as a directory
 unset GIT_INDEX_FILE GIT_PREFIX GIT_DIR
-python3 "$snapshot_root/scripts/validate-skills.py"
+"$python" "$snapshot_root/scripts/validate-skills.py"
 cd "$snapshot_root"
-python3 -m unittest discover -s tests -p 'test_*.py'
+"$python" -m unittest discover -s tests -p 'test_*.py'

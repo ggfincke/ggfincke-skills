@@ -51,7 +51,7 @@ CI installs the same pinned dependency.
 
 The merge is structural and surgical. Within a target's MCP section:
 
-- Names present in the registry are **owned**: added or updated on every sync. Codex merges owned fields, retaining unknown fields, machine-local environment bindings, comments, and a valid existing Node executable. The canonical broker script path uses `${REPO_ROOT}`, resolved to this checkout without shell expansion.
+- Names present in the registry are **owned**: added or updated on every sync. Codex and Claude Code merge owned fields (`command`, `args`, `env`, `url`), retaining unknown fields such as Claude's `timeout` and a valid existing broker Node executable; Codex also keeps comments. The registry owns `env` outright: a binding the registry does not declare is removed, so machine-local settings belong in each server's own config (the broker reads `~/.config/worker-broker/config.json`). The canonical broker script path uses `${REPO_ROOT}`, resolved to this checkout without shell expansion.
 - All other names are **foreign**: preserved byte-for-value in their original order.
 - Everything outside the MCP section (`provider`, `model`, `numStartups`, ...)
   is untouched.
@@ -113,6 +113,8 @@ sessions run.
   `api.figma.com/v1/oauth/mcp/register`; opencode is currently unlisted, so it
   cannot authenticate against the remote server. Authenticate inside Claude
   Code (`/mcp` -> figma) instead.
+- `worker-broker` -> Codex and Claude Code: the local broker MCP server, with no
+  registration env. Its provider binaries and models live in the broker config file.
 - `figma-local` -> opencode: the desktop Dev Mode MCP server
   (`http://127.0.0.1:3845/mcp`). No OAuth and no allowlist. Requires the Figma
   desktop app running with Dev Mode enabled and the MCP toggle turned on
@@ -127,7 +129,7 @@ prune) or re-extend its `tools` list.
 
 - Future targets: Cursor
   (`~/.cursor/mcp.json`), Claude Desktop (`~/Library/Application Support/
-  Claude/claude_desktop_config.json`). Codex worker-broker registration is now canonical.
+  Claude/claude_desktop_config.json`). Codex and Claude Code worker-broker registrations are now canonical.
 - Possible phase 3: an opt-in `--prune` backed by marker state if manual removal
   proves annoying in practice.
 

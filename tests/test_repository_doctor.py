@@ -112,7 +112,7 @@ class RepositoryDoctorTests(unittest.TestCase):
 				"env": {
 					"PATH": str(bin_dir),
 					"PRIVATE_AUTH": "do-not-expose",
-					"WORKER_BROKER_CODEX_MODEL": "fixture-model",
+					"WORKER_BROKER_HOME": "/fixture-state",
 				},
 			}
 			with (
@@ -123,7 +123,7 @@ class RepositoryDoctorTests(unittest.TestCase):
 				config.write_text(json.dumps({"mcpServers": {"worker-broker": registration}}))
 				launcher, environment, receipts = doctor.broker_launcher(root)
 				self.assertEqual(launcher, [str(node), str(dist / "cli.js")])
-				self.assertEqual(environment["WORKER_BROKER_CODEX_MODEL"], "fixture-model")
+				self.assertEqual(environment["WORKER_BROKER_HOME"], "/fixture-state")
 				self.assertNotIn("PRIVATE_AUTH", environment)
 				self.assertNotIn("do-not-expose", json.dumps(receipts))
 				self.assertTrue(receipts[0]["selected"])

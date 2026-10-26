@@ -36,6 +36,14 @@ const IDENTITY: DaemonIdentity = {
   started_at: '2026-08-01T00:00:00.000Z',
   socket_path: '/tmp/worker-broker/daemon.sock',
   state_dir: '/tmp/worker-broker',
+  config_fingerprint: 'test-config',
+  config: {
+    state_dir: '/tmp/worker-broker',
+    codex_binary: 'codex',
+    cursor_binary: 'cursor-agent',
+    coral_binary: 'coral',
+    claude_binary: 'claude',
+  },
 }
 
 class StubDaemonClient implements DaemonClient

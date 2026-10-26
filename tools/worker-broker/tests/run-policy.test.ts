@@ -28,7 +28,10 @@ test('run admission preserves scope and spent budget across concurrency, cancell
 {
   const repo = await initializeTestRepo()
   const state = await mkdtemp(path.join(os.tmpdir(), 'broker-run-policy-'))
-  const config = { ...defaultBrokerConfig({}), state_dir: state }
+  const config = {
+    ...defaultBrokerConfig({ XDG_CONFIG_HOME: '/nonexistent' }),
+    state_dir: state,
+  }
   const provider: WorkerProvider = { name: 'codex', run: async () => success }
   const manager = new JobManager(config, [provider])
   try
@@ -141,7 +144,10 @@ test('local workers serialize across runs and unplug cancels queued and running 
     },
   }
   const manager = new JobManager(
-    { ...defaultBrokerConfig({}), state_dir: state },
+    {
+      ...defaultBrokerConfig({ XDG_CONFIG_HOME: '/nonexistent' }),
+      state_dir: state,
+    },
     [provider],
     {
       power: async () => power,
@@ -209,7 +215,10 @@ test('a power change during final local metadata validation prevents provider ex
   let lookups = 0
   let started = false
   const manager = new JobManager(
-    { ...defaultBrokerConfig({}), state_dir: state },
+    {
+      ...defaultBrokerConfig({ XDG_CONFIG_HOME: '/nonexistent' }),
+      state_dir: state,
+    },
     [
       {
         name: 'coral',

@@ -175,6 +175,9 @@ async function releaseProcessGate(gate: Writable): Promise<void>
     gate.end('start\n', () =>
     {
       gate.off('error', rejectOnError)
+      // close our end once flushed; a supervisor killed before reading would
+      // otherwise reset the still-readable socket into an unhandled ECONNRESET
+      gate.destroy()
       resolve()
     })
   })

@@ -37,7 +37,53 @@ def selected_servers(
 	)
 
 
-def codex_payload(physical: Path, desired: dict, repo_root: Path) -> tuple[bytes, bool, str]:
+# claude entries keep fields sync does not own, such as timeout and type
+CLAUDE_OWNED_FIELDS = frozenset({"command", "args", "env", "url"})
+
+
+def expand_repo_root(desired: dict, repo_root: Path) -> dict:
+	expanded: dict = {}
+	for name, fields in desired.items():
+		expanded[name] = {
+			key: [part.replace("${REPO_ROOT}", str(repo_root)) for part in value]
+			if key in ("args", "command") and isinstance(value, list)
+			else value
+			for key, value in fields.items()
+		}
+	return expanded
+
+
+# a working absolute node launcher is machine-local; the registry can only say "node"
+def keeps_existing_node(name: str, existing: object) -> bool:
+	if name != "worker-broker" or not isinstance(existing, str):
+		return False
+	if Path(existing).name not in ("node", "nodejs"):
+		return False
+	resolved = shutil.which(existing)
+	return bool(resolved and os.access(resolved, os.X_OK))
+
+
+def claude_entries(old_entries: dict, desired: dict) -> dict:
+	merged: dict = {}
+	for name, fields in desired.items():
+		existing = old_entries.get(name)
+		existing = existing if isinstance(existing, dict) else {}
+		entry: dict = {}
+		# keep the existing key order; owned fields absent from the registry are dropped
+		for key, value in existing.items():
+			if key in fields:
+				entry[key] = fields[key]
+			elif key not in CLAUDE_OWNED_FIELDS:
+				entry[key] = value
+		for key, value in fields.items():
+			entry.setdefault(key, value)
+		if keeps_existing_node(name, existing.get("command")):
+			entry["command"] = existing["command"]
+		merged[name] = entry
+	return merged
+
+
+def codex_payload(physical: Path, desired: dict) -> tuple[bytes, bool, str]:
 	# tomlkit retains comments and unrelated fields rather than rewriting the whole config
 	try:
 		import tomlkit
@@ -56,22 +102,12 @@ def codex_payload(physical: Path, desired: dict, repo_root: Path) -> tuple[bytes
 			if not isinstance(entry, dict):
 				raise ValueError(f"mcp_servers.{name} must be a table")
 			for key, value in fields.items():
-				if key == "args":
-					value = [part.replace("${REPO_ROOT}", str(repo_root)) for part in value]
-				if key == "command" and name == "worker-broker":
-					existing = entry.get("command")
-					if isinstance(existing, str) and Path(existing).name in ("node", "nodejs"):
-						resolved = shutil.which(existing)
-						if resolved and os.access(resolved, os.X_OK):
-							continue
-				if key == "env":
-					environment = entry.setdefault("env", tomlkit.table())
-					if not isinstance(environment, dict):
-						raise ValueError(f"mcp_servers.{name}.env must be a table")
-					for env_key, env_value in value.items():
-						environment.setdefault(env_key, env_value)
-				else:
-					entry[key] = value
+				if key == "command" and keeps_existing_node(name, entry.get("command")):
+					continue
+				entry[key] = value
+			# * the registry owns env for its servers; stale machine-local bindings are dropped
+			if "env" not in fields and "env" in entry:
+				del entry["env"]
 		after = tomlkit.dumps(document)
 	except (ValueError, TypeError, KeyError) as exc:
 		raise SystemExit(f"refusing Codex config {physical}: {exc}") from exc
@@ -96,7 +132,7 @@ def build_tool_plan(
 	except ValueError as exc:
 		raise SystemExit(str(exc)) from exc
 	label = f"mcp-{tool}"
-	desired = mcp_servers.DESIRED_SECTIONS[tool](servers)
+	desired = expand_repo_root(mcp_servers.DESIRED_SECTIONS[tool](servers), repo_root)
 	if not desired:
 		return ToolSyncPlan(
 			tool, label, target, (f"skip: no enabled registry entries target {tool}",)
@@ -104,7 +140,7 @@ def build_tool_plan(
 	document: dict = {}
 	physical = tooling_paths.resolve_write_target(target)
 	if tool == "codex":
-		content, changed, detail = codex_payload(physical, desired, repo_root)
+		content, changed, detail = codex_payload(physical, desired)
 		if not changed:
 			return ToolSyncPlan(tool, label, target, (f"ok existing config: {target}",))
 		replacement = sync_transaction.replacement(
@@ -129,6 +165,8 @@ def build_tool_plan(
 	section_key = mcp_servers.SECTION_KEYS[tool]
 	old_section = document.get(section_key)
 	old_entries = old_section if isinstance(old_section, dict) else {}
+	if tool == "claude-code":
+		desired = claude_entries(old_entries, desired)
 	merged, changed = mcp_servers.merge_section(document, section_key, desired)
 	if not changed:
 		return ToolSyncPlan(tool, label, target, (f"ok existing config: {target}",))
