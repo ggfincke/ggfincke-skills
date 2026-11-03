@@ -74,7 +74,7 @@ class PreCommitSnapshot(unittest.TestCase):
 				"import sys\n"
 				"from pathlib import Path\n"
 				"\n"
-				"expected = ['run', '--with', 'ruff==0.16.2', '--no-project', 'ruff']\n"
+				"expected = ['run', '--with', 'ruff==0.17.3', '--no-project', 'ruff']\n"
 				"if sys.argv[1:6] != expected:\n"
 				"\tprint(f'unexpected uv invocation: {sys.argv[1:]}', file=sys.stderr)\n"
 				"\traise SystemExit(2)\n"
@@ -257,7 +257,7 @@ class PreCommitSnapshot(unittest.TestCase):
 			self.assertFalse(observed_root.exists(), "hook snapshot was not cleaned up")
 			invocations = ruff_log.read_text(encoding="utf-8").splitlines()
 			self.assertEqual(len(invocations), 2)
-			self.assertTrue(all("--with ruff==0.16.2" in line for line in invocations))
+			self.assertTrue(all("--with ruff==0.17.3" in line for line in invocations))
 			selected_path = str(fixture / "scripts" / "example.py")
 			self.assertTrue(all(line.endswith(selected_path) for line in invocations))
 			self.assertTrue(all("unrelated.py" not in line for line in invocations))

@@ -11,7 +11,7 @@ if (($#)); then
 fi
 RUFF_CONFIG="${RUFF_CONFIG:-pyproject.toml}"
 CHECKER="${CHECKER:-skills/comment-style/assets/check_comment_style.py}"
-RUFF_VERSION="0.16.2"
+RUFF_VERSION="0.17.3"
 # space-separated paths relative to ROOT for Ruff; override via RUFF_TARGETS
 RUFF_TARGETS_DEFAULT=(
   scripts
