@@ -36,6 +36,13 @@ Delegate when all of the following are true:
 
 Keep work in the lead session when it determines architecture, spans inseparable paths, needs rapid back-and-forth with the user, or would require a worker to discover its own scope.
 
+## Splitting
+
+- Make each package implementable from its base alone, with no shared state with sibling packages in the same wave, and acceptable on its own patch. Packages that genuinely must land in order are a `depends_on` chain, not siblings.
+- Keep sibling packages roughly uniform in size: split a large one and fold trivial ones into a neighbor.
+- Slice by module or directory rather than arbitrary file lists, so `allowed_paths` stay narrow prefixes that do not overlap.
+- Scale the package count to the work within the run budget. When a sweep needs more packages than the budget allows, ask about the budget instead of making packages oversized.
+
 ## Concurrency
 
 - Run cloud read-only packages concurrently within the assignment budget; local packages serialize daemon-wide.

@@ -28,8 +28,9 @@ A host may inject these as a collaboration-mode block (456code does); this list 
 
 1. Inspect the repository instructions and enough live code to understand the relevant boundaries.
 2. State the intended behavior, invariants, acceptance criteria, and final validation commands.
-3. Identify independent work packages. Keep cross-cutting interfaces and integration sequencing in the lead session.
-4. Delegate only when a package has a concrete objective and an unambiguous file or directory scope.
+3. Settle the end-to-end check before the first wave: how the integrated change is shown to work beyond unit tests, such as an existing e2e or integration suite, a dev server plus a request, a CLI run, or a browser or device pass. Workers cannot ask the user, so when no concrete path exists, ask now with two or three specific options, one of which may be "unit tests are enough". Split the check into commands a worker can run in its worktree, which become verification commands, and the pass only the lead can run after integration (browser, device, live services).
+4. Identify independent work packages using the splitting rules in [routing-policy.md](references/routing-policy.md). Keep cross-cutting interfaces and integration sequencing in the lead session.
+5. Delegate only when a package has a concrete objective and an unambiguous file or directory scope.
 
 Before the first wave, run a lightweight broker preflight with `daemon_status` (or an equivalent read call). Confirm the client and daemon build IDs match and that the daemon is not draining. The daemon owns single-writer access plus build, protocol, and state-schema compatibility; surface `build_mismatch` or `draining` errors and resolve them through the daemon lifecycle, never by working around them.
 
@@ -72,7 +73,11 @@ One file per run, in the integration checkout: `.plans/runs/<runId>.md` where th
 - integration: <absolute repo path> @ <branch> (base <sha>)
 - plan: revision <n>, maxWorkers <n>, used <n>
 - validation: <exact commands>
+- e2e: <lead-side check after integration, or "skip: <reason>">
 - next: <one action>
+
+## worker template
+<shared text copied verbatim into every assignment of this run>
 
 ## phases
 | phase | status | gate |
@@ -96,6 +101,8 @@ Include every field required by [worker-contract.md](references/worker-contract.
 - acceptance criteria and broker-run verification commands;
 - for providers supporting edits, setup commands whenever verification needs the repository toolchain — worktrees start bare with no installed dependencies, so a bare tool name fails with exit 127 no matter how good the patch is;
 - model and effort from the approved model plan's stage binding, or an explicit per-assignment override.
+
+When a wave has more than one similar assignment, write the shared part once as a worker template: the codebase conventions workers must follow, forbidden behavior, setup and verification commands, and the report format. Record it in the run checkpoint and copy it verbatim into each assignment, so only the objective, allowed paths, and package-specific acceptance criteria differ between siblings. Revise the template between waves, never mid-wave.
 
 Every edit assignment must carry an environment plan: either `setup_commands` that provision the broker verification environment, or an explicit no-broker-verification declaration naming the lead's central verification command and when it will run. A bare “do not run tests” instruction is invalid. Use the standard monorepo `node_modules` symlink setup described in [worker-contract.md](references/worker-contract.md) when a shared install is appropriate.
 
@@ -150,7 +157,7 @@ The daemon reconciles automatically: the replacement adopts every nonterminal re
 
 1. Inspect every patch and resolve cross-package assumptions yourself.
 2. Integrate only accepted, in-scope results in the intended dependency order.
-3. Run repository-wide validation from the integrated checkout; worker-local checks are not final proof.
+3. Run repository-wide validation and the lead-side end-to-end check from the integrated checkout; worker-local checks are not final proof.
 4. Report failed or cancelled workers, unverified assumptions, deferred work, and residual risk.
 
 Do not push, publish, or open pull requests unless the user separately authorizes that action.
