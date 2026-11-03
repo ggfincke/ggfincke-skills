@@ -38,7 +38,7 @@ Agent-specific behavior can be added later, but it should be explicit because it
 
 ## Quick Start
 
-Use Node.js 24+, Python 3.9+, and `uv` (or Ruff 0.16.2 already on `PATH`). Install the Python tooling and both Node dependency trees in a fresh checkout, then run the full repository gate:
+Use Node.js 24+, Python 3.9+, and `uv` (or Ruff 0.17.3 already on `PATH`). Install the Python tooling and both Node dependency trees in a fresh checkout, then run the full repository gate:
 
 ```bash
 python3 -m venv .venv

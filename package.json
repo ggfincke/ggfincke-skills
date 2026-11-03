@@ -19,11 +19,11 @@
     "format:all:check": "npm run format:check && npm run format:python:check"
   },
   "devDependencies": {
-    "eslint": "10.13.0",
+    "eslint": "10.14.0",
     "lint-staged": "17.6.0",
     "prettier": "3.9.10",
-    "prettier-plugin-brace-style": "0.10.3",
-    "typescript-eslint": "8.72.0"
+    "prettier-plugin-brace-style": "0.10.4",
+    "typescript-eslint": "8.72.1"
   },
   "overrides": {
     "zod": "4.6.7"
