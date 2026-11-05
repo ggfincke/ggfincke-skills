@@ -6,6 +6,7 @@ import tseslint from 'typescript-eslint'
 
 const commentRules = {
   'ggfincke/file-header': 'error',
+  'ggfincke/comment-block-length': 'error',
   'ggfincke/comment-tags': 'error',
   'ggfincke/plain-comment-case': 'error',
   'ggfincke/block-doc-comments': 'error',

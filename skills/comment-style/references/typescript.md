@@ -16,22 +16,24 @@ Path is repo-relative. The purpose is an untagged lowercase phrase with no trail
 
 ## Language specifics
 
-- TSDoc/JSDoc belongs on classes, interfaces, and enums when a short paragraph helps orient on the larger unit. Ordinary functions and methods use a plain `//` comment above them instead.
-- Prose block-doc summaries are capitalized, full sentences, and period-terminated. Tests and private helpers use plain why-comments.
+- TSDoc/JSDoc is allowed on declarations: functions, methods, properties, variables, classes, interfaces, enums, type aliases, and their members. Caps: 5 content lines on functions and members, 8 on classes, interfaces, enums, type aliases, and namespaces. Use it or a plain `//` comment above, not both.
+- Prose block-doc summaries are capitalized, full sentences, and period-terminated. A block doc on a plain statement is still disallowed.
+- Plain `//` comment blocks cap at 3 lines; a `*` / `!` / `?` tag and its continuation lines cap at 2.
 - Preserve JavaScript JSDoc that supplies checker semantics (`@type`, `@param`, `@returns`, `@typedef`, `@import`, and related supported type tags), including inline casts and annotations in tests. Preserve `@deprecated` in both JS and TS, and syntax-sensitive tooling directives. Without a target documentation requirement, these exemptions do not justify prose-only function docs or redundant JSDoc types in TypeScript; see the [TypeScript JSDoc reference](https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html).
 - Comment interface/type members on the line above each member when a note helps; do not put a TSDoc block on every member.
 - Keep `eslint-disable` and other tooling directives narrow. Add a plain rationale above only when the reason is not obvious.
 
 ## Enforcement (`assets/eslint-rules/`)
 
-Five custom rules, plus core `no-inline-comments`:
+Six custom rules, plus core `no-inline-comments` (shape rules: see `code-shape.md`):
 
 | Rule                  | What it does                                                                              | Auto-fix                         |
 | --------------------- | ----------------------------------------------------------------------------------------- | -------------------------------- |
 | `file-header`         | exact two-line path + untagged lowercase purpose; optional `prefixes` filter and `root` anchor | path/case/period/separation only |
+| `comment-block-length` | caps plain `//` blocks at 3 lines & tagged comments at 2; `TODO` lines are free          | no                               |
 | `comment-tags`        | canonical `*`, `!`, `?`, and uppercase `TODO(scope):` syntax                              | no                               |
 | `plain-comment-case`  | lowercase natural-language starts while preserving code-like symbols                      | yes                              |
-| `block-doc-comments`  | restricts prose blocks to class/interface/enum docs; preserves semantic JSDoc and tool directives | no                         |
+| `block-doc-comments`  | attached, sentence-style TSDoc on declarations, capped at 5 / 8 lines; preserves semantic JSDoc and tool directives | no       |
 | `no-unicode-arrow`    | bans the Unicode arrow; use ASCII `->`                                                    | yes                              |
 
 Wire it up:
@@ -47,6 +49,7 @@ export default [
     plugins: { ggfincke },
     rules: {
       "ggfincke/file-header": ["error", { prefixes: ["src/", "scripts/"] }],
+      "ggfincke/comment-block-length": "error",
       "ggfincke/comment-tags": "error",
       "ggfincke/plain-comment-case": "error",
       "ggfincke/block-doc-comments": "error",

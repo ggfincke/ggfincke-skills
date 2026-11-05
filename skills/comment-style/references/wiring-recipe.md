@@ -19,7 +19,7 @@ From this skill’s `assets/`:
 | `swift/` (Swift repos) | as documented in `swift.md` |
 
 Update each asset’s two-line header to the destination path after copying.
-Wire ESLint as in `typescript.md` (plugin `ggfincke`, five custom rules +
+Wire ESLint as in `typescript.md` (plugin `ggfincke`, six custom rules +
 `no-inline-comments`).
 
 ## 2. Prettier + npm scripts

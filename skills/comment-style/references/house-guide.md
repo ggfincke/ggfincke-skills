@@ -21,12 +21,14 @@ comments (JSON, etc.) follow their canonical syntax.
 
 - Every covered file starts with a two-line header: repo-relative path on line
   1, lowercase purpose phrase on line 2. No module docstrings.
-- Plain `#` / `//` comments are the default. Put them above the unit they
-  describe so a glance explains what that function or block is for (and why it
-  is shaped that way when that matters).
-- Docstrings / TSDoc blocks are for larger constructs (typically classes), not
-  routine functions by default. Follow explicit target-project requirements for
-  public API documentation or documentation tooling.
+- Plain `#` / `//` comments sit above the unit they describe so a glance
+  explains what that function or block is for (and why, when that matters).
+  Hard cap: 3 lines per block, 2 for a `*` / `!` / `?` tag.
+- Detail past the cap goes into types first (TypedDict, dataclass, interface),
+  then a dev-docs page with a one-line pointer.
+- Docstrings / TSDoc / `///` are welcome on functions, methods, and types.
+  Caps: 5 content lines on functions, 8 on classes and types. One per unit:
+  a docstring or a plain comment above, not both.
 - Plain comments are lowercase and casual. Block docs use full sentences
   (capitalized, period-terminated).
 - Better Comments tags (`*`, `!`, `?`, `TODO`) are uncommon and carry structured
@@ -116,25 +118,28 @@ in the code.
   readable.
 - Preserve canonical casing for symbols, acronyms, protocols, and product names.
 - Use ASCII `->` for directional relationships, never `→`.
-- Keep the block as short as the rationale allows. Long design history belongs
-  in maintained docs.
+- 3 lines per block at most (2 for a tagged comment; a `TODO` line is not
+  counted). A blank line, tooling directive, or code line ends a block; do not
+  split one note across blocks to dodge the cap.
+- When a comment would list a dict's keys or a parameter's fields, declare a
+  type instead and give each member a one-line comment.
+- Long design history, data layout, and multi-step rationale belong in a
+  maintained doc, linked with one pointer line.
 - One blank line above an attached comment when surrounding syntax permits; no
   blank line between the comment and the code it owns.
 
 ## 3. Docstrings and block docs
 
-By default, block docs orient maintainers and agents on larger units — usually
-a class, or a similarly substantial TypeScript type/class when a paragraph helps.
-An explicit target-project public API or documentation-pipeline requirement takes
-precedence, including required docblocks on functions or modules.
+Docstrings, TSDoc, and `///` are a normal tool on functions, methods, classes,
+and types. Use one when the summary is a full sentence worth attaching to the
+symbol; otherwise a plain comment above is the lighter option. Never both.
 
-Otherwise, ordinary functions and private helpers get a plain comment above them,
-not a docstring or TSDoc block.
+An explicit target-project public API or documentation-pipeline requirement
+takes precedence, including required docblocks on every function or module.
 
 Preserve machine-readable annotations whose syntax or attachment carries type,
-deprecation, or tooling meaning, even on functions and tests. They are not prose
-documentation. The JavaScript/TypeScript exceptions and inline wiring are in
-`typescript.md`; do not use arbitrary tags to bypass the prose convention.
+deprecation, or tooling meaning. They are not prose documentation. The
+JavaScript/TypeScript exceptions and inline wiring are in `typescript.md`.
 
 ```python
 class SeedCompiler:
@@ -143,8 +148,8 @@ class SeedCompiler:
 	Owns schema validation, asset binding, and the legacy manifest shape.
 	"""
 
-	# downstream ts parity still expects the legacy manifest shape
 	def compose_dataset(self, core_path: Path, repo_root: Path) -> JsonObject:
+		"""Compose the legacy manifest that downstream ts parity still expects."""
 		manifest = read_json(core_path)
 		return manifest
 ```
@@ -167,11 +172,13 @@ export class CloudBoardMapper
 
 ### Block-doc rules
 
+- One summary sentence, then optionally a blank line and a short body.
+- Caps: 5 content lines on functions and methods, 8 on classes, interfaces,
+  enums, and type aliases. Blank lines do not count.
 - Full sentences: capitalized and period-terminated.
-- Prefer a short summary plus only details that help someone (or an agent)
-  understand the larger unit.
-- Do not restate names or types already in the signature.
-- Do not duplicate a plain comment that says the same thing.
+- No Args/Returns/Raises sections that restate the signature; mention a
+  parameter only when its meaning is not obvious from its name and type.
+- A docstring or a plain comment above the unit, never both.
 - No module docstrings; the two-line header owns module identity and purpose.
 - Put constructor-level behavior on the class docstring rather than repeating
   it on `__init__` or a constructor.
@@ -271,7 +278,7 @@ code block without flattening their meaning.
 | ------------------------------------- | ----------------------------------- |
 | two-line file header                  | module identity + short purpose     |
 | plain leading comment                 | glanceable unit orientation         |
-| class / large-unit docstring or TSDoc | orientation for a larger construct  |
+| docstring, TSDoc, or `///`            | sentence summary attached to symbol |
 | `*`, `!`, `?`, or `TODO`              | structured annotation + severity    |
 | symbol + module reference             | resolvable code relationship        |
 
@@ -282,11 +289,12 @@ stable names and paths over prose such as `the helper above`.
 
 Do not commit:
 
+- comment essays: blocks past 3 lines, or docstrings past their cap
+- prose that documents a schema the code could declare as a type
 - comments that restate the next line
 - step-by-step narration of readable code
-- docstring/TSDoc on every function or export
-- redundant public API prose where the target has no documentation requirement
-- a block doc and a plain comment that say the same thing
+- Args/Returns docstring sections that restate the signature
+- a block doc and a plain comment on the same unit
 - module-level Python docstrings
 - side comments beside code
 - file-header essays or third header lines
@@ -300,15 +308,19 @@ Do not commit:
 When a repo wires the skill’s enforcers (see `wiring-recipe.md`):
 
 - TypeScript/JS: ESLint `ggfincke/*` comment rules + core `no-inline-comments`
-- Python: `assets/check_comment_style.py` (or a thin wrapper) plus Ruff
+  (and the core shape rules in `code-shape.md`)
+- Python: `assets/check_comment_style.py` (or a thin wrapper) plus Ruff, with
+  the shape rules in `code-shape.md`
 
 They cover:
 
 - two-line path + purpose file headers
 - lowercase plain comments; Better Comments / `TODO` tag shape
 - no side comments beside code; ASCII `->` only
-- block docs / docstrings on large units only (TS: classes, interfaces, enums;
-  Python: module-level non-`_` classes) — not on routine functions
+- plain comment blocks capped at 3 lines, tagged comments at 2
+- block docs / docstrings attached to a declaration, sentence-style, capped at
+  5 content lines on functions & 8 on types; Python also flags a docstring
+  paired with a plain comment above the same def
 
 The bundled enforcers implement these defaults. For a target with required API
 documentation or a tooling-significant annotation the checker does not recognize,

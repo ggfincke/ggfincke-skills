@@ -1,18 +1,31 @@
 // eslint-rules/block-doc-comments.js
-// validate sentence-style block docs on classes, interfaces, & enums
+// validate sentence-style, length-capped block docs on declarations
 
-import {
-  getCwd,
-  getFilename,
-  getSourceCode,
-  repoRelativePath,
-} from './rule-context.js'
+import { getFilename, getSourceCode } from './rule-context.js'
 
-const LARGE_UNIT_TYPES = new Set([
+// * caps mirror MAX_TYPE_DOC_LINES & MAX_FUNCTION_DOC_LINES in check_comment_style.py
+const MAX_TYPE_DOC_LINES = 8
+const MAX_DOC_LINES = 5
+
+const TYPE_UNITS = new Set([
   'ClassDeclaration',
   'ClassExpression',
   'TSInterfaceDeclaration',
   'TSEnumDeclaration',
+  'TSTypeAliasDeclaration',
+  'TSModuleDeclaration',
+])
+const MEMBER_UNITS = new Set([
+  'FunctionDeclaration',
+  'VariableDeclaration',
+  'MethodDefinition',
+  'PropertyDefinition',
+  'TSAbstractMethodDefinition',
+  'TSAbstractPropertyDefinition',
+  'TSDeclareFunction',
+  'TSMethodSignature',
+  'TSPropertySignature',
+  'TSEnumMember',
 ])
 
 const TOOL_DIRECTIVE = /^(?:eslint|@ts-|istanbul|c8\b|v8\b)/i
@@ -20,10 +33,6 @@ const TOOL_DIRECTIVE = /^(?:eslint|@ts-|istanbul|c8\b|v8\b)/i
 const JSDOC_TYPE_TAG =
   /(?:^|\n)\s*\*?\s*@(?:type|import|param|arg|argument|returns?|typedef|callback|template|satisfies|public|private|protected|readonly|override|extends|augments|implements|class|constructor|this|enum)\b/
 const JSDOC_DEPRECATED_TAG = /(?:^|\n)\s*\*?\s*@deprecated\b/
-
-const isTestFile = (filename) =>
-  /(?:^|\/)(?:tests?|e2e)\//.test(filename) ||
-  /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(filename)
 
 const documentedDeclaration = (node, token) =>
 {
@@ -39,6 +48,16 @@ const documentedDeclaration = (node, token) =>
     current = current.body.find((child) => child.range[1] > token.range[0])
   }
   if (!current) return undefined
+  // the lookup returns the innermost node, e.g. a method's key Identifier;
+  // climb to the outermost node that starts at the same token
+  while (
+    current.parent &&
+    current.parent.type !== 'Program' &&
+    current.parent.range[0] === current.range[0]
+  )
+  {
+    current = current.parent
+  }
   if (
     current.type === 'ExportDefaultDeclaration' ||
     current.type === 'ExportNamedDeclaration'
@@ -56,12 +75,15 @@ const isJsxComment = (comment, sourceCode) =>
   return before.endsWith('{') && after.startsWith('}')
 }
 
-const summaryParagraph = (comment) =>
-{
-  const lines = comment.value
+const docLines = (comment) =>
+  comment.value
     .replace(/^\*/, '')
     .split('\n')
     .map((line) => line.replace(/^\s*\*?\s?/, '').trim())
+
+const summaryParagraph = (comment) =>
+{
+  const lines = docLines(comment)
   const paragraph = []
   for (const line of lines)
   {
@@ -88,36 +110,30 @@ const rule = {
     type: 'suggestion',
     docs: {
       description:
-        'Allow sentence-style block docs only on classes, interfaces, and enums',
+        'Allow sentence-style, length-capped block docs on declarations',
       category: 'Stylistic Issues',
     },
     schema: [],
     messages: {
       blockComment:
-        'Use line comments for implementation rationale; block comments are reserved for class, interface, and enum documentation',
+        'Use line comments for implementation rationale; block comments are reserved for TSDoc/JSDoc',
       disallowedDocumentation:
-        'TSDoc/JSDoc belongs on classes, interfaces, and enums; use a plain comment above ordinary functions',
+        'TSDoc/JSDoc belongs on declarations; use a plain comment above statements',
       detachedDocumentation:
-        'Attach TSDoc/JSDoc directly to the class, interface, or enum it documents',
+        'Attach TSDoc/JSDoc directly to the declaration it documents',
+      tooLong:
+        'Block docs here stay within {{ limit }} lines; move detail to types or docs',
       missingSummary: 'Block documentation needs a summary sentence',
       summaryCapitalization:
         'Block documentation summary must begin with a capitalized sentence',
       summaryPeriod: 'Block documentation summary must end with a period',
-      testDocumentation:
-        'Tests and test helpers do not use block documentation; use a plain why-comment if needed',
     },
   },
 
   create(context)
   {
     const sourceCode = getSourceCode(context)
-    // repo-relative, so a checkout under a directory named test/tests/e2e does
-    // not make isTestFile true for every file in the repo
-    const filename = repoRelativePath(getFilename(context), {
-      cwd: getCwd(context),
-    })
-    const testFile = isTestFile(filename)
-    const javascriptFile = /\.[cm]?jsx?$/.test(filename)
+    const javascriptFile = /\.[cm]?jsx?$/.test(getFilename(context))
 
     return {
       Program()
@@ -141,12 +157,6 @@ const rule = {
           {
             continue
           }
-          if (testFile)
-          {
-            context.report({ node: comment, messageId: 'testDocumentation' })
-            continue
-          }
-
           const token = sourceCode.getTokenAfter(comment, {
             includeComments: false,
           })
@@ -170,13 +180,24 @@ const rule = {
 
           const nextNode = sourceCode.getNodeByRangeIndex(token.range[0])
           const target = documentedDeclaration(nextNode, token)
-          if (!target || !LARGE_UNIT_TYPES.has(target.type))
+          const typeUnit = TYPE_UNITS.has(target?.type)
+          if (!typeUnit && !MEMBER_UNITS.has(target?.type))
           {
             context.report({
               node: comment,
               messageId: 'disallowedDocumentation',
             })
             continue
+          }
+
+          const limit = typeUnit ? MAX_TYPE_DOC_LINES : MAX_DOC_LINES
+          if (docLines(comment).filter(Boolean).length > limit)
+          {
+            context.report({
+              node: comment,
+              messageId: 'tooLong',
+              data: { limit },
+            })
           }
 
           const summary = summaryParagraph(comment)

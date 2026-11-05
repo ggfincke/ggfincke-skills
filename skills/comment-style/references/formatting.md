@@ -53,15 +53,23 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-extend-select = ["D400", "D403"]
+extend-select = ["D400", "D403", "C901", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-statements = 60
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "tab"
 ```
 
-`D400` / `D403` reinforce docstring period + capitalization for the rare
-class-level block docs that comment-style allows.
+`D400` / `D403` reinforce docstring period + capitalization. `C901` /
+`PLR0913` / `PLR0915` are the shape rules from `code-shape.md`; adopt them
+in stages in a repo with existing debt.
 
 ## Change hygiene
 

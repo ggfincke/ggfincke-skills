@@ -1,26 +1,26 @@
 ---
 name: comment-style
-description: Apply house comment conventions when adding or revising comments, docstrings, or file headers in any language, or wiring comment-style enforcement. Covers the copyable ESLint and Python/Swift checkers.
+description: Apply house comment and code-shape conventions when adding or revising comments, docstrings, file headers, or function structure in any language, or wiring their enforcement. Covers the copyable ESLint and Python/Swift checkers and the Ruff shape rules.
 ---
 
 # Comment Style
 
-Plain comments are the default: a short note above a unit so a glance explains what it does and why it is shaped that way. Block docs (docstrings / TSDoc / `///`) are for larger constructs — typically classes, or similarly substantial types — not routine functions. Move architecture essays, incident history, and long tradeoff records to maintained docs. The principles below are uniform across languages; only enforcement differs (see `references/` + `assets/`).
+A comment is a short note above a unit so a glance explains what it does and why it is shaped that way. Caps keep it that way: when a note outgrows them, the detail belongs in a type or a maintained doc, not a longer comment. Docstrings / TSDoc / `///` are a normal tool on functions and types, also capped. The principles below are uniform across languages; only enforcement differs (see `references/` + `assets/`).
 
 ## Core rules
 
 <!-- always-on:start title="Comment style" -->
 
-- Every covered file starts with exactly two comment lines: repo-relative path, then a lowercase untagged purpose phrase. Shebangs stay above them; module docstrings do not duplicate them. A file meant to be copied into another repo is the one exception: it carries the path it will live at in the destination, not its path where it is stored.
-- Plain `#` / `//` comments are the default. Put them above the unit they describe so a glance explains what that function or block is for (and why it is shaped that way when that matters).
-- Docstrings / TSDoc / `///` blocks are for larger constructs (typically classes; TypeScript also interfaces/enums; Swift types similarly), not routine functions. When used, they are full sentences with capitalization and terminal punctuation.
-- Plain comments are lowercase and casual. Put them above the code, never beside it, and do not repeat a block doc or types already visible in the signature.
-- Natural abbreviations such as `&`, `w/`, `w/o`, `config`, and `params` are welcome when they improve brevity, but are not mandatory rewrites.
+- Every covered file starts with exactly two comment lines: repo-relative path, then a lowercase untagged purpose phrase. Shebangs stay above them; no module docstrings. A file meant to be copied into another repo is the one exception: it carries the path it will live at in the destination, not its path where it is stored.
+- A plain `#` / `//` comment sits above the unit it describes and says what it is for, plus why when that is not obvious. Hard cap 3 lines per block; `*` / `!` / `?` tags cap at 2. Checkers enforce both.
+- Detail that does not fit goes into types first: a comment that lists a dict's keys or a param's fields becomes a TypedDict / dataclass / interface with a one-line comment per field. Remaining explanation moves to a dev-docs page, linked with one pointer line.
+- Docstrings / TSDoc / `///` are welcome on functions, methods, and types when they earn it: one summary sentence, then optionally a blank line and a short body. Caps: 5 content lines on functions, 8 on classes and types. Full sentences, no Args/Returns sections that repeat the signature, and a docstring or a plain comment above, never both.
+- Plain comments are lowercase and casual, above the code and never beside it, and do not restate types already visible in the signature.
+- Natural abbreviations such as `&`, `w/`, `w/o`, `config`, and `params` are welcome when they improve brevity.
 - ASCII `->`, never the Unicode arrow.
-- Plain comments are the default. Use structured tags sparingly: `*` important invariant, `!` warning/deprecation, `?` unresolved design question, `TODO` actionable follow-up.
-- TODOs use one short `TODO action` or `TODO(scope): action` line with a lowercase scope. Put context immediately above in a plain block.
-- Keep comment blocks concise; there is no hard line cap. Move durable architecture and long rationale to maintained docs.
+- Structured tags are sparing: `*` important invariant, `!` warning/deprecation, `?` unresolved design question, `TODO` actionable follow-up. TODOs use one short `TODO action` or `TODO(scope): action` line with a lowercase scope and context directly above.
 - Cross-reference exact symbols plus stable module paths, never source line numbers.
+- Code shape: aim for functions under ~60 lines; more than ~3 nested `def`s sharing state become a small class or module helpers; more than ~6 params become a dataclass / TypedDict / options object. Descriptive names; single letters only for loop indexes and math. Ruff `C901` / `PLR0913` / `PLR0915` enforce this in Python.
 - Honor explicit target-project conventions and public API documentation requirements. Preserve generated/vendor formats and annotations required by documentation, type-checking, deprecation, or other tooling; apply these prose defaults only where they do not conflict with those contracts.
 
 <!-- always-on:end -->
@@ -34,36 +34,54 @@ payload = normalize(raw)
 payload = normalize(raw)  # normalize ...   <- wrong: side comment
 ```
 
+## Caps
+
+| Construct                                   | Cap                  |
+| ------------------------------------------- | -------------------- |
+| plain comment block (consecutive lines)     | 3 lines              |
+| `*` / `!` / `?` tag plus continuation lines | 2 lines              |
+| `TODO` line                                 | 1 line, not counted  |
+| function / method docstring or TSDoc        | 5 content lines      |
+| class / interface / enum / type docstring   | 8 content lines      |
+
+A blank line, a tooling directive, or a code line ends a block. Splitting one note into two blocks with a blank line to dodge the cap defeats the rule; move the detail instead.
+
 ## Plain comments vs. block docs
 
-A target project may require public API docblocks for its documentation pipeline or published contract. Follow that requirement, including on functions. Otherwise a short plain comment above a function is welcome when it helps orientation. Do not narrate every assignment, branch, or type already visible in the code.
+Pick one per unit. A plain comment above a function is the light option. A docstring is better when the summary is a full sentence a reader (or tooling) wants attached to the symbol. Never write both.
 
-Block docs orient maintainers (and agents) on a larger unit — usually a class, or a similarly substantial TypeScript type/class when a paragraph helps. Without a target documentation requirement, ordinary functions and private helpers get a plain comment above them, not a docstring or TSDoc block.
+A target project may require public API docblocks for its documentation pipeline. Follow that requirement, and scope any checker override to that surface.
 
-These are prose conventions. Preserve annotations whose block syntax or placement carries type-checking, deprecation, or tooling meaning, including on functions and tests. Do not convert them to plain comments; the narrow JavaScript/TypeScript exceptions are in `references/typescript.md`.
+Preserve annotations whose block syntax or placement carries type-checking, deprecation, or tooling meaning. Do not convert them to plain comments; the JavaScript/TypeScript exceptions are in `references/typescript.md`.
 
-Do not duplicate a block doc and a plain comment that say the same thing. Put constructor-level behavior on the class docstring rather than repeating it on `__init__` or a constructor.
+Put constructor-level behavior on the class docstring rather than repeating it on `__init__` or a constructor.
 
-## Anti-patterns that bloat comments
+## Where long explanations go
 
+1. **Types.** Shapes, fields, and keys belong in a TypedDict, dataclass, interface, or enum with a one-line comment per member. The type checker then keeps them honest.
+2. **Names.** A step that needs narration becomes a named helper.
+3. **dev-docs.** Architecture, data layout, and multi-step rationale go to a maintained doc. Leave one pointer line: `# sheet layout & palette sets: dev-docs/engine/object-draw.md`.
+4. **Commit or PR.** Tradeoff history and "why not X" go there.
+
+## Anti-patterns
+
+- Comment essays above a function (the cap exists for these).
+- Prose that documents a schema the code could declare as a type.
 - Third file-header lines or tagged purpose phrases.
-- "Why not X" tradeoff dumps - belongs in the commit/PR.
-- Edge-case enumeration - the types and body already show it.
-- Step-by-step narration - name steps with helper functions or let the code read itself.
-- Defensive "future-reader" notes - they rot silently when the code changes.
-- Unnecessary docstring/TSDoc/`///` on every function or export where the target has no documentation requirement.
-- Legacy labels such as `NOTE:`, `HACK:`, `FIXME:`, or `FOOTGUN:` when a plain comment or canonical tag expresses the real meaning.
+- Edge-case enumeration, step-by-step narration, or defensive "future-reader" notes.
+- A docstring and a plain comment on the same unit.
+- Args/Returns docstring sections that restate the signature.
+- Legacy labels such as `NOTE:`, `HACK:`, `FIXME:`, or `FOOTGUN:`.
 
 ## Expanded references
 
-Load these when you need more than the core rules:
+- `references/house-guide.md` - full house guide (headers, banners, tags, Cartographer, anti-patterns)
+- `references/code-shape.md` - function size, nesting, params, naming, & the Ruff/ESLint shape rules
+- `references/formatting.md` - Prettier/Allman + Ruff formatting conventions and change hygiene
+- `references/wiring-recipe.md` - how to install enforcers, npm scripts, lint-staged, and CI in a target repo
+- `references/typescript.md` / `python.md` / `swift.md` - per-language specifics
 
-- `references/house-guide.md` — full house guide (headers, banners, tags, Cartographer, anti-patterns)
-- `references/formatting.md` — Prettier/Allman + Ruff formatting conventions and change hygiene
-- `references/wiring-recipe.md` — how to install enforcers, npm scripts, lint-staged, and CI in a target repo
-- `references/typescript.md` / `python.md` / `swift.md` — per-language specifics
-
-**Status in this repository (ggfincke-skills):** **adopted** — root Prettier/ESLint, Python Ruff + comment checker, `make check` format gates, pre-commit lint-staged, and CI format jobs are wired. Skill `assets/` remain copyable for other repos (destination-path headers exempt from `file-header` here).
+**Status in this repository (ggfincke-skills):** **adopted** for comments: root Prettier/ESLint, Python Ruff + comment checker, `make check` format gates, pre-commit lint-staged, and CI format jobs are wired. The Ruff shape rules are documented but not yet gated here. Skill `assets/` remain copyable for other repos (destination-path headers exempt from `file-header` here).
 
 ## Applying in a repo
 
@@ -72,6 +90,7 @@ Principles stay the same; pick the matching language guide and copy its enforcer
 - TypeScript -> `references/typescript.md`, `assets/eslint-rules/`
 - Python -> `references/python.md`, `assets/check_comment_style.py`, optional `assets/check-python-style.sh` (Ruff + comment checker wrapper)
 - Swift -> `references/swift.md`, `assets/check_comment_style.py` + `assets/swift/`
+- Code shape -> `references/code-shape.md` (Ruff config for Python, core ESLint rules for TS)
 - Formatting (TS/JS) -> `references/formatting.md` + `references/wiring-recipe.md`
 
 `assets/` holds the actual enforcers to copy into a target repo. They are project-by-project wiring, not run by this skill.
