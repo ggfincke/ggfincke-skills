@@ -21,10 +21,15 @@ export const WORKER_STATUSES = [
   ...TERMINAL_WORKER_STATUSES,
 ] as const
 export const FAILURE_CLASSES = [
+  // setup/toolchain defect (exit 126/127, setup failure); patch usually intact
   'environment',
+  // provider process or output defect
   'model',
+  // broker restart, state, or ownership
   'broker_fault',
+  // allowed-path or setup-attribution violation
   'scope',
+  // genuine nonzero verification
   'verification',
 ] as const
 export const REASONING_EFFORTS = [
@@ -87,10 +92,7 @@ export function codexEventLogAttempt(fileName: string): number | undefined
   return Number.isSafeInteger(attempt) ? attempt : undefined
 }
 
-// why a terminal job failed, so clients can tell salvageable work from lost work:
-// environment = setup/toolchain defect (exit 126/127, setup failure) — patch usually intact;
-// model = provider process/output defect; broker_fault = broker restart/state/ownership;
-// scope = allowed-path or setup-attribution violation; verification = genuine nonzero verification
+// why a terminal job failed, so clients can tell salvageable work from lost work
 export type FailureClass = (typeof FAILURE_CLASSES)[number]
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 

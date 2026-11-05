@@ -594,10 +594,8 @@ export function combinedCodexHome(
   return homes.join(',')
 }
 
-// the whole point of this command is to run behind a wrapper named `ccusage`
-// that sits ahead of the stock binary on PATH, so spawning the bare name would
-// re-enter this command forever; resolution walks PATH itself & skips every
-// candidate that points back at this package
+// this command runs behind a `ccusage` wrapper ahead of the stock binary on PATH,
+// so resolution walks PATH itself & skips candidates pointing back at this package
 const CCUSAGE_BINARY_NAME = 'ccusage'
 // stock ccusage is a bundled entrypoint & a wrapper is a short script, so the
 // head of a candidate is enough to tell them apart

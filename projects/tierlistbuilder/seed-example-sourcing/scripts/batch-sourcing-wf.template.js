@@ -2,11 +2,7 @@
 // legacy Workflow adapter for roster sourcing with complete failure reconciliation
 
 // use only after the host capability check in SKILL.md; bind models through approved host options.
-// copy into task scratch; this is not a Node script. sourcing branches on t.modality:
-//   'logo'   -> png, transparent, uniform plate, labels hidden
-//   'render' -> png, meaningful alpha, plate off, labels shown
-//   'photo'  -> jpg, flatten white, plate off, labels shown
-//   'poster' -> jpg, full-bleed portrait, no plate, labels hidden
+// copy into task scratch; this is not a Node script. per-modality output rules live in MODALITY
 
 export const meta = {
   name: 'seed-batch-sourcing',

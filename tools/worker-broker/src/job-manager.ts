@@ -815,10 +815,8 @@ export class JobManager
       .map((summary) => structuredClone(summary))
   }
 
-  // phase & newest prose for a job still in flight, read only from the writer
-  // this process already owns: activity() memoizes and finish() drops the entry
-  // (see finish), so constructing one here would re-open activity.jsonl for a
-  // job that is already done
+  // phase & newest prose for an in-flight job, read only from the writer this
+  // process already owns; making one here would re-open a finished job's activity.jsonl
   async progress(jobId: string): Promise<JobProgress>
   {
     const summary = await this.getSummary(jobId)
