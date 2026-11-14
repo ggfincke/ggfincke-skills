@@ -151,6 +151,47 @@ def publish(recovery_fd: int, name: str, destination_fd: int, parts: tuple[str, 
 	return published
 
 
+# check each manifest entry's shape, destination conflicts, & source hash before any write
+def validated_rows(
+	manifest: dict, source_fd: int, receipt_parts: tuple[str, ...]
+) -> tuple[list[dict], set[tuple[str, ...]]]:
+	rows = []
+	paths = {receipt_parts}
+	for entry in manifest["inputs"]:
+		source_parts = safe_parts(entry["source"])
+		target_parts = safe_parts(entry["destination"])
+		expected = entry["sha256"]
+		if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+			raise ValueError("each input needs a lowercase SHA-256")
+		if any(
+			target_parts[: len(path)] == path or path[: len(target_parts)] == target_parts
+			for path in paths
+		):
+			raise ValueError("declared destinations conflict with each other or the receipt")
+		paths.add(target_parts)
+		with source_file(source_fd, source_parts) as file:
+			if file_hash(file) != expected:
+				raise ValueError(f"source hash mismatch: {entry['source']}")
+		rows.append(
+			{"source": entry["source"], "destination": entry["destination"], "sha256": expected}
+		)
+	return rows, paths
+
+
+# stage every input and recheck its hash before publishing any destination
+def stage_inputs(rows: list[dict], source_fd: int, recovery_fd: int) -> None:
+	for index, row in enumerate(rows):
+		with (
+			source_file(source_fd, safe_parts(row["source"])) as source,
+			new_file(recovery_fd, str(index)) as target,
+		):
+			shutil.copyfileobj(source, target)
+		with source_file(recovery_fd, (str(index),)) as file:
+			if file_hash(file) != row["sha256"]:
+				raise ValueError(f"source changed during copy: {row['source']}")
+			row["bytes"] = os.fstat(file.fileno()).st_size
+
+
 def materialize(
 	manifest_path: Path, source_root: Path, destination: Path, receipt_name: str
 ) -> dict:
@@ -178,26 +219,7 @@ def materialize(
 		):
 			raise ValueError("expected schema_version 1 and a nonempty inputs list")
 		receipt_parts = safe_parts(receipt_name)
-		rows = []
-		paths = {receipt_parts}
-		for entry in manifest["inputs"]:
-			source_parts = safe_parts(entry["source"])
-			target_parts = safe_parts(entry["destination"])
-			expected = entry["sha256"]
-			if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
-				raise ValueError("each input needs a lowercase SHA-256")
-			if any(
-				target_parts[: len(path)] == path or path[: len(target_parts)] == target_parts
-				for path in paths
-			):
-				raise ValueError("declared destinations conflict with each other or the receipt")
-			paths.add(target_parts)
-			with source_file(source_fd, source_parts) as file:
-				if file_hash(file) != expected:
-					raise ValueError(f"source hash mismatch: {entry['source']}")
-			rows.append(
-				{"source": entry["source"], "destination": entry["destination"], "sha256": expected}
-			)
+		rows, paths = validated_rows(manifest, source_fd, receipt_parts)
 		for parts in paths:
 			check_destination(destination_fd, parts)
 		require_root_identity(source_root, source_fd)
@@ -219,17 +241,7 @@ def materialize(
 			"copied": [],
 		}
 		try:
-			# stage every input and recheck its hash before publishing any destination
-			for index, row in enumerate(rows):
-				with (
-					source_file(source_fd, safe_parts(row["source"])) as source,
-					new_file(recovery_fd, str(index)) as target,
-				):
-					shutil.copyfileobj(source, target)
-				with source_file(recovery_fd, (str(index),)) as file:
-					if file_hash(file) != row["sha256"]:
-						raise ValueError(f"source changed during copy: {row['source']}")
-					row["bytes"] = os.fstat(file.fileno()).st_size
+			stage_inputs(rows, source_fd, recovery_fd)
 			for index, row in enumerate(rows):
 				require_root_identity(source_root, source_fd)
 				require_root_identity(destination, destination_fd)

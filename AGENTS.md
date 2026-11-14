@@ -13,7 +13,7 @@
 
 - Owned TypeScript/JavaScript uses Allman braces, no semis, single quotes (Prettier + `prettier-plugin-brace-style`). See `skills/comment-style/references/formatting.md`.
 - Comment style (headers, plain comments, tags) is enforced by ESLint rules imported from `skills/comment-style/assets/eslint-rules/` and by the Python checker under that skill's `assets/`. Expanded guide: `skills/comment-style/references/house-guide.md`.
-- `make check` includes non-mutating `format-check` (Prettier + ESLint) and `format-python-check` (Ruff + comment checker). Mutating fixes: `make format` / `make format-python` (or `npm run format:all`).
+- `make check` includes non-mutating `format-check` (Prettier + ESLint) and `format-python-check` (Ruff + comment checker). Ruff also gates the code-shape limits (complexity 15, 60 statements, 7 args) on `scripts/`, `projects/`, and the checker asset, with `tests/` exempt; the matching core ESLint rules are warnings for now. Mutating fixes: `make format` / `make format-python` (or `npm run format:all`).
 - Pre-commit runs `npx lint-staged` for staged `*.{js,mjs,cjs,ts,tsx}` plus Python under `scripts/`, `tests/`, `projects/`, and the adopted comment checker, then runs validate + unittest against the formatted index snapshot. Portable skill helpers remain outside the root Python formatter. The hook does **not** run broker-check; use `make check` or CI for that.
 
 ## Portable vs project skills

@@ -21,6 +21,20 @@ const commentRules = {
   ],
 }
 
+// code-shape limits from skills/comment-style/references/code-shape.md. warnings until the
+// existing hits in the rule assets & the worker broker are refactored in their own wave
+const shapeRules = {
+  complexity: ['warn', 15],
+  'max-params': ['warn', 7],
+  'max-statements': ['warn', 60],
+}
+
+const ownedFiles = [
+  'tools/worker-broker/**/*.{ts,tsx,js,mjs}',
+  'skills/comment-style/assets/eslint-rules/**/*.js',
+  'projects/**/*.{js,mjs,ts,tsx}',
+]
+
 export default tseslint.config(
   {
     ignores: [
@@ -32,11 +46,7 @@ export default tseslint.config(
     ],
   },
   {
-    files: [
-      'tools/worker-broker/**/*.{ts,tsx,js,mjs}',
-      'skills/comment-style/assets/eslint-rules/**/*.js',
-      'projects/**/*.{js,mjs,ts,tsx}',
-    ],
+    files: ownedFiles,
     plugins: { ggfincke },
     languageOptions: {
       parser: tseslint.parser,
@@ -44,6 +54,10 @@ export default tseslint.config(
       sourceType: 'module',
     },
     rules: commentRules,
+  },
+  {
+    files: ownedFiles,
+    rules: shapeRules,
   },
   {
     // destination-path headers on copyable skill assets

@@ -4,7 +4,18 @@ line-length = 100
 include = ["*.py"]
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "D400", "D403"]
+select = ["E4", "E7", "E9", "F", "D400", "D403", "C901", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-statements = 60
+
+# long arrange-act-assert bodies are normal in tests; the shape limits gate source only
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["C901", "PLR0913", "PLR0915"]
 
 [tool.ruff.format]
 quote-style = "double"

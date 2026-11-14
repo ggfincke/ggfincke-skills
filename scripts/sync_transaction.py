@@ -9,7 +9,7 @@ import re
 import shutil
 import stat
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
 
@@ -305,58 +305,31 @@ def prune(operation_id: str, destination: Path) -> Prune:
 	return Prune(operation_id, destination, observe(destination))
 
 
-def plan_issues(plan: RunPlan) -> tuple[str, ...]:
+# widen the reserved-artifact scan recorded for a parent; None means every name in it
+def _merge_artifact_scan(artifact_scans: dict[Path, set[str] | None], scan: ArtifactScan) -> None:
+	parent = scan.parent.resolve(strict=False)
+	names = None if scan.destination_names is None else set(scan.destination_names)
+	if parent not in artifact_scans:
+		artifact_scans[parent] = names
+		return
+	if artifact_scans[parent] is None or names is None:
+		artifact_scans[parent] = None
+		return
+	artifact_scans[parent].update(names)
+
+
+# the symlink that keeps a copy payload from being snapshotted, when it has one
+def _unsupported_source_symlink(operation: Replacement | Prune) -> Path | None:
+	if isinstance(operation, Replacement) and isinstance(
+		operation.payload, (CopyTreePayload, CopyFilePayload)
+	):
+		return operation.payload.unsupported_symlink
+	return None
+
+
+# stage & backup files an interrupted earlier run left beside a scanned destination
+def _stale_artifact_issues(artifact_scans: dict[Path, set[str] | None]) -> list[str]:
 	issues: list[str] = []
-	seen_destinations: dict[Path, str] = {}
-	seen_source_symlinks: set[Path] = set()
-	artifact_scans: dict[Path, set[str] | None] = {}
-
-	def add_artifact_scan(scan: ArtifactScan) -> None:
-		parent = scan.parent.resolve(strict=False)
-		names = None if scan.destination_names is None else set(scan.destination_names)
-		if parent not in artifact_scans:
-			artifact_scans[parent] = names
-			return
-		if artifact_scans[parent] is None or names is None:
-			artifact_scans[parent] = None
-			return
-		artifact_scans[parent].update(names)
-
-	for scan in plan.artifact_scans:
-		add_artifact_scan(scan)
-	for destination in plan.destinations:
-		for operation in (*destination.replacements, *destination.prunes):
-			if (
-				isinstance(operation, Replacement)
-				and isinstance(operation.payload, (CopyTreePayload, CopyFilePayload))
-				and operation.payload.unsupported_symlink is not None
-				and operation.payload.unsupported_symlink not in seen_source_symlinks
-			):
-				symlink = operation.payload.unsupported_symlink
-				seen_source_symlinks.add(symlink)
-				issues.append(
-					f"copy source contains a symlink and cannot be snapshotted safely: {symlink}"
-				)
-			path = (
-				operation.physical_destination
-				if isinstance(operation, Replacement)
-				else operation.destination
-			)
-			identity = path.parent.resolve(strict=False) / path.name
-			if identity in seen_destinations:
-				issues.append(
-					f"duplicate destination {path} in {seen_destinations[identity]} and "
-					f"{destination.label}"
-				)
-			else:
-				seen_destinations[identity] = destination.label
-			add_artifact_scan(ArtifactScan(path.parent, (path.name,)))
-			parent = path.parent
-			while not parent.exists() and not parent.is_symlink() and parent.parent != parent:
-				parent = parent.parent
-			if not parent.is_dir():
-				issues.append(f"destination parent is not a directory for {path}: {parent}")
-
 	for parent, destination_names in sorted(artifact_scans.items(), key=lambda item: str(item[0])):
 		if not parent.exists():
 			continue
@@ -379,6 +352,46 @@ def plan_issues(plan: RunPlan) -> tuple[str, ...]:
 				continue
 			suffix = match.group("suffix")
 			issues.append(f"stale sync {suffix} requires manual recovery: {entry}")
+	return issues
+
+
+def plan_issues(plan: RunPlan) -> tuple[str, ...]:
+	issues: list[str] = []
+	seen_destinations: dict[Path, str] = {}
+	seen_source_symlinks: set[Path] = set()
+	artifact_scans: dict[Path, set[str] | None] = {}
+
+	for scan in plan.artifact_scans:
+		_merge_artifact_scan(artifact_scans, scan)
+	for destination in plan.destinations:
+		for operation in (*destination.replacements, *destination.prunes):
+			symlink = _unsupported_source_symlink(operation)
+			if symlink is not None and symlink not in seen_source_symlinks:
+				seen_source_symlinks.add(symlink)
+				issues.append(
+					f"copy source contains a symlink and cannot be snapshotted safely: {symlink}"
+				)
+			path = (
+				operation.physical_destination
+				if isinstance(operation, Replacement)
+				else operation.destination
+			)
+			identity = path.parent.resolve(strict=False) / path.name
+			if identity in seen_destinations:
+				issues.append(
+					f"duplicate destination {path} in {seen_destinations[identity]} and "
+					f"{destination.label}"
+				)
+			else:
+				seen_destinations[identity] = destination.label
+			_merge_artifact_scan(artifact_scans, ArtifactScan(path.parent, (path.name,)))
+			parent = path.parent
+			while not parent.exists() and not parent.is_symlink() and parent.parent != parent:
+				parent = parent.parent
+			if not parent.is_dir():
+				issues.append(f"destination parent is not a directory for {path}: {parent}")
+
+	issues.extend(_stale_artifact_issues(artifact_scans))
 	return tuple(issues)
 
 
@@ -531,70 +544,124 @@ def _rollback_replacement(applied: _AppliedReplacement, ops: FileOps) -> None:
 		ops.fsync_parent(destination)
 
 
-def _apply_destination(
-	plan: DestinationPlan,
-	staged: tuple[_StagedReplacement, ...],
-	run_id: str,
-	ops: FileOps,
-) -> tuple[list[ApplyEvent], bool]:
-	applied_replacements: list[_AppliedReplacement] = []
-	applied_prunes: list[_AppliedPrune] = []
-	events: list[ApplyEvent] = []
-	current_id = plan.label
-	current_path = Path(plan.label)
-	try:
-		for staged_item in staged:
-			item = staged_item.replacement
-			current_id = item.operation_id
-			current_path = item.logical_destination
-			_validate_observed(item.observed, item.operation_id)
-			destination = item.physical_destination
-			planned = _planned_fingerprint(item.observed, destination)
-			had_original = destination.exists() or destination.is_symlink()
-			applied = _AppliedReplacement(staged_item, had_original)
-			applied_replacements.append(applied)
-			if had_original:
-				if item.atomic_file and not destination.is_dir():
-					_clone_backup(
-						destination,
-						staged_item.backup,
-						ops,
-						private=isinstance(item.payload, BytesPayload) and item.payload.private,
-					)
-					applied.backup_ready = True
-					_validate_observed(item.observed, item.operation_id)
-					_validate_backup(staged_item.backup, planned, item.operation_id)
-				else:
-					ops.replace(destination, staged_item.backup)
-					applied.backup_ready = True
-					applied.original_moved = True
-					_validate_backup(staged_item.backup, planned, item.operation_id)
-			ops.replace(staged_item.stage, destination)
-			applied.promoted = True
-			ops.fsync_parent(destination)
+# what a failed rollback leaves for manual recovery: retained backups & uncertain destinations
+@dataclass
+class _RollbackLog:
+	errors: list[str] = field(default_factory=list)
+	protected_artifacts: list[tuple[str, Path, str]] = field(default_factory=list)
+	uncertain_destinations: list[tuple[str, Path, str]] = field(default_factory=list)
 
-		for item in plan.prunes:
-			current_id = item.operation_id
-			current_path = item.destination
-			_validate_observed((item.observed,), item.operation_id)
-			backup = _artifact_path(item.destination, run_id, "backup")
-			applied = _AppliedPrune(item, backup)
-			applied_prunes.append(applied)
-			ops.replace(item.destination, backup)
-			applied.moved = True
-			_validate_backup(backup, item.observed.fingerprint, item.operation_id)
-			ops.fsync_parent(item.destination)
-	except Exception as exc:
-		rollback_errors: list[str] = []
-		protected_artifacts: list[tuple[str, Path, str]] = []
-		uncertain_destinations: list[tuple[str, Path, str]] = []
-		for item in reversed(applied_prunes):
+	# a backup still on disk is recoverable; w/o one the destination's state is uncertain
+	def record(
+		self,
+		operation_id: str,
+		backup: Path,
+		destination: Path,
+		planned: PathFingerprint,
+		error: Exception,
+	) -> None:
+		if backup.exists() or backup.is_symlink():
+			self.errors.append(f"{backup}: {error}")
+			self.protected_artifacts.append((operation_id, backup, str(error)))
+			return
+		self.errors.append(f"{destination}: {error}")
+		self.uncertain_destinations.append(
+			(operation_id, destination, _rollback_destination_detail(destination, planned, error))
+		)
+
+
+# apply one destination's replacements & prunes as a unit, rolling all of it back on failure
+class _DestinationApply:
+	def __init__(
+		self,
+		plan: DestinationPlan,
+		staged: tuple[_StagedReplacement, ...],
+		run_id: str,
+		ops: FileOps,
+	) -> None:
+		self.plan = plan
+		self.staged = staged
+		self.run_id = run_id
+		self.ops = ops
+		self.applied_replacements: list[_AppliedReplacement] = []
+		self.applied_prunes: list[_AppliedPrune] = []
+		self.events: list[ApplyEvent] = []
+		# the operation in flight, which the failure event names if it raises
+		self.current_id = plan.label
+		self.current_path = Path(plan.label)
+
+	def run(self) -> tuple[list[ApplyEvent], bool]:
+		try:
+			for staged_item in self.staged:
+				self._promote(staged_item)
+			for item in self.plan.prunes:
+				self._move_aside(item)
+		except Exception as exc:
+			return self._roll_back(exc)
+		return self._finish()
+
+	# back up any original, then move the staged payload into place
+	def _promote(self, staged_item: _StagedReplacement) -> None:
+		ops = self.ops
+		item = staged_item.replacement
+		self.current_id = item.operation_id
+		self.current_path = item.logical_destination
+		_validate_observed(item.observed, item.operation_id)
+		destination = item.physical_destination
+		planned = _planned_fingerprint(item.observed, destination)
+		had_original = destination.exists() or destination.is_symlink()
+		applied = _AppliedReplacement(staged_item, had_original)
+		self.applied_replacements.append(applied)
+		if had_original:
+			if item.atomic_file and not destination.is_dir():
+				_clone_backup(
+					destination,
+					staged_item.backup,
+					ops,
+					private=isinstance(item.payload, BytesPayload) and item.payload.private,
+				)
+				applied.backup_ready = True
+				_validate_observed(item.observed, item.operation_id)
+				_validate_backup(staged_item.backup, planned, item.operation_id)
+			else:
+				ops.replace(destination, staged_item.backup)
+				applied.backup_ready = True
+				applied.original_moved = True
+				_validate_backup(staged_item.backup, planned, item.operation_id)
+		ops.replace(staged_item.stage, destination)
+		applied.promoted = True
+		ops.fsync_parent(destination)
+
+	# move a pruned destination to its backup so a later failure can restore it
+	def _move_aside(self, item: Prune) -> None:
+		self.current_id = item.operation_id
+		self.current_path = item.destination
+		_validate_observed((item.observed,), item.operation_id)
+		backup = _artifact_path(item.destination, self.run_id, "backup")
+		applied = _AppliedPrune(item, backup)
+		self.applied_prunes.append(applied)
+		self.ops.replace(item.destination, backup)
+		applied.moved = True
+		_validate_backup(backup, item.observed.fingerprint, item.operation_id)
+		self.ops.fsync_parent(item.destination)
+
+	# undo in reverse order, then report the failure & whatever could not be restored
+	def _roll_back(self, exc: Exception) -> tuple[list[ApplyEvent], bool]:
+		log = _RollbackLog()
+		self._restore_prunes(log)
+		self._restore_replacements(log)
+		self._remove_artifacts(log)
+		self._report_failure(exc, log)
+		return self.events, False
+
+	def _restore_prunes(self, log: _RollbackLog) -> None:
+		for item in reversed(self.applied_prunes):
 			if not item.moved:
 				continue
 			try:
-				ops.replace(item.backup, item.prune.destination)
-				ops.fsync_parent(item.prune.destination)
-				events.append(
+				self.ops.replace(item.backup, item.prune.destination)
+				self.ops.fsync_parent(item.prune.destination)
+				self.events.append(
 					ApplyEvent(
 						item.prune.operation_id,
 						"rolled_back",
@@ -603,72 +670,58 @@ def _apply_destination(
 					)
 				)
 			except Exception as rollback_exc:
-				if item.backup.exists() or item.backup.is_symlink():
-					rollback_errors.append(f"{item.backup}: {rollback_exc}")
-					protected_artifacts.append(
-						(item.prune.operation_id, item.backup, str(rollback_exc))
-					)
-				else:
-					rollback_errors.append(f"{item.prune.destination}: {rollback_exc}")
-					uncertain_destinations.append(
-						(
-							item.prune.operation_id,
-							item.prune.destination,
-							_rollback_destination_detail(
-								item.prune.destination,
-								item.prune.observed.fingerprint,
-								rollback_exc,
-							),
-						)
-					)
-		for item in reversed(applied_replacements):
+				log.record(
+					item.prune.operation_id,
+					item.backup,
+					item.prune.destination,
+					item.prune.observed.fingerprint,
+					rollback_exc,
+				)
+
+	def _restore_replacements(self, log: _RollbackLog) -> None:
+		for item in reversed(self.applied_replacements):
+			replacement = item.staged.replacement
 			try:
-				_rollback_replacement(item, ops)
+				_rollback_replacement(item, self.ops)
 				if item.promoted or item.original_moved:
-					events.append(
+					self.events.append(
 						ApplyEvent(
-							item.staged.replacement.operation_id,
+							replacement.operation_id,
 							"rolled_back",
-							item.staged.replacement.logical_destination,
+							replacement.logical_destination,
 							"restored after destination failure",
 						)
 					)
 			except Exception as rollback_exc:
-				operation_id = item.staged.replacement.operation_id
-				if item.staged.backup.exists() or item.staged.backup.is_symlink():
-					rollback_errors.append(f"{item.staged.backup}: {rollback_exc}")
-					protected_artifacts.append(
-						(operation_id, item.staged.backup, str(rollback_exc))
-					)
-				else:
-					destination = item.staged.replacement.physical_destination
-					rollback_errors.append(f"{destination}: {rollback_exc}")
-					uncertain_destinations.append(
-						(
-							operation_id,
-							destination,
-							_rollback_destination_detail(
-								destination,
-								_planned_fingerprint(item.staged.replacement.observed, destination),
-								rollback_exc,
-							),
-						)
-					)
-		protected_paths = {path for _, path, _ in protected_artifacts}
-		for staged_item in staged:
+				destination = replacement.physical_destination
+				log.record(
+					replacement.operation_id,
+					item.staged.backup,
+					destination,
+					_planned_fingerprint(replacement.observed, destination),
+					rollback_exc,
+				)
+
+	# clear this destination's stage & backup files, keeping any backup a failed rollback needs
+	def _remove_artifacts(self, log: _RollbackLog) -> None:
+		protected_paths = {path for _, path, _ in log.protected_artifacts}
+		for staged_item in self.staged:
 			for artifact in (staged_item.stage, staged_item.backup):
 				if artifact in protected_paths:
 					continue
 				try:
 					if artifact.exists() or artifact.is_symlink():
-						ops.remove(artifact)
+						self.ops.remove(artifact)
 				except Exception as cleanup_exc:
-					rollback_errors.append(f"{artifact}: {cleanup_exc}")
+					log.errors.append(f"{artifact}: {cleanup_exc}")
+
+	def _report_failure(self, exc: Exception, log: _RollbackLog) -> None:
+		events = self.events
 		detail = str(exc)
-		if rollback_errors:
-			detail += "; recovery required: " + "; ".join(rollback_errors)
-		events.append(ApplyEvent(current_id, "failed", current_path, detail))
-		for operation_id, artifact, rollback_error in protected_artifacts:
+		if log.errors:
+			detail += "; recovery required: " + "; ".join(log.errors)
+		events.append(ApplyEvent(self.current_id, "failed", self.current_path, detail))
+		for operation_id, artifact, rollback_error in log.protected_artifacts:
 			events.append(
 				ApplyEvent(
 					operation_id,
@@ -677,7 +730,7 @@ def _apply_destination(
 					f"rollback failed; backup retained: {rollback_error}",
 				)
 			)
-		for operation_id, destination, rollback_detail in uncertain_destinations:
+		for operation_id, destination, rollback_detail in log.uncertain_destinations:
 			events.append(
 				ApplyEvent(
 					operation_id,
@@ -687,50 +740,182 @@ def _apply_destination(
 				)
 			)
 		reported = {event.operation_id for event in events}
-		for item in (*plan.replacements, *plan.prunes):
+		for item in (*self.plan.replacements, *self.plan.prunes):
 			if item.operation_id in reported:
 				continue
 			path = item.logical_destination if isinstance(item, Replacement) else item.destination
 			events.append(ApplyEvent(item.operation_id, "unapplied", path, "destination failed"))
-		return events, False
 
-	cleanup_failed = False
-	for item in applied_replacements:
-		if not item.had_original:
-			continue
-		try:
-			ops.remove(item.staged.backup)
-		except Exception as exc:
-			cleanup_failed = True
-			events.append(
-				ApplyEvent(
-					item.staged.replacement.operation_id,
-					"cleanup_required",
-					item.staged.backup,
-					str(exc),
+	# drop the backups of a fully applied destination & report each operation as applied
+	def _finish(self) -> tuple[list[ApplyEvent], bool]:
+		events = self.events
+		cleanup_failed = False
+		for item in self.applied_replacements:
+			if not item.had_original:
+				continue
+			try:
+				self.ops.remove(item.staged.backup)
+			except Exception as exc:
+				cleanup_failed = True
+				events.append(
+					ApplyEvent(
+						item.staged.replacement.operation_id,
+						"cleanup_required",
+						item.staged.backup,
+						str(exc),
+					)
 				)
-			)
-	for item in applied_prunes:
-		try:
-			ops.remove(item.backup)
-		except Exception as exc:
-			cleanup_failed = True
-			events.append(
-				ApplyEvent(
-					item.prune.operation_id,
-					"cleanup_required",
-					item.backup,
-					str(exc),
+		for item in self.applied_prunes:
+			try:
+				self.ops.remove(item.backup)
+			except Exception as exc:
+				cleanup_failed = True
+				events.append(
+					ApplyEvent(
+						item.prune.operation_id,
+						"cleanup_required",
+						item.backup,
+						str(exc),
+					)
 				)
-			)
 
-	for item in plan.replacements:
-		events.append(
-			ApplyEvent(item.operation_id, "applied", item.logical_destination, plan.label)
+		for item in self.plan.replacements:
+			events.append(
+				ApplyEvent(item.operation_id, "applied", item.logical_destination, self.plan.label)
+			)
+		for item in self.plan.prunes:
+			events.append(
+				ApplyEvent(item.operation_id, "applied", item.destination, self.plan.label)
+			)
+		return events, not cleanup_failed
+
+
+_StagedDestination = tuple[DestinationPlan, tuple[_StagedReplacement, ...], frozenset[Path]]
+
+
+# stage every replacement's payload beside its destination before anything is promoted
+class _PlanStaging:
+	def __init__(self, plan: RunPlan, run_id: str, ops: FileOps) -> None:
+		self.plan = plan
+		self.run_id = run_id
+		self.ops = ops
+		self.staged_by_destination: list[_StagedDestination] = []
+		self.all_stages: list[tuple[Path, str]] = []
+		self.all_created_parents: set[Path] = set()
+		self.current_id = "preflight"
+		self.current_path = Path(".")
+
+	# returns the failure report, or None once every destination is staged
+	def stage(self) -> ApplyReport | None:
+		try:
+			_validate_plan_state(self.plan)
+			for destination_plan in self.plan.destinations:
+				self._stage_destination(destination_plan)
+			_validate_plan_state(self.plan)
+		except Exception as exc:
+			return self._failure_report(exc)
+		return None
+
+	def _stage_destination(self, destination_plan: DestinationPlan) -> None:
+		staged: list[_StagedReplacement] = []
+		created_parents: set[Path] = set()
+		for item in destination_plan.replacements:
+			self.current_id = item.operation_id
+			self.current_path = item.logical_destination
+			stage = _artifact_path(item.physical_destination, self.run_id, "stage")
+			backup = _artifact_path(item.physical_destination, self.run_id, "backup")
+			for parent in _created_parents(stage.parent):
+				created_parents.add(parent)
+				self.all_created_parents.add(parent)
+			self.ops.makedirs(stage.parent)
+			self.all_stages.append((stage, item.operation_id))
+			_stage_replacement(item, stage, self.ops)
+			staged.append(_StagedReplacement(item, stage, backup))
+		self.staged_by_destination.append(
+			(destination_plan, tuple(staged), frozenset(created_parents))
 		)
-	for item in plan.prunes:
-		events.append(ApplyEvent(item.operation_id, "applied", item.destination, plan.label))
-	return events, not cleanup_failed
+
+	# remove whatever was staged & report every other operation as unapplied
+	def _failure_report(self, exc: Exception) -> ApplyReport:
+		cleanup_errors: list[tuple[str, Path, str]] = []
+		for stage, operation_id in reversed(self.all_stages):
+			try:
+				if stage.exists() or stage.is_symlink():
+					self.ops.remove(stage)
+			except Exception as cleanup_exc:
+				cleanup_errors.append((operation_id, stage, str(cleanup_exc)))
+		_remove_empty_parents(
+			self.all_created_parents,
+			protected_paths=tuple(path for _, path, _ in cleanup_errors),
+		)
+		detail = str(exc)
+		if cleanup_errors:
+			detail += "; cleanup required: " + "; ".join(
+				f"{path}: {error}" for _, path, error in cleanup_errors
+			)
+		events = [ApplyEvent(self.current_id, "failed", self.current_path, detail)]
+		for operation_id, path, cleanup_error in cleanup_errors:
+			events.append(ApplyEvent(operation_id, "cleanup_required", path, cleanup_error))
+		for destination in self.plan.destinations:
+			for item in (*destination.replacements, *destination.prunes):
+				if item.operation_id != self.current_id:
+					path = (
+						item.logical_destination
+						if isinstance(item, Replacement)
+						else item.destination
+					)
+					events.append(
+						ApplyEvent(item.operation_id, "unapplied", path, "staging failed")
+					)
+		return ApplyReport(False, tuple(events))
+
+
+# after destination `index` fails: discard the later destinations' stages, report them
+# unapplied, & remove the parent directories staging created for the failed & later ones
+def _abandon_remaining(
+	staged_by_destination: list[_StagedDestination],
+	index: int,
+	events: list[ApplyEvent],
+	ops: FileOps,
+) -> None:
+	for later_plan, later_staged, _later_created in staged_by_destination[index + 1 :]:
+		for staged_item in later_staged:
+			try:
+				if staged_item.stage.exists() or staged_item.stage.is_symlink():
+					ops.remove(staged_item.stage)
+			except Exception as exc:
+				events.append(
+					ApplyEvent(
+						staged_item.replacement.operation_id,
+						"cleanup_required",
+						staged_item.stage,
+						str(exc),
+					)
+				)
+			events.append(
+				ApplyEvent(
+					staged_item.replacement.operation_id,
+					"unapplied",
+					staged_item.replacement.logical_destination,
+					"earlier destination failed",
+				)
+			)
+		for prune_item in later_plan.prunes:
+			events.append(
+				ApplyEvent(
+					prune_item.operation_id,
+					"unapplied",
+					prune_item.destination,
+					"earlier destination failed",
+				)
+			)
+	failed_and_unapplied_parents: set[Path] = set()
+	for _plan, _staged, created in staged_by_destination[index:]:
+		failed_and_unapplied_parents.update(created)
+	_remove_empty_parents(
+		failed_and_unapplied_parents,
+		protected_paths=tuple(event.path for event in events if event.status == "cleanup_required"),
+	)
 
 
 def apply_plan(
@@ -745,117 +930,23 @@ def apply_plan(
 			tuple(ApplyEvent("preflight", "failed", Path("."), issue) for issue in issues),
 		)
 
-	staged_by_destination: list[
-		tuple[DestinationPlan, tuple[_StagedReplacement, ...], frozenset[Path]]
-	] = []
-	all_stages: list[tuple[Path, str]] = []
-	all_created_parents: set[Path] = set()
-	current_id = "preflight"
-	current_path = Path(".")
-	try:
-		_validate_plan_state(plan)
-		for destination_plan in plan.destinations:
-			staged: list[_StagedReplacement] = []
-			created_parents: set[Path] = set()
-			for item in destination_plan.replacements:
-				current_id = item.operation_id
-				current_path = item.logical_destination
-				stage = _artifact_path(item.physical_destination, identifier, "stage")
-				backup = _artifact_path(item.physical_destination, identifier, "backup")
-				for parent in _created_parents(stage.parent):
-					created_parents.add(parent)
-					all_created_parents.add(parent)
-				operations.makedirs(stage.parent)
-				all_stages.append((stage, item.operation_id))
-				_stage_replacement(item, stage, operations)
-				staged.append(_StagedReplacement(item, stage, backup))
-			staged_by_destination.append(
-				(destination_plan, tuple(staged), frozenset(created_parents))
-			)
-		_validate_plan_state(plan)
-	except Exception as exc:
-		cleanup_errors: list[tuple[str, Path, str]] = []
-		for stage, operation_id in reversed(all_stages):
-			try:
-				if stage.exists() or stage.is_symlink():
-					operations.remove(stage)
-			except Exception as cleanup_exc:
-				cleanup_errors.append((operation_id, stage, str(cleanup_exc)))
-		_remove_empty_parents(
-			all_created_parents,
-			protected_paths=tuple(path for _, path, _ in cleanup_errors),
-		)
-		detail = str(exc)
-		if cleanup_errors:
-			detail += "; cleanup required: " + "; ".join(
-				f"{path}: {error}" for _, path, error in cleanup_errors
-			)
-		events = [ApplyEvent(current_id, "failed", current_path, detail)]
-		for operation_id, path, cleanup_error in cleanup_errors:
-			events.append(ApplyEvent(operation_id, "cleanup_required", path, cleanup_error))
-		for destination in plan.destinations:
-			for item in (*destination.replacements, *destination.prunes):
-				if item.operation_id != current_id:
-					path = (
-						item.logical_destination
-						if isinstance(item, Replacement)
-						else item.destination
-					)
-					events.append(
-						ApplyEvent(item.operation_id, "unapplied", path, "staging failed")
-					)
-		return ApplyReport(False, tuple(events))
+	staging = _PlanStaging(plan, identifier, operations)
+	staging_failure = staging.stage()
+	if staging_failure is not None:
+		return staging_failure
+	staged_by_destination = staging.staged_by_destination
 
 	events: list[ApplyEvent] = []
 	all_success = True
 	for index, (destination_plan, staged, _created) in enumerate(staged_by_destination):
-		destination_events, success = _apply_destination(
+		destination_events, success = _DestinationApply(
 			destination_plan, staged, identifier, operations
-		)
+		).run()
 		events.extend(destination_events)
 		if success:
 			continue
 		all_success = False
-		for later_plan, later_staged, _later_created in staged_by_destination[index + 1 :]:
-			for staged_item in later_staged:
-				try:
-					if staged_item.stage.exists() or staged_item.stage.is_symlink():
-						operations.remove(staged_item.stage)
-				except Exception as exc:
-					events.append(
-						ApplyEvent(
-							staged_item.replacement.operation_id,
-							"cleanup_required",
-							staged_item.stage,
-							str(exc),
-						)
-					)
-				events.append(
-					ApplyEvent(
-						staged_item.replacement.operation_id,
-						"unapplied",
-						staged_item.replacement.logical_destination,
-						"earlier destination failed",
-					)
-				)
-			for prune_item in later_plan.prunes:
-				events.append(
-					ApplyEvent(
-						prune_item.operation_id,
-						"unapplied",
-						prune_item.destination,
-						"earlier destination failed",
-					)
-				)
-		failed_and_unapplied_parents: set[Path] = set()
-		for _plan, _staged, created in staged_by_destination[index:]:
-			failed_and_unapplied_parents.update(created)
-		_remove_empty_parents(
-			failed_and_unapplied_parents,
-			protected_paths=tuple(
-				event.path for event in events if event.status == "cleanup_required"
-			),
-		)
+		_abandon_remaining(staged_by_destination, index, events, operations)
 		break
 
 	if any(event.status == "cleanup_required" for event in events):
