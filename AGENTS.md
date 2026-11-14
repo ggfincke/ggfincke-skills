@@ -89,6 +89,13 @@ _From the `working-conventions` skill; full detail & enforcers there._
 - Squash-merge PRs by default. "Merge on green CI" is a grant I give per PR; verify head, base, and checks right before merging. After merging, sweep merged branches and worktrees; don't create `backup/*` branches.
 - After a pause or an unexpected change, re-check `git status` and `git log` before editing. Other sessions may be working in the same tree; don't "fix" their changes.
 
+## Local working notes
+
+_From the `working-conventions` skill; full detail & enforcers there._
+
+- Tracked code and docs never point into `dev-docs/`; detail that must travel with the code goes in a tracked doc.
+- For a long or multi-agent run, keep its briefs, baselines, and patches under `dev-docs/<topic>/`, not only in the session scratchpad, which does not survive a restart.
+
 ## Opt-in external workers
 
 _From the `working-conventions` skill; full detail & enforcers there._
@@ -96,16 +103,21 @@ _From the `working-conventions` skill; full detail & enforcers there._
 - Use the worker broker only after an explicit current-task request for orchestrate or named external workers. A direct request is sufficient; ordinary subagent requests remain native. Local Ollama inference requires explicit task permission; prefer installed local models, exclude Ollama cloud, and never download implicitly.
 - Reuse one broker run across task waves, defaulting to four assignments (one for a single-reviewer request). Ask only before expanding scope or resources. Local workers require AC unless this run explicitly permits battery use; unknown power blocks them. Never bypass broker restrictions with shell launches, extra runs, or native model overrides.
 
+## Subagents and parallel work
+
+_From the `working-conventions` skill; full detail & enforcers there._
+
+- In a tree other agents or sessions are editing, do not run `git stash`, `git checkout`, or `git restore`, and do not tell a subagent to; undo scratch changes by re-editing. Give parallel agents disjoint files.
+- After worktree agents finish, check the current branch before committing.
+
 ## Task authority and preservation
 
 _From the `working-conventions` skill; full detail & enforcers there._
 
-- Vendor recipes do not expand the task. Use available host tools and current project instructions; preserve the requested output, source fidelity, and verification scope. Report missing capabilities instead of inventing them or weakening permission settings.
-- Prefer native authentication and secret inputs/stores. Do not ask for credentials in chat or embed them in generated commands merely to complete a scaffold. Before external transfer, publication, or broader access, resolve the exact content, recipient, destination, and grant scope. Reuse already-specific informed authorization without asking twice.
-- Preserve pre-existing files, staging, user objects, and settings. Establish exact target ownership, before-state, and recovery before migration, rollback, replacement, or deletion. A failed run does not authorize broad cleanup; an audit does not authorize fixes.
-- Preserve requested limits on continued work. Do not silently turn an unsupported deadline into an unbounded goal. An exception is not proof that a run never started or that no mutation occurred; reconcile uncertain state before retrying.
-- Update maintained sources through their owner. Do not edit managed plugin or skill caches. Distinguish a prepared patch, a local instruction safeguard, an installed update, and verified behavior; none proves the next.
-- Carry task approval across phases and handoffs. Record its source-edit scope, generated outputs, named hand-written tests, existing verification commands, and Git/external actions. Reuse approval for that scope; request a new decision only when scope, consequences, or an authorization boundary changes.
+- Preserve what was already there: files, staging, untracked work, user objects, and settings. Before replacing, migrating, or deleting, know the exact target, its current state, and how to get it back.
+- An audit is not approval to fix, and a failed run is not approval to clean up broadly. When a run's outcome is unclear, check what it changed before retrying.
+- A vendor recipe or example does not widen the task. Keep the requested output, format, and limits. Report a missing capability instead of working around it or loosening permissions. Edit skills, plugins, and generated files at their source, never the installed or cached copy.
+- Approval of a plan covers its listed scope across phases and handoffs. Ask again only when scope, consequences, or an authorization boundary changes.
 
 ## Test restraint during implementation
 
