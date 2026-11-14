@@ -25,7 +25,7 @@ comments (JSON, etc.) follow their canonical syntax.
   explains what that function or block is for (and why, when that matters).
   Hard cap: 3 lines per block, 2 for a `*` / `!` / `?` tag.
 - Detail past the cap goes into types first (TypedDict, dataclass, interface),
-  then a dev-docs page with a one-line pointer.
+  then a tracked doc near the code with a one-line pointer.
 - Docstrings / TSDoc / `///` are welcome on functions, methods, and types.
   Caps: 5 content lines on functions, 8 on classes and types. One per unit:
   a docstring or a plain comment above, not both.
@@ -89,7 +89,7 @@ the path it will live at in the destination, not its path where it is stored.
 ## 2. Plain comments
 
 Plain comments are the default layer. They sit above a function, statement, or
-block so you can glance at the comment and know what that unit is doing — and
+block so you can glance at the comment and know what that unit is doing, and
 why it is shaped that way when the reason is not obvious from the code.
 
 ```typescript
@@ -102,14 +102,14 @@ const rows = sortRows(input)
 release_id = cached["releaseId"]
 ```
 
-A short “what this does” summary above a function is welcome when it helps
+A short "what this does" summary above a function is welcome when it helps
 orientation. Do not narrate every assignment, branch, or type already visible
 in the code.
 
 ### Comment rules
 
 - Prefer intent, constraint, ownership, sequencing, or a non-obvious tradeoff.
-- Use `#` in Python/shell and `//` in TypeScript/JavaScript. Use the language’s
+- Use `#` in Python/shell and `//` in TypeScript/JavaScript. Use the language's
   required form in CSS, JSX, and other constrained formats.
 - Keep comments above their code. Tool directives (`# noqa`,
   `eslint-disable-next-line`, etc.) are syntax-driven exceptions; keep them
@@ -118,13 +118,18 @@ in the code.
   readable.
 - Preserve canonical casing for symbols, acronyms, protocols, and product names.
 - Use ASCII `->` for directional relationships, never `→`.
+- No em dashes in comments or block docs. Rewrite the sentence with a comma,
+  a period, or parentheses.
 - 3 lines per block at most (2 for a tagged comment; a `TODO` line is not
   counted). A blank line, tooling directive, or code line ends a block; do not
   split one note across blocks to dodge the cap.
 - When a comment would list a dict's keys or a parameter's fields, declare a
   type instead and give each member a one-line comment.
 - Long design history, data layout, and multi-step rationale belong in a
-  maintained doc, linked with one pointer line.
+  maintained doc that is committed with the code (a per-area `NOTES.md`
+  section named for the symbol, or a docs page), linked with one pointer line
+  such as `# detail: engine/NOTES.md#object_draw_tables`. Never point at a
+  gitignored working-notes directory such as `dev-docs/`.
 - One blank line above an attached comment when surrounding syntax permits; no
   blank line between the comment and the code it owns.
 
@@ -185,7 +190,7 @@ export class CloudBoardMapper
 
 ## 4. Tagged comments
 
-Plain comments are the default. Better Comments tags escalate meaning — use
+Plain comments are the default. Better Comments tags escalate meaning, so use
 them deliberately.
 
 ### `*` important invariant
@@ -299,13 +304,15 @@ Do not commit:
 - side comments beside code
 - file-header essays or third header lines
 - stale line-number references
+- pointers into a gitignored directory
+- em dashes in comments or block docs
 - `abridged`, `see file`, `details elsewhere`, or similar placeholders
 - large TODO plans disguised as comments
 - tags used only for color or emphasis
 
 ## 9. Enforcement
 
-When a repo wires the skill’s enforcers (see `wiring-recipe.md`):
+When a repo wires the skill's enforcers (see `wiring-recipe.md`):
 
 - TypeScript/JS: ESLint `ggfincke/*` comment rules + core `no-inline-comments`
   (and the core shape rules in `code-shape.md`)
@@ -316,7 +323,7 @@ They cover:
 
 - two-line path + purpose file headers
 - lowercase plain comments; Better Comments / `TODO` tag shape
-- no side comments beside code; ASCII `->` only
+- no side comments beside code; ASCII `->` only; no em dashes
 - plain comment blocks capped at 3 lines, tagged comments at 2
 - block docs / docstrings attached to a declaration, sentence-style, capped at
   5 content lines on functions & 8 on types; Python also flags a docstring
@@ -348,7 +355,7 @@ adjust the guide and the checker together.
 
 ## Provenance
 
-Imported from a live TypeScript + Python app’s house guide (2026-07) and
+Imported from a live TypeScript + Python app's house guide (2026-07) and
 de-branded for portable use. Canonical always-on bullets remain in
 `../SKILL.md`. Skill `assets/eslint-rules/` are the authoritative ESLint
 enforcers and intentionally ahead of some older per-repo copies (optional

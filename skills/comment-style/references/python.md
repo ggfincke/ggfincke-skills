@@ -22,6 +22,7 @@ A shebang stays on line 1; the path header follows it.
 - Docstring summaries are sentence-style: capitalized and period-terminated.
 - Plain comment blocks cap at 3 lines; a `*` / `!` / `?` tag and its continuation lines cap at 2.
 - Shape: Ruff `C901`, `PLR0913`, `PLR0915` with the limits in `code-shape.md`.
+- No em dashes in comments or docstrings; the checker reports them and leaves the rewrite to you.
 - Tooling comments are exempt: `noqa`, `type: ignore`, `pragma: no cover`, `pyright:`, `mypy:`.
 
 ## Enforcement (`assets/check_comment_style.py`)

@@ -46,14 +46,14 @@ _From the `comment-style` skill; full detail & enforcers there._
 
 - Every covered file starts with exactly two comment lines: repo-relative path, then a lowercase untagged purpose phrase. Shebangs stay above them; no module docstrings. A file meant to be copied into another repo is the one exception: it carries the path it will live at in the destination, not its path where it is stored.
 - A plain `#` / `//` comment sits above the unit it describes and says what it is for, plus why when that is not obvious. Hard cap 3 lines per block; `*` / `!` / `?` tags cap at 2. Checkers enforce both.
-- Detail that does not fit goes into types first: a comment that lists a dict's keys or a param's fields becomes a TypedDict / dataclass / interface with a one-line comment per field. Remaining explanation moves to a dev-docs page, linked with one pointer line.
+- Detail that does not fit goes into types first: a comment that lists a dict's keys or a param's fields becomes a TypedDict / dataclass / interface with a one-line comment per field. Remaining explanation moves to a tracked doc near the code (a per-area `NOTES.md` section or a docs page), linked with one pointer line. Never point at a gitignored directory such as `dev-docs/`.
 - Docstrings / TSDoc / `///` are welcome on functions, methods, and types when they earn it: one summary sentence, then optionally a blank line and a short body. Caps: 5 content lines on functions, 8 on classes and types. Full sentences, no Args/Returns sections that repeat the signature, and a docstring or a plain comment above, never both.
 - Plain comments are lowercase and casual, above the code and never beside it, and do not restate types already visible in the signature.
 - Natural abbreviations such as `&`, `w/`, `w/o`, `config`, and `params` are welcome when they improve brevity.
-- ASCII `->`, never the Unicode arrow.
+- ASCII `->`, never the Unicode arrow, and no em dashes in comments or docstrings.
 - Structured tags are sparing: `*` important invariant, `!` warning/deprecation, `?` unresolved design question, `TODO` actionable follow-up. TODOs use one short `TODO action` or `TODO(scope): action` line with a lowercase scope and context directly above.
 - Cross-reference exact symbols plus stable module paths, never source line numbers.
-- Code shape: aim for functions under ~60 lines; more than ~3 nested `def`s sharing state become a small class or module helpers; more than ~6 params become a dataclass / TypedDict / options object. Descriptive names; single letters only for loop indexes and math. Ruff `C901` / `PLR0913` / `PLR0915` enforce this in Python.
+- Code shape: aim for functions under ~60 lines; more than ~3 nested `def`s sharing state become a small class or module helpers; more than ~6 params become a dataclass / TypedDict / options object. Descriptive names; single letters only for loop indexes and math. Split by meaning, never only to hit a number. Ruff `C901` / `PLR0913` / `PLR0915` enforce this in Python.
 - Honor explicit target-project conventions and public API documentation requirements. Preserve generated/vendor formats and annotations required by documentation, type-checking, deprecation, or other tooling; apply these prose defaults only where they do not conflict with those contracts.
 
 ## Engineering calibration

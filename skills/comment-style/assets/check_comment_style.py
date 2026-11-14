@@ -45,6 +45,10 @@ MAX_PLAIN_LINES = 3
 MAX_TAG_LINES = 2
 MAX_FUNCTION_DOC_LINES = 5
 MAX_TYPE_DOC_LINES = 8
+# spelled as escapes so this file passes its own check
+UNICODE_ARROW = "\u2192"
+EM_DASH = "\u2014"
+EM_DASH_MESSAGE = "no em dashes in comments or docstrings; rewrite the sentence"
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,16 @@ class Violation:
 
 	def render(self) -> str:
 		return f"{self.path.relative_to(ROOT)}:{self.line}: {self.message}"
+
+
+# character bans shared by Python & Swift line comments
+def comment_character_violations(path: Path, line: int, comment: str) -> list[Violation]:
+	violations: list[Violation] = []
+	if UNICODE_ARROW in comment:
+		violations.append(Violation(path, line, "use ASCII ->, not the Unicode arrow"))
+	if EM_DASH in comment:
+		violations.append(Violation(path, line, EM_DASH_MESSAGE))
+	return violations
 
 
 def split_keepends(text: str) -> list[str]:
@@ -218,6 +232,8 @@ def docstring_violations(path: Path, tree: ast.Module, lines: list[str]) -> list
 			)
 		if summary and not SUMMARY_PERIOD_RE.search(summary):
 			violations.append(Violation(path, expr.lineno, "docstring summaries end with a period"))
+		if EM_DASH in expr.value.value:
+			violations.append(Violation(path, expr.lineno, EM_DASH_MESSAGE))
 	return violations
 
 
@@ -321,7 +337,7 @@ def structured_comment_violations(path: Path, line: int, comment: str) -> list[V
 
 
 def normalize_comment(comment: str) -> str:
-	normalized = comment.replace("→", "->")
+	normalized = comment.replace(UNICODE_ARROW, "->")
 	if (
 		not TODO_PREFIX_RE.match(normalized)
 		and not TAG_PREFIX_RE.match(normalized)
@@ -390,10 +406,7 @@ def check_python_file(path: Path) -> list[Violation]:
 				continue
 			comment = token.string
 			prefix = token.line[: token.start[1]]
-			if "→" in comment:
-				violations.append(
-					Violation(path, token.start[0], "use ASCII ->, not the Unicode arrow")
-				)
+			violations.extend(comment_character_violations(path, token.start[0], comment))
 			# `#!` is a shebang only on line 1; anywhere else it is a mis-spaced `!` tag & is
 			# held to the same rule comment-tags.js already applies to the `//!` form
 			if (token.start[0] == 1 and comment.startswith("#!")) or PYTHON_ENCODING_RE.search(
@@ -613,14 +626,12 @@ def swift_doc_violations(
 			violations.append(
 				Violation(path, start + 1, "block documentation summaries end with a period")
 			)
+		if any(EM_DASH in text for text in texts):
+			violations.append(Violation(path, start + 1, EM_DASH_MESSAGE))
 	return violations
 
 
-def check_swift_file(path: Path) -> list[Violation]:
-	text, error = read_source(path)
-	if text is None:
-		return [Violation(path, 1, error or UNDECODABLE_MESSAGE)]
-	lines = split_keepends(text)
+def swift_header_violations(path: Path, lines: list[str]) -> list[Violation]:
 	violations: list[Violation] = []
 	expected = f"// {path.relative_to(ROOT).as_posix()}"
 	if not lines or line_without_newline(lines[0])[0] != expected:
@@ -635,7 +646,15 @@ def check_swift_file(path: Path) -> list[Violation]:
 		violations.append(
 			Violation(path, 3, "file headers contain exactly two consecutive comment lines")
 		)
+	return violations
 
+
+def check_swift_file(path: Path) -> list[Violation]:
+	text, error = read_source(path)
+	if text is None:
+		return [Violation(path, 1, error or UNDECODABLE_MESSAGE)]
+	lines = split_keepends(text)
+	violations = swift_header_violations(path, lines)
 	scanned, unterminated = scan_swift_lines(lines)
 	violations.extend(swift_doc_violations(path, lines, [inside for _, inside in scanned]))
 	block_comments: list[tuple[int, str]] = []
@@ -654,8 +673,7 @@ def check_swift_file(path: Path) -> list[Violation]:
 			continue
 		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
-		if "→" in comment:
-			violations.append(Violation(path, index, "use ASCII ->, not the Unicode arrow"))
+		violations.extend(comment_character_violations(path, index, comment))
 		if prefix.strip():
 			violations.append(Violation(path, index, "move prose comments above the code"))
 		if index > 2:

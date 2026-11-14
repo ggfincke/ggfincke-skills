@@ -11,6 +11,7 @@ const commentRules = {
   'ggfincke/plain-comment-case': 'error',
   'ggfincke/block-doc-comments': 'error',
   'ggfincke/no-unicode-arrow': 'error',
+  'ggfincke/no-em-dash': 'error',
   'no-inline-comments': [
     'error',
     {

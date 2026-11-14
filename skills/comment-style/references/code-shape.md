@@ -32,6 +32,55 @@ look smaller.
 - **Positional data passed around in tuples.** Name it with a dataclass or
   `NamedTuple` once it crosses a function boundary.
 
+## Refactoring toward the targets
+
+Pick the split by what the code is doing, then check the numbers:
+
+- **Closures sharing state** become a small private class: the shared locals
+  are attributes and each closure is a method. `create_game` with eight nested
+  helpers becomes a `_GameBuilder` with one method per step.
+- **A long linear body** becomes named steps called in order from the original
+  function, which stays as the readable outline.
+- **Closures that share nothing** become module-level helpers that take what
+  they need.
+- **A long if-chain over a kind or type** becomes a dispatch table or one small
+  handler per kind.
+
+Every function a refactor adds has one purpose that a comment within the cap
+(or a capped docstring) states. Write that comment as part of the split; a
+helper without one is a sign the cut was made by size rather than by meaning.
+Avoid numbered chunks (`_step_2`) and chains of wrappers that only forward.
+
+### Signatures & suppressions
+
+- Change a signature only when every caller is inside the change's scope.
+  Group the related params into a dataclass / TypedDict / options object built
+  at those call sites.
+- When callers live outside the scope (a public API, a contract several
+  modules implement), keep the signature and suppress the one rule on that
+  line: `# noqa: PLR0913` or `// eslint-disable-next-line max-params`.
+- Give the suppression a one-line reason in the plain comment above. If the
+  def already has a docstring, the reason goes in the docstring instead, since
+  a unit never carries both.
+
+### Keeping it behavior-preserving
+
+A shape refactor changes no outputs. The usual ways one does by accident:
+
+- emit order, dict / list insertion order, or hook call order shifts when
+  steps move into methods
+- a value built once becomes built per call, or the reverse
+- a closure turned into a method changes late binding or shares a default
+  argument
+- an expression is evaluated on the other side of a mutation it used to
+  precede
+
+Prove it with the repo's own outputs rather than by reading the diff: run the
+same command on the old and new code and compare the results (build
+artifacts, generated files, CLI output, snapshots). When an output embeds a
+hash of its own source, compare old-code rerun against new-code rerun and
+mask only that field. A difference is a bug to find, never one to accept.
+
 ## Python config
 
 Add the shape rules to the repo's Ruff config alongside the formatting
@@ -48,6 +97,14 @@ max-complexity = 15
 max-args = 7
 max-statements = 60
 ```
+
+A repo that does not use Ruff for formatting can adopt only the shape rules:
+a standalone `ruff.toml` whose `[lint] select` lists the three codes, leaving
+the existing formatting as written.
+
+Test files may be exempted with `per-file-ignores` when long
+arrange-act-assert bodies are the norm; the limits still apply to shared test
+helpers worth reading on their own.
 
 ## TypeScript config
 
