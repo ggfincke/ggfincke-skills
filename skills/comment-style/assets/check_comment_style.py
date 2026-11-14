@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # tools/check_comment_style.py
-# check Python & Swift headers, comments, & large-unit block docs
+# check Python & Swift headers, comments, block lengths, & block docs
 
 from __future__ import annotations
 
 import argparse
 import ast
+import inspect
 import io
 import re
 import subprocess
@@ -36,10 +37,18 @@ PLAIN_COMMENT_RE = re.compile(r"^(?:#|//)\s+([A-Z][^\s]*)")
 SUMMARY_START_RE = re.compile(r"^(?:[A-Z0-9]|[`'\"(\[]|[a-z][A-Z])")
 SUMMARY_PERIOD_RE = re.compile(r"\.(?:[`'\"\])}]*)$")
 SKIP_PARTS = {".venv", "__pycache__", "migrations", "node_modules"}
-TEST_DIR_PARTS = {"test", "tests", "e2e"}
 SWIFT_SKIP_PARTS = {"Pods", "Carthage", ".build", "DerivedData"}
 UNDECODABLE_MESSAGE = "file is not valid UTF-8; skipped"
 UNREADABLE_MESSAGE = "file could not be read; skipped"
+# * caps mirror assets/eslint-rules/comment-block-length.js & block-doc-comments.js
+MAX_PLAIN_LINES = 3
+MAX_TAG_LINES = 2
+MAX_FUNCTION_DOC_LINES = 5
+MAX_TYPE_DOC_LINES = 8
+# spelled as escapes so this file passes its own check
+UNICODE_ARROW = "\u2192"
+EM_DASH = "\u2014"
+EM_DASH_MESSAGE = "no em dashes in comments or docstrings; rewrite the sentence"
 
 
 @dataclass(frozen=True)
@@ -50,6 +59,16 @@ class Violation:
 
 	def render(self) -> str:
 		return f"{self.path.relative_to(ROOT)}:{self.line}: {self.message}"
+
+
+# character bans shared by Python & Swift line comments
+def comment_character_violations(path: Path, line: int, comment: str) -> list[Violation]:
+	violations: list[Violation] = []
+	if UNICODE_ARROW in comment:
+		violations.append(Violation(path, line, "use ASCII ->, not the Unicode arrow"))
+	if EM_DASH in comment:
+		violations.append(Violation(path, line, EM_DASH_MESSAGE))
+	return violations
 
 
 def split_keepends(text: str) -> list[str]:
@@ -64,10 +83,8 @@ def line_without_newline(line: str) -> tuple[str, str]:
 	return line, ""
 
 
-# read a source file as UTF-8; on failure returns the reason instead of the text so one bad
-# file is skipped & reported instead of aborting the run over the rest of the tree. unreadable
-# is as common as undecodable in practice (permissions, a dangling symlink, a vanished file),
-# so both land here rather than as a traceback that discards the results gathered so far
+# read a source file as UTF-8, or return why it could not be read (undecodable, permissions,
+# a dangling symlink) so one bad file is reported & skipped instead of aborting the run
 def read_source(path: Path) -> tuple[str | None, str | None]:
 	try:
 		return path.read_text(encoding="utf-8"), None
@@ -140,17 +157,6 @@ def normalize_python_header(path: Path, lines: list[str]) -> tuple[list[str], bo
 	return lines, changed
 
 
-# mirrors isTestFile in assets/eslint-rules/block-doc-comments.js so one repo is judged
-# the same way in Python & TypeScript
-def is_test_path(path: Path) -> bool:
-	relative = path.relative_to(ROOT)
-	return (
-		bool(TEST_DIR_PARTS.intersection(relative.parts))
-		or path.stem.startswith("test_")
-		or path.stem.endswith((".spec", ".test"))
-	)
-
-
 def docstring_expr(node: ast.AST) -> ast.Expr | None:
 	body = getattr(node, "body", None)
 	if not body:
@@ -171,47 +177,104 @@ def docstring_summary(expr: ast.Expr) -> str:
 	return " ".join(line.strip() for line in paragraph.splitlines()).strip()
 
 
-def docstring_violations(path: Path, tree: ast.Module) -> list[Violation]:
-	violations: list[Violation] = []
-	# body is Module's only child-bearing field, so membership here answers "is this class
-	# module-level?" without the extra whole-tree walk a parent map would cost
-	toplevel = {id(child) for child in tree.body if isinstance(child, ast.ClassDef)}
-	test_file = is_test_path(path)
+def docstring_line_count(expr: ast.Expr) -> int:
+	return sum(1 for line in inspect.cleandoc(expr.value.value).splitlines() if line.strip())
 
+
+# a plain comment on the line right above a def/class (or its first decorator) duplicates its docstring
+def has_plain_comment_above(node: ast.AST, lines: list[str]) -> bool:
+	decorators = getattr(node, "decorator_list", [])
+	first = min([node.lineno, *(decorator.lineno for decorator in decorators)])
+	if first < 2:
+		return False
+	above = line_without_newline(lines[first - 2])[0].strip()
+	return (
+		above.startswith("#")
+		and not PYTHON_TOOLING_RE.match(above)
+		and not TODO_PREFIX_RE.match(above)
+		and not TAG_PREFIX_RE.match(above)
+	)
+
+
+def docstring_violations(path: Path, tree: ast.Module, lines: list[str]) -> list[Violation]:
+	violations: list[Violation] = []
 	for node in ast.walk(tree):
 		if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
 			continue
 		expr = docstring_expr(node)
 		if expr is None:
 			continue
-
-		allowed = (
-			isinstance(node, ast.ClassDef)
-			and id(node) in toplevel
-			and not node.name.startswith("_")
-			and not test_file
-		)
-		if not allowed:
-			if isinstance(node, ast.Module):
-				message = "module docstrings are replaced by the two-line file header"
-			elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-				message = "docstrings are for classes; use a plain comment above ordinary functions"
-			elif test_file:
-				message = "test files use plain comments, not docstrings"
-			else:
-				message = "docstrings are allowed only on module-level classes"
-			violations.append(Violation(path, expr.lineno, message))
+		if isinstance(node, ast.Module):
+			violations.append(
+				Violation(
+					path, expr.lineno, "module docstrings are replaced by the two-line file header"
+				)
+			)
 			continue
 
+		limit = MAX_TYPE_DOC_LINES if isinstance(node, ast.ClassDef) else MAX_FUNCTION_DOC_LINES
+		if docstring_line_count(expr) > limit:
+			violations.append(
+				Violation(
+					path,
+					expr.lineno,
+					f"docstrings here stay within {limit} lines; move detail to types or docs",
+				)
+			)
+		if has_plain_comment_above(node, lines):
+			violations.append(
+				Violation(path, node.lineno, "use a docstring or a plain comment above, not both")
+			)
 		summary = docstring_summary(expr)
 		if not summary or not SUMMARY_START_RE.match(summary):
 			violations.append(
-				Violation(path, expr.lineno, "class docstrings start with a capitalized sentence")
+				Violation(path, expr.lineno, "docstrings start with a capitalized sentence")
 			)
 		if summary and not SUMMARY_PERIOD_RE.search(summary):
+			violations.append(Violation(path, expr.lineno, "docstring summaries end with a period"))
+		if EM_DASH in expr.value.value:
+			violations.append(Violation(path, expr.lineno, EM_DASH_MESSAGE))
+	return violations
+
+
+# split a run of consecutive full-line comments into blocks & report any over its cap. a `*`,
+# `!`, or `?` tag starts a block whose continuation lines count toward it; TODO lines are free
+def comment_block_violations(path: Path, run: list[tuple[int, str]]) -> list[Violation]:
+	violations: list[Violation] = []
+	blocks: list[tuple[int, int, int]] = []
+	for line, comment in run:
+		if TODO_PREFIX_RE.match(comment):
+			continue
+		if TAG_PREFIX_RE.match(comment) or not blocks:
+			limit = MAX_TAG_LINES if TAG_PREFIX_RE.match(comment) else MAX_PLAIN_LINES
+			blocks.append((line, limit, 1))
+		else:
+			start, limit, count = blocks[-1]
+			blocks[-1] = (start, limit, count + 1)
+	for start, limit, count in blocks:
+		if count > limit:
+			kind = "tagged comments" if limit == MAX_TAG_LINES else "comment blocks"
 			violations.append(
-				Violation(path, expr.lineno, "class docstring summaries end with a period")
+				Violation(
+					path,
+					start,
+					f"{kind} stay within {limit} lines; move detail to types or dev-docs",
+				)
 			)
+	return violations
+
+
+# group (line, comment) pairs into runs on consecutive lines & check each
+def comment_runs_violations(path: Path, comments: list[tuple[int, str]]) -> list[Violation]:
+	violations: list[Violation] = []
+	run: list[tuple[int, str]] = []
+	for line, comment in comments:
+		if run and line != run[-1][0] + 1:
+			violations.extend(comment_block_violations(path, run))
+			run = []
+		run.append((line, comment))
+	if run:
+		violations.extend(comment_block_violations(path, run))
 	return violations
 
 
@@ -274,7 +337,7 @@ def structured_comment_violations(path: Path, line: int, comment: str) -> list[V
 
 
 def normalize_comment(comment: str) -> str:
-	normalized = comment.replace("→", "->")
+	normalized = comment.replace(UNICODE_ARROW, "->")
 	if (
 		not TODO_PREFIX_RE.match(normalized)
 		and not TAG_PREFIX_RE.match(normalized)
@@ -333,19 +396,17 @@ def check_python_file(path: Path) -> list[Violation]:
 	except SyntaxError:
 		tree = None
 	if tree is not None:
-		violations.extend(docstring_violations(path, tree))
+		violations.extend(docstring_violations(path, tree, lines))
 	# generate_tokens is a generator, so it raises during iteration, never on the call itself
 	tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+	block_comments: list[tuple[int, str]] = []
 	try:
 		for token in tokens:
 			if token.type != tokenize.COMMENT:
 				continue
 			comment = token.string
 			prefix = token.line[: token.start[1]]
-			if "→" in comment:
-				violations.append(
-					Violation(path, token.start[0], "use ASCII ->, not the Unicode arrow")
-				)
+			violations.extend(comment_character_violations(path, token.start[0], comment))
 			# `#!` is a shebang only on line 1; anywhere else it is a mis-spaced `!` tag & is
 			# held to the same rule comment-tags.js already applies to the `//!` form
 			if (token.start[0] == 1 and comment.startswith("#!")) or PYTHON_ENCODING_RE.search(
@@ -360,9 +421,12 @@ def check_python_file(path: Path) -> list[Violation]:
 				comment
 			):
 				continue
+			if not prefix.strip():
+				block_comments.append((token.start[0], comment))
 			violations.extend(structured_comment_violations(path, token.start[0], comment))
 	except tokenize.TokenError as exc:
 		violations.append(Violation(path, exc.args[1][0], "could not tokenize Python file"))
+	violations.extend(comment_runs_violations(path, block_comments))
 	return violations
 
 
@@ -432,10 +496,9 @@ def scan_swift_line(line: str, pending: str | None = None) -> tuple[int, str | N
 	return -1, None
 
 
-# per-line scan of a whole Swift file: for each line its comment index (-1 when none) & whether
-# the line sits wholly inside an open `"""` literal, plus the 1-based line that opened a literal
-# still unclosed at EOF. Swift rejects an unterminated literal, so a leftover means a truncated
-# file or a scanner bug; either way the tail went unchecked & the caller must say so
+# per line: comment index (-1 when none) & whether it sits wholly inside a `"""` literal, plus
+# the line that opened a literal still unclosed at EOF (a truncated file or scanner bug whose
+# unchecked tail the caller must report)
 def scan_swift_lines(lines: list[str]) -> tuple[list[tuple[int, bool]], int | None]:
 	scanned: list[tuple[int, bool]] = []
 	pending: str | None = None
@@ -532,30 +595,29 @@ def swift_doc_violations(
 			index += 1
 			continue
 		start = index
-		paragraph: list[str] = []
+		texts: list[str] = []
 		while is_doc_line(index):
-			text = line_without_newline(lines[index])[0].strip()[3:].strip()
-			if not text and paragraph:
-				break
-			if text:
-				paragraph.append(text)
-			index += 1
-		# consume the rest of the contiguous /// run so a multi-paragraph block reports once,
-		# not once per paragraph break
-		while is_doc_line(index):
+			texts.append(line_without_newline(lines[index])[0].strip()[3:].strip())
 			index += 1
 		target = next_swift_code_line(lines, index)
-		if target is None or not SWIFT_TYPE_DECL_RE.match(target):
+		if target is None:
+			violations.append(
+				Violation(
+					path, start + 1, "/// must sit directly above the declaration it documents"
+				)
+			)
+			continue
+		limit = MAX_TYPE_DOC_LINES if SWIFT_TYPE_DECL_RE.match(target) else MAX_FUNCTION_DOC_LINES
+		if sum(1 for text in texts if text) > limit:
 			violations.append(
 				Violation(
 					path,
 					start + 1,
-					"/// belongs on types (class/struct/enum/actor/protocol); "
-					"use a plain // comment above ordinary functions",
+					f"/// docs here stay within {limit} lines; move detail to types or docs",
 				)
 			)
-			continue
-		summary = " ".join(paragraph)
+		summary_lines = texts[: texts.index("")] if "" in texts else texts
+		summary = " ".join(summary_lines)
 		if not summary or not SUMMARY_START_RE.match(summary):
 			violations.append(
 				Violation(path, start + 1, "block documentation starts with a capitalized sentence")
@@ -564,14 +626,12 @@ def swift_doc_violations(
 			violations.append(
 				Violation(path, start + 1, "block documentation summaries end with a period")
 			)
+		if any(EM_DASH in text for text in texts):
+			violations.append(Violation(path, start + 1, EM_DASH_MESSAGE))
 	return violations
 
 
-def check_swift_file(path: Path) -> list[Violation]:
-	text, error = read_source(path)
-	if text is None:
-		return [Violation(path, 1, error or UNDECODABLE_MESSAGE)]
-	lines = split_keepends(text)
+def swift_header_violations(path: Path, lines: list[str]) -> list[Violation]:
 	violations: list[Violation] = []
 	expected = f"// {path.relative_to(ROOT).as_posix()}"
 	if not lines or line_without_newline(lines[0])[0] != expected:
@@ -586,9 +646,18 @@ def check_swift_file(path: Path) -> list[Violation]:
 		violations.append(
 			Violation(path, 3, "file headers contain exactly two consecutive comment lines")
 		)
+	return violations
 
+
+def check_swift_file(path: Path) -> list[Violation]:
+	text, error = read_source(path)
+	if text is None:
+		return [Violation(path, 1, error or UNDECODABLE_MESSAGE)]
+	lines = split_keepends(text)
+	violations = swift_header_violations(path, lines)
 	scanned, unterminated = scan_swift_lines(lines)
 	violations.extend(swift_doc_violations(path, lines, [inside for _, inside in scanned]))
+	block_comments: list[tuple[int, str]] = []
 	for index, line in enumerate(lines, start=1):
 		body = line_without_newline(line)[0]
 		comment_index, inside_literal = scanned[index - 1]
@@ -604,12 +673,14 @@ def check_swift_file(path: Path) -> list[Violation]:
 			continue
 		if comment.startswith(("///", "// MARK:")) or SWIFT_TOOLING_RE.match(comment):
 			continue
-		if "→" in comment:
-			violations.append(Violation(path, index, "use ASCII ->, not the Unicode arrow"))
+		violations.extend(comment_character_violations(path, index, comment))
 		if prefix.strip():
 			violations.append(Violation(path, index, "move prose comments above the code"))
 		if index > 2:
+			if not prefix.strip():
+				block_comments.append((index, comment))
 			violations.extend(structured_comment_violations(path, index, comment))
+	violations.extend(comment_runs_violations(path, block_comments))
 	# every line after an unclosed literal was skipped as literal text. Swift does not compile
 	# an unterminated `"""`, so this is a truncated file or a scanner bug, never valid source;
 	# say so rather than let a whole file pass unchecked in silence

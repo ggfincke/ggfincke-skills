@@ -370,64 +370,78 @@ def _instruction_destination_plans(
 	return tuple(plans), tuple(actions), artifact_scans
 
 
-def _generation_plan(
-	target_label: str,
-	target_root: Path,
-	base_dir: Path,
-	sources: list[Path],
-	actions: list[SkillAction],
-	prunes: list[PruneAction],
-	agents: list[str],
-	items: list[tuple[str, str, str]],
-	*,
-	preserve_observations: bool = False,
-) -> tuple[sync_transaction.Replacement | None, str]:
-	selected = {source.name: source for source in sources}
-	receipt_path = target_root / skill_deployment.GENERATION_FILE
-	prior = {}
-	if receipt_path.exists() or receipt_path.is_symlink():
-		if receipt_path.is_symlink() or not receipt_path.is_file():
-			raise SystemExit(f"refusing unsafe deployment receipt: {receipt_path}")
-		try:
-			prior = json.loads(receipt_path.read_text(encoding="utf-8"))
-		except (OSError, ValueError) as exc:
-			raise SystemExit(f"cannot read deployment receipt {receipt_path}: {exc}") from exc
-		if not isinstance(prior, dict) or prior.get("schema_version") != 1:
-			raise SystemExit(f"unsupported deployment receipt: {receipt_path}")
-	lanes = prior.get("lanes", {})
-	if not isinstance(lanes, dict):
-		raise SystemExit(f"invalid deployment lanes: {receipt_path}")
-	lane_key = str(base_dir.resolve())
-	foreign_owners = {}
-	for owner, lane in lanes.items():
-		if not isinstance(lane, dict) or not isinstance(lane.get("packages", {}), dict):
-			raise SystemExit(f"invalid deployment lane {owner!r}: {receipt_path}")
-		if owner != lane_key:
-			foreign_owners.update((name, owner) for name in lane.get("packages", {}))
-	for name in sorted(selected.keys() & foreign_owners.keys()):
-		raise SystemExit(
-			f"refusing cross-lane takeover: {target_root / name} belongs to "
-			f"{foreign_owners[name]}. Reconcile that recorded ownership before installing "
-			"the same name from another source lane; --force does not transfer ownership."
-		)
-	available = {path.parent.name: path.parent for path in base_dir.glob("*/SKILL.md")}
-	available.update(selected)
-	for entry in target_root.iterdir() if target_root.is_dir() else []:
-		if entry.name not in available and is_managed_install(entry, base_dir):
-			available[entry.name] = entry.resolve() if entry.is_symlink() else marker_source(entry)
-	planned = {
-		action.source.name: action for action in actions if action.target_label == target_label
-	}
-	removed = {action.destination.name for action in prunes if action.target_label == target_label}
-	rows = {}
-	observed: list[Path] = []
-	for name, source in sorted(available.items()):
-		if name in removed or name in foreign_owners:
-			continue
-		destination = target_root / name
-		action = planned.get(name)
-		if action is None and not destination.exists() and not destination.is_symlink():
-			continue
+# what one sync run deploys, shared by every target root's generation receipt
+@dataclass(frozen=True)
+class _Deployment:
+	base_dir: Path
+	sources: list[Path]
+	actions: list[SkillAction]
+	prunes: list[PruneAction]
+	agents: list[str]
+	items: list[tuple[str, str, str]]
+
+
+# build one target root's generation receipt: its package rows, instruction records, & the
+# paths whose before-state the transaction must observe
+class _GenerationPlanner:
+	def __init__(self, target_label: str, target_root: Path, deployment: _Deployment) -> None:
+		self.target_label = target_label
+		self.target_root = target_root
+		self.deployment = deployment
+		self.receipt_path = target_root / skill_deployment.GENERATION_FILE
+		self.selected = {source.name: source for source in deployment.sources}
+		self.observed: list[Path] = []
+
+	# the lanes recorded by the prior receipt, or an empty mapping when none exists
+	def _prior_lanes(self) -> dict:
+		receipt_path = self.receipt_path
+		prior = {}
+		if receipt_path.exists() or receipt_path.is_symlink():
+			if receipt_path.is_symlink() or not receipt_path.is_file():
+				raise SystemExit(f"refusing unsafe deployment receipt: {receipt_path}")
+			try:
+				prior = json.loads(receipt_path.read_text(encoding="utf-8"))
+			except (OSError, ValueError) as exc:
+				raise SystemExit(f"cannot read deployment receipt {receipt_path}: {exc}") from exc
+			if not isinstance(prior, dict) or prior.get("schema_version") != 1:
+				raise SystemExit(f"unsupported deployment receipt: {receipt_path}")
+		lanes = prior.get("lanes", {})
+		if not isinstance(lanes, dict):
+			raise SystemExit(f"invalid deployment lanes: {receipt_path}")
+		return lanes
+
+	# package name -> the other source lane that owns it; refuses a cross-lane takeover
+	def _foreign_owners(self, lanes: dict, lane_key: str) -> dict[str, str]:
+		foreign_owners = {}
+		for owner, lane in lanes.items():
+			if not isinstance(lane, dict) or not isinstance(lane.get("packages", {}), dict):
+				raise SystemExit(f"invalid deployment lane {owner!r}: {self.receipt_path}")
+			if owner != lane_key:
+				foreign_owners.update((name, owner) for name in lane.get("packages", {}))
+		for name in sorted(self.selected.keys() & foreign_owners.keys()):
+			raise SystemExit(
+				f"refusing cross-lane takeover: {self.target_root / name} belongs to "
+				f"{foreign_owners[name]}. Reconcile that recorded ownership before installing "
+				"the same name from another source lane; --force does not transfer ownership."
+			)
+		return foreign_owners
+
+	# every package this lane could own here: lane sources, this run's selection, & installs
+	# already managed from this lane
+	def _available(self) -> dict[str, Path]:
+		base_dir = self.deployment.base_dir
+		available = {path.parent.name: path.parent for path in base_dir.glob("*/SKILL.md")}
+		available.update(self.selected)
+		for entry in self.target_root.iterdir() if self.target_root.is_dir() else []:
+			if entry.name not in available and is_managed_install(entry, base_dir):
+				available[entry.name] = (
+					entry.resolve() if entry.is_symlink() else marker_source(entry)
+				)
+		return available
+
+	# one receipt row; refuses to sync instructions over a package left on other content
+	def _package_row(self, name: str, source: Path, action: SkillAction | None) -> dict:
+		destination = self.target_root / name
 		source_digest = skill_deployment.package_digest(source) if source.is_dir() else None
 		installed_digest = (
 			source_digest
@@ -436,9 +450,9 @@ def _generation_plan(
 			if destination.is_dir()
 			else None
 		)
-		observed.append(source)
+		self.observed.append(source)
 		if action is None:
-			observed.append(destination)
+			self.observed.append(destination)
 		source_text = (
 			(source / "SKILL.md").read_text(encoding="utf-8")
 			if (source / "SKILL.md").is_file()
@@ -452,29 +466,61 @@ def _generation_plan(
 		contributes = bool(
 			always_on.extract_blocks(source_text) or always_on.extract_blocks(installed_text)
 		)
-		if agents and source_digest != installed_digest and (name in selected or contributes):
+		if (
+			self.deployment.agents
+			and source_digest != installed_digest
+			and (name in self.selected or contributes)
+		):
 			raise SystemExit(
 				f"refusing mixed-generation sync: {destination} would retain different content "
 				"while global instructions are synchronized. Include that skill with --force, "
 				"or explicitly use --skip-always-on and inspect the reported drift."
 			)
-		rows[name] = {
+		return {
 			"source": str(source),
 			"source_digest": source_digest,
 			"installed_digest": installed_digest,
 			"mode": action.mode if action else "link" if destination.is_symlink() else "copy",
 		}
 
-	instructions = lanes.get(lane_key, {}).get("instructions", [])
-	if agents:
+	def _package_rows(self, foreign_owners: dict[str, str]) -> dict:
+		available = self._available()
+		planned = {
+			action.source.name: action
+			for action in self.deployment.actions
+			if action.target_label == self.target_label
+		}
+		removed = {
+			action.destination.name
+			for action in self.deployment.prunes
+			if action.target_label == self.target_label
+		}
+		rows = {}
+		for name, source in sorted(available.items()):
+			if name in removed or name in foreign_owners:
+				continue
+			destination = self.target_root / name
+			action = planned.get(name)
+			if action is None and not destination.exists() and not destination.is_symlink():
+				continue
+			rows[name] = self._package_row(name, source, action)
+		return rows
+
+	# the prior instruction records, or fresh ones when this run synchronizes instructions
+	def _instruction_records(self, lanes: dict, lane_key: str) -> list:
+		agents = self.deployment.agents
+		items = self.deployment.items
+		instructions = lanes.get(lane_key, {}).get("instructions", [])
+		if not agents:
+			return instructions
 		associated = {
 			agent
 			for name, path in default_targets(None).items()
-			if path.resolve() == target_root.resolve()
+			if path.resolve() == self.target_root.resolve()
 			for agent in instruction_agents_for_targets([name])
 		}
 		if not associated:
-			associated = set(instruction_agents_for_targets([target_label]) or agents)
+			associated = set(instruction_agents_for_targets([self.target_label]) or agents)
 		region = always_on.render_region(items) if items else ""
 		instructions = []
 		for agent in agents:
@@ -490,34 +536,47 @@ def _generation_plan(
 			)
 			# instruction replacements observe their own before-state; unchanged files
 			# still participate in the deployment's concurrency check
-			observed.extend((logical, tooling_paths.resolve_write_target(logical)))
-	lanes[lane_key] = {"packages": rows, "instructions": instructions}
-	document = {"schema_version": 1, "lanes": lanes}
-	generation = hashlib.sha256(
-		json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
-	).hexdigest()
-	document["generation"] = generation
-	content = (json.dumps(document, sort_keys=True, indent=2) + "\n").encode()
-	drift = [name for name, row in rows.items() if row["source_digest"] != row["installed_digest"]]
-	message = f"generation {generation[:16]} ({len(rows)} packages; retained source drift: {', '.join(drift) or 'none'})"
-	# instruction-only repairs still depend on the retained packages remaining
-	# unchanged, even when their generation receipt already has the desired bytes
-	if (
-		not preserve_observations
-		and receipt_path.is_file()
-		and receipt_path.read_bytes() == content
-	):
-		return None, message
-	return sync_transaction.replacement(
-		f"generation:{target_label}",
-		receipt_path,
-		sync_transaction.BytesPayload(content),
-		additional_observed=tuple(dict.fromkeys(observed)),
-		atomic_file=True,
-	), message
+			self.observed.extend((logical, tooling_paths.resolve_write_target(logical)))
+		return instructions
+
+	def plan(
+		self, *, preserve_observations: bool = False
+	) -> tuple[sync_transaction.Replacement | None, str]:
+		receipt_path = self.receipt_path
+		lanes = self._prior_lanes()
+		lane_key = str(self.deployment.base_dir.resolve())
+		rows = self._package_rows(self._foreign_owners(lanes, lane_key))
+		instructions = self._instruction_records(lanes, lane_key)
+		lanes[lane_key] = {"packages": rows, "instructions": instructions}
+		document = {"schema_version": 1, "lanes": lanes}
+		generation = hashlib.sha256(
+			json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+		).hexdigest()
+		document["generation"] = generation
+		content = (json.dumps(document, sort_keys=True, indent=2) + "\n").encode()
+		drift = [
+			name for name, row in rows.items() if row["source_digest"] != row["installed_digest"]
+		]
+		message = f"generation {generation[:16]} ({len(rows)} packages; retained source drift: {', '.join(drift) or 'none'})"
+		# instruction-only repairs still depend on the retained packages remaining
+		# unchanged, even when their generation receipt already has the desired bytes
+		if (
+			not preserve_observations
+			and receipt_path.is_file()
+			and receipt_path.read_bytes() == content
+		):
+			return None, message
+		return sync_transaction.replacement(
+			f"generation:{self.target_label}",
+			receipt_path,
+			sync_transaction.BytesPayload(content),
+			additional_observed=tuple(dict.fromkeys(self.observed)),
+			atomic_file=True,
+		), message
 
 
-def build_sync_plan(
+# the CLI & the tests call this keyword surface directly, so it stays whole
+def build_sync_plan(  # noqa: PLR0913
 	sources: list[Path],
 	base_dir: Path,
 	targets: list[tuple[str, Path]],
@@ -580,18 +639,11 @@ def build_sync_plan(
 	)
 	if issues:
 		raise SystemExit("refusing skill sync:\n  " + "\n  ".join(issues))
+	deployment = _Deployment(base_dir, sources, skill_actions, prune_actions, agents, items)
 	for index, (target_label, target_root) in enumerate(targets):
 		try:
-			receipt, message = _generation_plan(
-				target_label,
-				target_root,
-				base_dir,
-				sources,
-				skill_actions,
-				prune_actions,
-				agents,
-				items,
-				preserve_observations=bool(instruction_actions),
+			receipt, message = _GenerationPlanner(target_label, target_root, deployment).plan(
+				preserve_observations=bool(instruction_actions)
 			)
 		except (OSError, ValueError) as exc:
 			raise SystemExit(

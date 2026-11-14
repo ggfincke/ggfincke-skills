@@ -19,7 +19,7 @@ Use `branch-sweep` for Git branch/worktree cleanup and its exact-OID approval co
 
 ## Inspect unfamiliar executables without launching
 
-For an investigation or “look into this” request, inspect file type, provenance, signatures, archive contents, metadata, and readable resources with available inspection tools. Do not run the binary, installer, package lifecycle scripts, or a bundled helper merely to learn what it does. Do not bypass quarantine, security warnings, or permissions. A valid signature or static scan alone is not proof of safety.
+For an investigation or "look into this" request, inspect file type, provenance, signatures, archive contents, metadata, and readable resources with available inspection tools. Do not run the binary, installer, package lifecycle scripts, or a bundled helper merely to learn what it does. Do not bypass quarantine, security warnings, or permissions. A valid signature or static scan alone is not proof of safety.
 
 Report what the inspection establishes and what remains unknown. Execution or installation requires the user's requested scope plus the current host's applicable approval rules. Prefer an isolated environment when execution is later authorized; isolation is not a substitute for authorization.
 

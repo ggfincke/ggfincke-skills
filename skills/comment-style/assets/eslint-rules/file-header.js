@@ -74,13 +74,9 @@ const rule = {
 
         const comments = sourceCode.getAllComments()
         const firstComment = comments[0]
-        // ESLint's SourceCode normalizes a hashbang back to "Shebang" for
-        // backward compatibility, so getAllComments() reports "Shebang" on
-        // every ESLint version (measured on ESLint 10.7.0 / espree 11.2.0).
-        // ! the "Shebang" arm is the live path, not the legacy one -- dropping
-        // it breaks the rule everywhere. the "Hashbang" arm only matters if
-        // this rule is ever driven by a raw espree AST, which emits the
-        // ESTree-standard name
+        // ESLint's SourceCode reports a hashbang as "Shebang" on every version
+        // (measured on ESLint 10.7.0 / espree 11.2.0); "Hashbang" is a raw espree AST
+        // ! "Shebang" is the live arm, not the legacy one; dropping it breaks the rule
         const hasShebang =
           firstComment?.type === 'Shebang' || firstComment?.type === 'Hashbang'
         const headerIndex = hasShebang ? 1 : 0

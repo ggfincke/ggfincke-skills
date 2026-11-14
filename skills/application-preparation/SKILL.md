@@ -22,7 +22,7 @@ Check the current site before advising on requirements, deadlines, eligibility, 
 | --- | --- |
 | Employment, education, projects, skills | Use the authorized resume or current user-provided evidence. Preserve dates, degree status, titles, and actual responsibilities; do not invent experience or inflate a draft. |
 | Availability, duration, location, work authorization, government employment, conflicts | Use a current explicit answer where applicable to this requisition. Ask about an essential unknown; do not guess from nationality, school, another role, or an old application. |
-| Demographic, disability, veteran, medical, or other sensitive questions | Use the user's explicit choice for this form. Do not infer from appearance, history, or silence, and do not assume a default such as “prefer not to say.” Honor a decision to leave an optional field unanswered. |
+| Demographic, disability, veteran, medical, or other sensitive questions | Use the user's explicit choice for this form. Do not infer from appearance, history, or silence, and do not assume a default such as "prefer not to say." Honor a decision to leave an optional field unanswered. |
 | Motivation and open responses | Draft from verified experience and the actual role. Label proposed wording for review; do not turn a suggested story or metric into a factual claim. |
 
 Do not embed private answers, addresses, credentials, demographic choices, current availability dates, or role-specific claims in this reusable skill. Keep changing facts in the user's authorized sources. Reading a memory is not permission to add or update one.

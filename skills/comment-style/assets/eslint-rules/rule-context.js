@@ -43,16 +43,10 @@ const nearestRepoRoot = (start) =>
   return found
 }
 
-// repo-relative path for a linted file, plus how its anchor was chosen: an
-// explicit `root` option wins, then the nearest .git ancestor, then ESLint's
-// cwd as a last resort. anchoring on the repo rather than the cwd is what
-// keeps results identical whether ESLint runs from the root or from a package
-// subdirectory
-// * `guessed` marks the cwd fallback, where no .git & no `root` pinned the
-//   anchor. the resulting path is a guess, so callers must report without
-//   autofixing -- in a tree with no .git (vendored copy, tarball extract,
-//   build sandbox, Docker COPY of sources only) `eslint --fix` run from a
-//   package subdirectory would otherwise rewrite correct headers en masse
+// repo-relative path for a linted file & how its anchor was chosen: `root`
+// option, then the nearest .git ancestor, then ESLint's cwd as a last resort
+// * `guessed` marks the cwd fallback; callers must report w/o autofixing, or
+//   `eslint --fix` in a tree w/o .git would rewrite correct headers en masse
 export const resolveRepoRelative = (filename, { root, cwd } = {}) =>
 {
   if (!isAbsolute(filename))

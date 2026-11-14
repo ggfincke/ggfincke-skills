@@ -688,65 +688,75 @@ def _scan_markdown_links(
 	return tuple(links)
 
 
+# end of a code span, autolink, or raw HTML token starting at `index`, else None
+def _inline_skip_end(text: str, index: int, limit: int) -> int | None:
+	character = text[index]
+	if character not in {"`", "<"} or _is_escaped(text, index):
+		return None
+	if character == "`":
+		code_end = _code_span_end(text, index, limit)
+		return code_end if code_end is not None and code_end <= limit else None
+	autolink_match = AUTOLINK_RE.match(text, index)
+	if autolink_match is not None and autolink_match.end() <= limit:
+		return autolink_match.end()
+	tag_match = INLINE_RAW_HTML_TOKEN_RE.match(text, index)
+	if tag_match is not None and tag_match.end() <= limit:
+		return tag_match.end()
+	return None
+
+
+# resolve what follows a closed label: inline `(...)`, a `[ref]`, or a shortcut reference.
+# returns the link end, its destination & destination start, & whether the link is active
+def _resolve_link_suffix(
+	text: str, label: str, suffix_start: int, limit: int, reference_labels: frozenset[str]
+) -> tuple[int, str | None, int | None, bool]:
+	if suffix_start < limit and text[suffix_start] == "(":
+		parsed = _parse_inline_link_suffix(text, suffix_start)
+		if parsed is not None and parsed[0] <= limit:
+			return (*parsed, True)
+		return suffix_start, None, None, False
+	if suffix_start < limit and text[suffix_start] == "[":
+		reference_end = _closing_label_index(text, suffix_start, limit)
+		if reference_end is None:
+			return suffix_start, None, None, False
+		reference = text[suffix_start + 1 : reference_end] or label
+		normalized = _normalize_reference_label(reference)
+		active = _is_valid_reference_label(reference) and normalized in reference_labels
+		return reference_end + 1, None, None, active
+	normalized = _normalize_reference_label(label)
+	active = _is_valid_reference_label(label) and normalized in reference_labels
+	return suffix_start, None, None, active
+
+
 def _scan_markdown_links_range(
 	text: str, start_index: int, limit: int, reference_labels: frozenset[str]
 ) -> tuple[_MarkdownLink, ...]:
 	links: list[_MarkdownLink] = []
 	index = start_index
 	while index < limit:
-		if text[index] == "`" and not _is_escaped(text, index):
-			code_end = _code_span_end(text, index, limit)
-			if code_end is not None and code_end <= limit:
-				index = code_end
-				continue
-		if text[index] == "<" and not _is_escaped(text, index):
-			autolink_match = AUTOLINK_RE.match(text, index)
-			if autolink_match is not None and autolink_match.end() <= limit:
-				index = autolink_match.end()
-				continue
-			tag_match = INLINE_RAW_HTML_TOKEN_RE.match(text, index)
-			if tag_match is not None and tag_match.end() <= limit:
-				index = tag_match.end()
-				continue
+		skip_end = _inline_skip_end(text, index, limit)
+		if skip_end is not None:
+			index = skip_end
+			continue
 		is_image = text.startswith("![", index) and not _is_escaped(text, index)
 		if is_image:
 			open_index = index + 1
-			start = index
 		elif text[index] == "[" and not _is_escaped(text, index):
 			open_index = index
-			start = index
 		else:
 			index += 1
 			continue
+		start = index
 
 		label_end = _closing_label_index(text, open_index, limit)
 		if label_end is None:
 			index = open_index + 1
 			continue
 		label_start = open_index + 1
-		label = text[label_start:label_end]
 		suffix_start = label_end + 1
-		end = suffix_start
-		destination: str | None = None
-		destination_start: int | None = None
-		active = False
-		if suffix_start < limit and text[suffix_start] == "(":
-			parsed = _parse_inline_link_suffix(text, suffix_start)
-			if parsed is not None and parsed[0] <= limit:
-				end, destination, destination_start = parsed
-				active = True
-		elif suffix_start < limit and text[suffix_start] == "[":
-			reference_end = _closing_label_index(text, suffix_start, limit)
-			if reference_end is not None:
-				end = reference_end + 1
-				reference = text[suffix_start + 1 : reference_end]
-				if not reference:
-					reference = label
-				normalized = _normalize_reference_label(reference)
-				active = _is_valid_reference_label(reference) and normalized in reference_labels
-		else:
-			normalized = _normalize_reference_label(label)
-			active = _is_valid_reference_label(label) and normalized in reference_labels
+		end, destination, destination_start, active = _resolve_link_suffix(
+			text, text[label_start:label_end], suffix_start, limit, reference_labels
+		)
 
 		inner_links = _scan_markdown_links_range(text, label_start, label_end, reference_labels)
 		inner_active_links = tuple(link for link in inner_links if not link.is_image)
@@ -781,20 +791,10 @@ def _closing_label_index(text: str, open_index: int, limit: int | None = None) -
 		if text[index] == "\\":
 			index += 2 if index + 1 < limit else 1
 			continue
-		if text[index] == "`" and not _is_escaped(text, index):
-			code_end = _code_span_end(text, index, limit)
-			if code_end is not None and code_end <= limit:
-				index = code_end
-				continue
-		if text[index] == "<" and not _is_escaped(text, index):
-			autolink_match = AUTOLINK_RE.match(text, index)
-			if autolink_match is not None and autolink_match.end() <= limit:
-				index = autolink_match.end()
-				continue
-			tag_match = INLINE_RAW_HTML_TOKEN_RE.match(text, index)
-			if tag_match is not None and tag_match.end() <= limit:
-				index = tag_match.end()
-				continue
+		skip_end = _inline_skip_end(text, index, limit)
+		if skip_end is not None:
+			index = skip_end
+			continue
 		if text[index] == "[":
 			depth += 1
 			if depth > MAX_LINK_LABEL_DEPTH:
@@ -807,63 +807,66 @@ def _closing_label_index(text: str, open_index: int, limit: int | None = None) -
 	return None
 
 
-def _parse_inline_link_suffix(text: str, open_index: int) -> tuple[int, str, int] | None:
-	index = _skip_link_whitespace(text, open_index + 1)
-	destination_start = index
-	if index < len(text) and text[index] == "<":
-		index += 1
-		while index < len(text) and text[index] not in {">", "\n", "\r"}:
-			if text[index] == "<" or _is_ascii_control(text[index]):
-				return None
-			if _is_escapable_at(text, index):
-				index += 2
-			else:
-				index += 1
-		if index >= len(text) or text[index] != ">":
+# index just past the closing `>` of an angle-bracket destination, or None if malformed
+def _angle_destination_end(text: str, index: int) -> int | None:
+	index += 1
+	while index < len(text) and text[index] not in {">", "\n", "\r"}:
+		if text[index] == "<" or _is_ascii_control(text[index]):
 			return None
-		index += 1
-		destination_end = index
-	else:
-		depth = 0
-		while index < len(text):
-			character = text[index]
-			if _is_escapable_at(text, index):
-				index += 2
-				continue
-			if character == "<":
-				return None
-			if character == "(":
-				depth += 1
-			elif character == ")":
-				if depth == 0:
-					destination_end = index
-					return index + 1, text[destination_start:destination_end], destination_start
-				depth -= 1
-			elif character in {" ", "\t", "\r", "\n"}:
-				if depth != 0:
-					return None
-				break
-			elif _is_ascii_control(character):
-				return None
-			index += 1
-		if depth != 0:
-			return None
-		destination_end = index
+		index += 2 if _is_escapable_at(text, index) else 1
+	if index >= len(text) or text[index] != ">":
+		return None
+	return index + 1
 
-	whitespace_start = index
-	index = _skip_link_whitespace(text, index)
+
+# end of a bare destination: its closing paren, the first whitespace, or the end of text.
+# none when parentheses are unbalanced or a control or `<` character appears
+def _bare_destination_end(text: str, index: int) -> int | None:
+	depth = 0
+	while index < len(text):
+		character = text[index]
+		if _is_escapable_at(text, index):
+			index += 2
+			continue
+		if character == "<":
+			return None
+		if character == "(":
+			depth += 1
+		elif character == ")":
+			if depth == 0:
+				return index
+			depth -= 1
+		elif character in {" ", "\t", "\r", "\n"}:
+			if depth != 0:
+				return None
+			break
+		elif _is_ascii_control(character):
+			return None
+		index += 1
+	return index if depth == 0 else None
+
+
+def _parse_inline_link_suffix(text: str, open_index: int) -> tuple[int, str, int] | None:
+	destination_start = _skip_link_whitespace(text, open_index + 1)
+	if destination_start < len(text) and text[destination_start] == "<":
+		destination_end = _angle_destination_end(text, destination_start)
+	else:
+		destination_end = _bare_destination_end(text, destination_start)
+	if destination_end is None:
+		return None
+	destination = text[destination_start:destination_end]
+	index = _skip_link_whitespace(text, destination_end)
 	if index < len(text) and text[index] == ")":
-		return index + 1, text[destination_start:destination_end], destination_start
-	if index == whitespace_start:
+		return index + 1, destination, destination_start
+	if index == destination_end:
 		return None
 	title_end = _link_title_end(text, index)
 	if title_end is None:
 		return None
-	index = title_end
-	index = _skip_link_whitespace(text, index)
+	index = _skip_link_whitespace(text, title_end)
 	if index >= len(text) or text[index] != ")":
 		return None
-	return index + 1, text[destination_start:destination_end], destination_start
+	return index + 1, destination, destination_start
 
 
 def _link_title_end(text: str, start: int) -> int | None:
@@ -979,13 +982,23 @@ def _scan_reference_definitions(text: str) -> tuple[_ReferenceDefinition, ...]:
 	return tuple(definitions)
 
 
-def _parse_reference_definition_block(value: str) -> tuple[int, str, int, str] | None:
-	index = 0
-	while index < len(value) and value[index] == " " and index < 3:
+# skip up to three spaces of block or continuation-line indent
+def _skip_definition_indent(value: str, index: int) -> int:
+	indent = 0
+	while index < len(value) and value[index] == " " and indent < 3:
 		index += 1
-	if index >= len(value) or value[index] != "[" or value.startswith("[^", index):
-		return None
-	label_start = index + 1
+		indent += 1
+	return index
+
+
+def _skip_inline_space(value: str, index: int) -> int:
+	while index < len(value) and value[index] in {" ", "\t"}:
+		index += 1
+	return index
+
+
+# index of the `]` closing a definition label opened at `label_start`, when `:` follows it
+def _definition_label_end(value: str, label_start: int) -> int | None:
 	index = label_start
 	while index < len(value):
 		if _is_escapable_at(value, index):
@@ -995,73 +1008,51 @@ def _parse_reference_definition_block(value: str) -> tuple[int, str, int, str] |
 			return None
 		if value[index] == "]":
 			if index + 1 < len(value) and value[index + 1] == ":":
-				break
+				return index
 			return None
 		index += 1
-	label = value[label_start:index]
-	if index >= len(value) or len(label) > 999 or not _is_valid_reference_label(label):
+	return None
+
+
+# where a definition ends once its destination is parsed: end of text, after an optional
+# title, or at the line break before a following line that is not a valid title
+def _definition_end_after_destination(value: str, destination_end: int) -> int | None:
+	index = _skip_inline_space(value, destination_end)
+	if index >= len(value):
+		return len(value)
+	base_end: int | None = None
+	if value[index] == "\n":
+		base_end = index + 1
+		index = _skip_definition_indent(value, index + 1)
+	if index >= len(value) or value[index] not in {'"', "'", "("}:
+		return base_end
+	title_end = _link_title_end(value, index)
+	if title_end is None:
+		return base_end
+	definition_end = _definition_line_end(value, title_end)
+	return base_end if definition_end is None else definition_end
+
+
+def _parse_reference_definition_block(value: str) -> tuple[int, str, int, str] | None:
+	index = _skip_definition_indent(value, 0)
+	if index >= len(value) or value[index] != "[" or value.startswith("[^", index):
 		return None
-	index += 2
-	while index < len(value) and value[index] in {" ", "\t"}:
-		index += 1
+	label_start = index + 1
+	label_end = _definition_label_end(value, label_start)
+	if label_end is None:
+		return None
+	label = value[label_start:label_end]
+	if len(label) > 999 or not _is_valid_reference_label(label):
+		return None
+	index = _skip_inline_space(value, label_end + 2)
 	if index < len(value) and value[index] == "\n":
-		index += 1
-		indent = 0
-		while index < len(value) and value[index] == " " and indent < 3:
-			index += 1
-			indent += 1
+		index = _skip_definition_indent(value, index + 1)
 	destination_start = index
 	destination_end = _reference_destination_end(value, destination_start)
 	if destination_end is None:
 		return None
-
-	index = destination_end
-	while index < len(value) and value[index] in {" ", "\t"}:
-		index += 1
-	if index >= len(value):
-		return (
-			len(value),
-			value[destination_start:destination_end],
-			destination_start,
-			_normalize_reference_label(label),
-		)
-
-	title_on_next_line = value[index] == "\n"
-	base_end: int | None = index + 1 if title_on_next_line else None
-	if title_on_next_line:
-		index += 1
-		indent = 0
-		while index < len(value) and value[index] == " " and indent < 3:
-			index += 1
-			indent += 1
-	if index >= len(value) or value[index] not in {'"', "'", "("}:
-		if base_end is None:
-			return None
-		return (
-			base_end,
-			value[destination_start:destination_end],
-			destination_start,
-			_normalize_reference_label(label),
-		)
-	title_end = _link_title_end(value, index)
-	if title_end is None:
-		if base_end is not None:
-			return (
-				base_end,
-				value[destination_start:destination_end],
-				destination_start,
-				_normalize_reference_label(label),
-			)
-		return None
-	definition_end = _definition_line_end(value, title_end)
+	definition_end = _definition_end_after_destination(value, destination_end)
 	if definition_end is None:
-		if base_end is not None:
-			return (
-				base_end,
-				value[destination_start:destination_end],
-				destination_start,
-				_normalize_reference_label(label),
-			)
 		return None
 	return (
 		definition_end,

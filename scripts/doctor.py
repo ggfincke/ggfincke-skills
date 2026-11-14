@@ -59,6 +59,80 @@ def inspect_package(entry: Path, sources: Path) -> dict:
 	return row
 
 
+# compare one recorded package w/ what is installed & w/ its source today
+def _package_record_issues(root: Path, name: str, record: object) -> list[str]:
+	if not name or Path(name).name != name or name in (".", ".."):
+		return ["invalid recorded package name"]
+	if not isinstance(record, dict) or record.get("mode") not in ("link", "copy"):
+		return [f"{name}: invalid package record"]
+	source = record.get("source")
+	if not isinstance(source, str) or not Path(source).is_absolute():
+		return [f"{name}: invalid source path"]
+	issues = []
+	try:
+		entry = root / name
+		if not entry.is_dir() or not (entry / "SKILL.md").is_file():
+			raise ValueError("installed package unavailable")
+		actual = skill_deployment.package_digest(entry)
+		current_source = (
+			skill_deployment.package_digest(Path(source)) if Path(source).is_dir() else None
+		)
+		mode = "link" if entry.is_symlink() else "copy"
+		if actual != record.get("installed_digest") or current_source != record.get(
+			"source_digest"
+		):
+			issues.append(f"{name}: content changed since deployment")
+		if actual != current_source:
+			issues.append(f"{name}: installed source drift")
+		if mode != record["mode"]:
+			issues.append(f"{name}: installation mode changed since deployment")
+	except (OSError, ValueError, RuntimeError):
+		issues.append(f"{name}: recorded package or source unavailable")
+	return issues
+
+
+# compare one recorded always-on region w/ the instruction file on disk
+def _instruction_record_issues(record: object) -> list[str]:
+	if (
+		not isinstance(record, dict)
+		or not isinstance(record.get("path"), str)
+		or not Path(record["path"]).is_absolute()
+		or not isinstance(record.get("agent"), str)
+		or record["agent"] not in tooling_paths.AGENT_INSTRUCTION
+		or not isinstance(record.get("region_digest"), str)
+	):
+		return ["invalid recorded instruction"]
+	try:
+		path = Path(record["path"])
+		if not path.is_file():
+			raise ValueError("instruction file unavailable")
+		content = path.read_text(encoding="utf-8")
+		match = always_on.REGION_RE.search(content)
+		actual = hashlib.sha256((match.group() if match else "").encode()).hexdigest()
+		if always_on.region_marker_error(content) or actual != record["region_digest"]:
+			return [f"{record['agent']}: instruction drift"]
+	except (OSError, ValueError, RuntimeError):
+		return ["recorded instruction unavailable"]
+	return []
+
+
+# packages first, then instructions, so issue order matches the receipt's layout
+def _lane_issues(root: Path, lane: dict) -> list[str]:
+	issues = []
+	packages = lane.get("packages")
+	if not isinstance(packages, dict):
+		issues.append("invalid recorded package collection")
+		packages = {}
+	for name, record in packages.items():
+		issues.extend(_package_record_issues(root, name, record))
+	instructions = lane.get("instructions")
+	if not isinstance(instructions, list):
+		return [*issues, "invalid recorded instruction collection"]
+	for record in instructions:
+		issues.extend(_instruction_record_issues(record))
+	return issues
+
+
 def receipt_issues(root: Path, generation: dict) -> list[str]:
 	issues = []
 	payload = {key: value for key, value in generation.items() if key != "generation"}
@@ -78,66 +152,7 @@ def receipt_issues(root: Path, generation: dict) -> list[str]:
 		):
 			issues.append("invalid recorded deployment lane")
 			continue
-		packages = lane.get("packages")
-		if not isinstance(packages, dict):
-			issues.append("invalid recorded package collection")
-			packages = {}
-		for name, record in packages.items():
-			if not name or Path(name).name != name or name in (".", ".."):
-				issues.append("invalid recorded package name")
-				continue
-			if not isinstance(record, dict) or record.get("mode") not in ("link", "copy"):
-				issues.append(f"{name}: invalid package record")
-				continue
-			source = record.get("source")
-			if not isinstance(source, str) or not Path(source).is_absolute():
-				issues.append(f"{name}: invalid source path")
-				continue
-			try:
-				entry = root / name
-				if not entry.is_dir() or not (entry / "SKILL.md").is_file():
-					raise ValueError("installed package unavailable")
-				actual = skill_deployment.package_digest(entry)
-				current_source = (
-					skill_deployment.package_digest(Path(source)) if Path(source).is_dir() else None
-				)
-				mode = "link" if entry.is_symlink() else "copy"
-				if actual != record.get("installed_digest") or current_source != record.get(
-					"source_digest"
-				):
-					issues.append(f"{name}: content changed since deployment")
-				if actual != current_source:
-					issues.append(f"{name}: installed source drift")
-				if mode != record["mode"]:
-					issues.append(f"{name}: installation mode changed since deployment")
-			except (OSError, ValueError, RuntimeError):
-				issues.append(f"{name}: recorded package or source unavailable")
-		instructions = lane.get("instructions")
-		if not isinstance(instructions, list):
-			issues.append("invalid recorded instruction collection")
-			continue
-		for record in instructions:
-			if (
-				not isinstance(record, dict)
-				or not isinstance(record.get("path"), str)
-				or not Path(record["path"]).is_absolute()
-				or not isinstance(record.get("agent"), str)
-				or record["agent"] not in tooling_paths.AGENT_INSTRUCTION
-				or not isinstance(record.get("region_digest"), str)
-			):
-				issues.append("invalid recorded instruction")
-				continue
-			try:
-				path = Path(record["path"])
-				if not path.is_file():
-					raise ValueError("instruction file unavailable")
-				content = path.read_text(encoding="utf-8")
-				match = always_on.REGION_RE.search(content)
-				actual = hashlib.sha256((match.group() if match else "").encode()).hexdigest()
-				if always_on.region_marker_error(content) or actual != record["region_digest"]:
-					issues.append(f"{record['agent']}: instruction drift")
-			except (OSError, ValueError, RuntimeError):
-				issues.append("recorded instruction unavailable")
+		issues.extend(_lane_issues(root, lane))
 	return issues
 
 

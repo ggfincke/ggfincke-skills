@@ -195,13 +195,13 @@ class SwiftMultilineStringSafety(unittest.TestCase):
 	def test_doc_comment_rule_still_fires_outside_a_literal(self) -> None:
 		with tempfile.TemporaryDirectory() as d:
 			root = Path(d)
-			body = "// Sample.swift\n// render usage text\n\n/// Runs the tool.\n@MainActor\nfunc run() {}\n"
+			body = "// Sample.swift\n// render usage text\n\n/// runs the tool\n@MainActor\nfunc run() {}\n"
 			(root / "Sample.swift").write_text(body, encoding="utf-8")
 			result = support.run_script(
 				CHECKER,
 				["--check", "--swift", "--root", str(root), "--swift-root", str(root)],
 			)
-			self.assertIn("belongs on types", result.stdout)
+			self.assertIn("starts with a capitalized sentence", result.stdout)
 			self.assertEqual(result.returncode, 1, result.stdout)
 
 
@@ -241,17 +241,6 @@ class SwiftPreviewProviderScope(unittest.TestCase):
 			)
 			result = support.run_script(CHECKER, scope)
 			self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-
-class TestPathMatching(unittest.TestCase):
-	# is_test_path mirrors isTestFile in block-doc-comments.js; the two enforcers of one
-	# convention must agree on which files are test files
-	def test_matches_the_eslint_definition(self) -> None:
-		self.addCleanup(setattr, cs, "ROOT", cs.ROOT)
-		cs.ROOT = Path("/repo")
-		for relative in ("test/helper.py", "tests/helper.py", "e2e/helper.py", "a/thing.spec.py"):
-			self.assertTrue(cs.is_test_path(Path("/repo") / relative), relative)
-		self.assertFalse(cs.is_test_path(Path("/repo/src/helper.py")))
 
 
 class PythonShebangGuard(unittest.TestCase):

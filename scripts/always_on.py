@@ -114,10 +114,8 @@ def render_region(items: list[tuple[str, str, str]]) -> str:
 
 
 def region_marker_error(existing: str) -> str | None:
-	# the destination file is user-owned, so only two shapes are safe to touch:
-	# no markers at all, or exactly one balanced pair. anything else (an orphan
-	# BEGIN, a duplicated region, BEGIN after END) would make REGION_RE span the
-	# user's own prose & the substitution would delete it
+	# the destination is user-owned, so only no markers or exactly one balanced pair is safe;
+	# any other shape would make REGION_RE span the user's own prose & delete it
 	begins = existing.count(REGION_BEGIN)
 	ends = existing.count(REGION_END)
 	if begins == 0 and ends == 0:

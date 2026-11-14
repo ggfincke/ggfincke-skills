@@ -13,7 +13,7 @@
 
 - Owned TypeScript/JavaScript uses Allman braces, no semis, single quotes (Prettier + `prettier-plugin-brace-style`). See `skills/comment-style/references/formatting.md`.
 - Comment style (headers, plain comments, tags) is enforced by ESLint rules imported from `skills/comment-style/assets/eslint-rules/` and by the Python checker under that skill's `assets/`. Expanded guide: `skills/comment-style/references/house-guide.md`.
-- `make check` includes non-mutating `format-check` (Prettier + ESLint) and `format-python-check` (Ruff + comment checker). Mutating fixes: `make format` / `make format-python` (or `npm run format:all`).
+- `make check` includes non-mutating `format-check` (Prettier + ESLint) and `format-python-check` (Ruff + comment checker). Ruff also gates the code-shape limits (complexity 15, 60 statements, 7 args) on `scripts/`, `projects/`, and the checker asset, with `tests/` exempt; the matching core ESLint rules are warnings for now. Mutating fixes: `make format` / `make format-python` (or `npm run format:all`).
 - Pre-commit runs `npx lint-staged` for staged `*.{js,mjs,cjs,ts,tsx}` plus Python under `scripts/`, `tests/`, `projects/`, and the adopted comment checker, then runs validate + unittest against the formatted index snapshot. Portable skill helpers remain outside the root Python formatter. The hook does **not** run broker-check; use `make check` or CI for that.
 
 ## Portable vs project skills
@@ -44,16 +44,16 @@ These come from skills in ggfincke-skills. Apply them on every relevant change, 
 
 _From the `comment-style` skill; full detail & enforcers there._
 
-- Every covered file starts with exactly two comment lines: repo-relative path, then a lowercase untagged purpose phrase. Shebangs stay above them; module docstrings do not duplicate them. A file meant to be copied into another repo is the one exception: it carries the path it will live at in the destination, not its path where it is stored.
-- Plain `#` / `//` comments are the default. Put them above the unit they describe so a glance explains what that function or block is for (and why it is shaped that way when that matters).
-- Docstrings / TSDoc / `///` blocks are for larger constructs (typically classes; TypeScript also interfaces/enums; Swift types similarly), not routine functions. When used, they are full sentences with capitalization and terminal punctuation.
-- Plain comments are lowercase and casual. Put them above the code, never beside it, and do not repeat a block doc or types already visible in the signature.
-- Natural abbreviations such as `&`, `w/`, `w/o`, `config`, and `params` are welcome when they improve brevity, but are not mandatory rewrites.
-- ASCII `->`, never the Unicode arrow.
-- Plain comments are the default. Use structured tags sparingly: `*` important invariant, `!` warning/deprecation, `?` unresolved design question, `TODO` actionable follow-up.
-- TODOs use one short `TODO action` or `TODO(scope): action` line with a lowercase scope. Put context immediately above in a plain block.
-- Keep comment blocks concise; there is no hard line cap. Move durable architecture and long rationale to maintained docs.
+- Every covered file starts with exactly two comment lines: repo-relative path, then a lowercase untagged purpose phrase. Shebangs stay above them; no module docstrings. A file meant to be copied into another repo is the one exception: it carries the path it will live at in the destination, not its path where it is stored.
+- A plain `#` / `//` comment sits above the unit it describes and says what it is for, plus why when that is not obvious. Hard cap 3 lines per block; `*` / `!` / `?` tags cap at 2. Checkers enforce both.
+- Detail that does not fit goes into types first: a comment that lists a dict's keys or a param's fields becomes a TypedDict / dataclass / interface with a one-line comment per field. Remaining explanation moves to a tracked doc near the code (a per-area `NOTES.md` section or a docs page), linked with one pointer line. Never point at a gitignored directory such as `dev-docs/`.
+- Docstrings / TSDoc / `///` are welcome on functions, methods, and types when they earn it: one summary sentence, then optionally a blank line and a short body. Caps: 5 content lines on functions, 8 on classes and types. Full sentences, no Args/Returns sections that repeat the signature, and a docstring or a plain comment above, never both.
+- Plain comments are lowercase and casual, above the code and never beside it, and do not restate types already visible in the signature.
+- Natural abbreviations such as `&`, `w/`, `w/o`, `config`, and `params` are welcome when they improve brevity.
+- ASCII `->`, never the Unicode arrow, and no em dashes in comments or docstrings.
+- Structured tags are sparing: `*` important invariant, `!` warning/deprecation, `?` unresolved design question, `TODO` actionable follow-up. TODOs use one short `TODO action` or `TODO(scope): action` line with a lowercase scope and context directly above.
 - Cross-reference exact symbols plus stable module paths, never source line numbers.
+- Code shape: aim for functions under ~60 lines; more than ~3 nested `def`s sharing state become a small class or module helpers; more than ~6 params become a dataclass / TypedDict / options object. Descriptive names; single letters only for loop indexes and math. Split by meaning, never only to hit a number. Ruff `C901` / `PLR0913` / `PLR0915` enforce this in Python.
 - Honor explicit target-project conventions and public API documentation requirements. Preserve generated/vendor formats and annotations required by documentation, type-checking, deprecation, or other tooling; apply these prose defaults only where they do not conflict with those contracts.
 
 ## Engineering calibration
@@ -89,6 +89,13 @@ _From the `working-conventions` skill; full detail & enforcers there._
 - Squash-merge PRs by default. "Merge on green CI" is a grant I give per PR; verify head, base, and checks right before merging. After merging, sweep merged branches and worktrees; don't create `backup/*` branches.
 - After a pause or an unexpected change, re-check `git status` and `git log` before editing. Other sessions may be working in the same tree; don't "fix" their changes.
 
+## Local working notes
+
+_From the `working-conventions` skill; full detail & enforcers there._
+
+- Tracked code and docs never point into `dev-docs/`; detail that must travel with the code goes in a tracked doc.
+- For a long or multi-agent run, keep its briefs, baselines, and patches under `dev-docs/<topic>/`, not only in the session scratchpad, which does not survive a restart.
+
 ## Opt-in external workers
 
 _From the `working-conventions` skill; full detail & enforcers there._
@@ -96,16 +103,21 @@ _From the `working-conventions` skill; full detail & enforcers there._
 - Use the worker broker only after an explicit current-task request for orchestrate or named external workers. A direct request is sufficient; ordinary subagent requests remain native. Local Ollama inference requires explicit task permission; prefer installed local models, exclude Ollama cloud, and never download implicitly.
 - Reuse one broker run across task waves, defaulting to four assignments (one for a single-reviewer request). Ask only before expanding scope or resources. Local workers require AC unless this run explicitly permits battery use; unknown power blocks them. Never bypass broker restrictions with shell launches, extra runs, or native model overrides.
 
+## Subagents and parallel work
+
+_From the `working-conventions` skill; full detail & enforcers there._
+
+- In a tree other agents or sessions are editing, do not run `git stash`, `git checkout`, or `git restore`, and do not tell a subagent to; undo scratch changes by re-editing. Give parallel agents disjoint files.
+- After worktree agents finish, check the current branch before committing.
+
 ## Task authority and preservation
 
 _From the `working-conventions` skill; full detail & enforcers there._
 
-- Vendor recipes do not expand the task. Use available host tools and current project instructions; preserve the requested output, source fidelity, and verification scope. Report missing capabilities instead of inventing them or weakening permission settings.
-- Prefer native authentication and secret inputs/stores. Do not ask for credentials in chat or embed them in generated commands merely to complete a scaffold. Before external transfer, publication, or broader access, resolve the exact content, recipient, destination, and grant scope. Reuse already-specific informed authorization without asking twice.
-- Preserve pre-existing files, staging, user objects, and settings. Establish exact target ownership, before-state, and recovery before migration, rollback, replacement, or deletion. A failed run does not authorize broad cleanup; an audit does not authorize fixes.
-- Preserve requested limits on continued work. Do not silently turn an unsupported deadline into an unbounded goal. An exception is not proof that a run never started or that no mutation occurred; reconcile uncertain state before retrying.
-- Update maintained sources through their owner. Do not edit managed plugin or skill caches. Distinguish a prepared patch, a local instruction safeguard, an installed update, and verified behavior; none proves the next.
-- Carry task approval across phases and handoffs. Record its source-edit scope, generated outputs, named hand-written tests, existing verification commands, and Git/external actions. Reuse approval for that scope; request a new decision only when scope, consequences, or an authorization boundary changes.
+- Preserve what was already there: files, staging, untracked work, user objects, and settings. Before replacing, migrating, or deleting, know the exact target, its current state, and how to get it back.
+- An audit is not approval to fix, and a failed run is not approval to clean up broadly. When a run's outcome is unclear, check what it changed before retrying.
+- A vendor recipe or example does not widen the task. Keep the requested output, format, and limits. Report a missing capability instead of working around it or loosening permissions. Edit skills, plugins, and generated files at their source, never the installed or cached copy.
+- Approval of a plan covers its listed scope across phases and handoffs. Ask again only when scope, consequences, or an authorization boundary changes.
 
 ## Test restraint during implementation
 

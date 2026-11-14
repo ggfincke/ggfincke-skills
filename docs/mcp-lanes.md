@@ -87,7 +87,7 @@ produce no formatting churn.
 
 OAuth is per client, not per registry entry: run `opencode mcp auth <server>`
 for opencode; Claude Code opens the browser on first tool use. Stored tokens
-live in each tool's own credential store — this duplication is inherent to the
+live in each tool's own credential store; this duplication is inherent to the
 tools, not to the registry.
 
 ## Concurrent writers
@@ -99,7 +99,7 @@ recovery sequence is:
 
 1. Quit all Claude Code sessions.
 2. `make sync-mcp`.
-3. Restart Claude Code — servers are read at startup, then OAuth on first use.
+3. Restart Claude Code. Servers are read at startup, then OAuth on first use.
 
 opencode does not rewrite its global config, so its merges are stable while
 sessions run.
@@ -107,7 +107,7 @@ sessions run.
 ## Current tenants
 
 - `figma` -> Claude Code only: official remote server
-  (`https://mcp.figma.com/mcp`). Figma **allowlists MCP clients**, not users —
+  (`https://mcp.figma.com/mcp`). Figma **allowlists MCP clients**, not users:
   only clients in the Figma MCP Catalog can register (Claude Code, Cursor,
   Codex, VS Code, ...). Unlisted clients get a bare HTTP 403 `Forbidden` from
   `api.figma.com/v1/oauth/mcp/register`; opencode is currently unlisted, so it

@@ -76,7 +76,7 @@ python3 scripts/sync-agents.py --mode link
 
 ## MCP Servers
 
-MCP server registrations live in `mcp/servers.json` — one canonical entry per server naming the tools it targets — and are merged into each tool's native config by:
+MCP server registrations live in `mcp/servers.json` (one canonical entry per server naming the tools it targets) and are merged into each tool's native config by:
 
 ```bash
 .venv/bin/python scripts/sync-mcp.py --dry-run   # preview per-file changes
@@ -137,7 +137,7 @@ Pass `--prune` to also remove installs this tool created whose source skill no l
 
 Pruning identifies its own copies by a `.ggfincke-skills-sync` marker recording the source they came from, which has two consequences worth knowing:
 
-- A copy installed before markers existed is **not** prunable and is left alone — `--prune` names it and says why rather than deleting a directory it cannot prove it created. One `make sync-copy-force` pass re-stamps existing copies, making them prunable from then on.
+- A copy installed before markers existed is **not** prunable and is left alone: `--prune` names it and says why rather than deleting a directory it cannot prove it created. One `make sync-copy-force` pass re-stamps existing copies, making them prunable from then on.
 - A run only prunes copies whose recorded source is inside the source tree that run is installing from. Portable skills (`skills/`) and a repo's project-only skills (`projects/<repo>/`) can share one target root without either run treating the other's installs as orphans. `--prune` is still rejected outright on the `--project-repo` lane.
 
 ## Always-On Conventions

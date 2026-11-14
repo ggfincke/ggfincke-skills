@@ -1,7 +1,7 @@
 # Code formatting
 
 House formatting conventions for TypeScript/JavaScript (and Prettier-owned
-sidecar files). Comment policy is separate — see `house-guide.md` and
+sidecar files). Comment policy is separate; see `house-guide.md` and
 `../SKILL.md`. This file is policy + a copyable Prettier config; this repo
 enforces it via root Prettier/ESLint and `make check`.
 
@@ -53,20 +53,28 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-extend-select = ["D400", "D403"]
+extend-select = ["D400", "D403", "C901", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-statements = 60
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "tab"
 ```
 
-`D400` / `D403` reinforce docstring period + capitalization for the rare
-class-level block docs that comment-style allows.
+`D400` / `D403` reinforce docstring period + capitalization. `C901` /
+`PLR0913` / `PLR0915` are the shape rules from `code-shape.md`; adopt them
+in stages in a repo with existing debt.
 
 ## Change hygiene
 
 - Repository formatting and comment style apply to every new or revised source
-  file in a wired repo, even when comments/format are not the task’s focus.
+  file in a wired repo, even when comments/format are not the task's focus.
 - Prefer the inherited comment-style rules and the local enforcers. Do not
   churn untouched legacy comments unless requested or required by a gate.
 - `format` / `lint:fix` are mutating and can touch files outside a narrow

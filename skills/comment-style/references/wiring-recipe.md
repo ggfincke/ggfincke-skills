@@ -9,7 +9,7 @@ adopted (see §6).
 
 ## 1. Copy enforcers
 
-From this skill’s `assets/`:
+From this skill's `assets/`:
 
 | Asset | Typical destination |
 | ----- | ------------------- |
@@ -18,8 +18,8 @@ From this skill’s `assets/`:
 | `check-python-style.sh` | e.g. `scripts/checks/check-python-style.sh` |
 | `swift/` (Swift repos) | as documented in `swift.md` |
 
-Update each asset’s two-line header to the destination path after copying.
-Wire ESLint as in `typescript.md` (plugin `ggfincke`, five custom rules +
+Update each asset's two-line header to the destination path after copying.
+Wire ESLint as in `typescript.md` (plugin `ggfincke`, seven custom rules +
 `no-inline-comments`).
 
 ## 2. Prettier + npm scripts
@@ -46,7 +46,7 @@ Suggested scripts:
 }
 ```
 
-Fold `format:check` into the repo’s aggregate gate (`check:all` / `make check`)
+Fold `format:check` into the repo's aggregate gate (`check:all` / `make check`)
 when ready. Keep a separate Python format-check if the aggregate does not
 already include it.
 
@@ -82,9 +82,9 @@ Non-mutating full checks:
 
 ## 5. Agent / docs pointers
 
-In the target repo’s `AGENTS.md` (or equivalent):
+In the target repo's `AGENTS.md` (or equivalent):
 
-- Point “any code change” at the local comment-style guide (or this skill’s
+- Point "any code change" at the local comment-style guide (or this skill's
   `house-guide.md` once synced).
 - Document the format style (Allman, no semis, …) and that mutating
   `format` / `lint:fix` should stay scoped in a dirty worktree.
@@ -99,6 +99,7 @@ In the target repo’s `AGENTS.md` (or equivalent):
 | Copyable ESLint / Python / Swift assets | in `assets/` |
 | Root Prettier / ESLint / format make targets | **adopted** (`make format` / `format-check`) |
 | Pre-commit format gates / CI format:check | **adopted** (lint-staged + CI jobs) |
+| Code-shape rules | Ruff **gated** on source (tests exempt); core ESLint rules at **warn** pending a refactor wave |
 
 Assets stay copyable for other repos. Destination-path headers on those assets
 are exempt from `file-header` in this repo's ESLint config.

@@ -7,14 +7,14 @@ description: Opt-in worker-broker delegation for explicit requests to use orches
 
 ## Activation boundary
 
-Treat loading or mentioning this skill as distinct from invoking its worker workflow. Activate only from an affirmative current-task directive such as `/orchestrate ...`, `$orchestrate ...` used imperatively, “use orchestrate for this,” “use a local Ollama reviewer,” or “have Antigravity review this.”
+Treat loading or mentioning this skill as distinct from invoking its worker workflow. Activate only from an affirmative current-task directive such as `/orchestrate ...`, `$orchestrate ...` used imperatively, "use orchestrate for this," "use a local Ollama reviewer," or "have Antigravity review this."
 
 Do not activate for:
 
 - a contextual link, prior-use reference, or comparison involving orchestrate;
 - a request to inspect, discuss, debug, or modify the skill itself;
 - generic permission to use workflows, agents, subagents, delegation, or parallel work;
-- an acknowledgment such as “lgtm” after the user has said not to orchestrate.
+- an acknowledgment such as "lgtm" after the user has said not to orchestrate.
 
 A current instruction not to orchestrate wins and remains binding until the user explicitly reverses it. Ordinary subagents remain independent of this skill and follow the host's normal delegation policy without an orchestrate plan.
 
@@ -28,8 +28,9 @@ A host may inject these as a collaboration-mode block (456code does); this list 
 
 1. Inspect the repository instructions and enough live code to understand the relevant boundaries.
 2. State the intended behavior, invariants, acceptance criteria, and final validation commands.
-3. Identify independent work packages. Keep cross-cutting interfaces and integration sequencing in the lead session.
-4. Delegate only when a package has a concrete objective and an unambiguous file or directory scope.
+3. Settle the end-to-end check before the first wave: how the integrated change is shown to work beyond unit tests, such as an existing e2e or integration suite, a dev server plus a request, a CLI run, or a browser or device pass. Workers cannot ask the user, so when no concrete path exists, ask now with two or three specific options, one of which may be "unit tests are enough". Split the check into commands a worker can run in its worktree, which become verification commands, and the pass only the lead can run after integration (browser, device, live services).
+4. Identify independent work packages using the splitting rules in [routing-policy.md](references/routing-policy.md). Keep cross-cutting interfaces and integration sequencing in the lead session.
+5. Delegate only when a package has a concrete objective and an unambiguous file or directory scope.
 
 Before the first wave, run a lightweight broker preflight with `daemon_status` (or an equivalent read call). Confirm the client and daemon build IDs match and that the daemon is not draining. The daemon owns single-writer access plus build, protocol, and state-schema compatibility; surface `build_mismatch` or `draining` errors and resolve them through the daemon lifecycle, never by working around them.
 
@@ -64,15 +65,19 @@ consent. Lead-owned work and ordinary native subagents remain outside this workf
 
 ## Run checkpoint
 
-One file per run, in the integration checkout: `.plans/runs/<runId>.md` where the repository already has a `.plans/` directory (456code does, and ignores that path), otherwise an untracked `.orchestrate/runs/<runId>.md`. Leave it untracked either way and do not assume any repository ignores it. Never a numerically ordered plan file — those are durable designs, not run state. Template:
+One file per run, in the integration checkout: `.plans/runs/<runId>.md` where the repository already has a `.plans/` directory (456code does, and ignores that path), otherwise an untracked `.orchestrate/runs/<runId>.md`. Leave it untracked either way and do not assume any repository ignores it. Never a numerically ordered plan file: those are durable designs, not run state. Template:
 
 ```markdown
-# run <runId> — <task>
+# run <runId>: <task>
 
 - integration: <absolute repo path> @ <branch> (base <sha>)
 - plan: revision <n>, maxWorkers <n>, used <n>
 - validation: <exact commands>
+- e2e: <lead-side check after integration, or "skip: <reason>">
 - next: <one action>
+
+## worker template
+<shared text copied verbatim into every assignment of this run>
 
 ## phases
 | phase | status | gate |
@@ -94,12 +99,14 @@ Include every field required by [worker-contract.md](references/worker-contract.
 - normalized repository-relative allowed path prefixes;
 - forbidden behavior and scope boundaries;
 - acceptance criteria and broker-run verification commands;
-- for providers supporting edits, setup commands whenever verification needs the repository toolchain — worktrees start bare with no installed dependencies, so a bare tool name fails with exit 127 no matter how good the patch is;
+- for providers supporting edits, setup commands whenever verification needs the repository toolchain, since worktrees start bare with no installed dependencies, so a bare tool name fails with exit 127 no matter how good the patch is;
 - model and effort from the approved model plan's stage binding, or an explicit per-assignment override.
 
-Every edit assignment must carry an environment plan: either `setup_commands` that provision the broker verification environment, or an explicit no-broker-verification declaration naming the lead's central verification command and when it will run. A bare “do not run tests” instruction is invalid. Use the standard monorepo `node_modules` symlink setup described in [worker-contract.md](references/worker-contract.md) when a shared install is appropriate.
+When a wave has more than one similar assignment, write the shared part once as a worker template: the codebase conventions workers must follow, forbidden behavior, setup and verification commands, and the report format. Record it in the run checkpoint and copy it verbatim into each assignment, so only the objective, allowed paths, and package-specific acceptance criteria differ between siblings. Revise the template between waves, never mid-wave.
 
-Scope discipline: never grant one shared file — a lockfile, a root manifest such as a shared `tests/package.json` — to every worker in a wave. Any shared prefix makes the edit scopes overlap, and overlapping edit jobs serialize FIFO, turning a parallel wave into a multi-hour chain. Have workers report missing shared-file changes (new dependency declarations, manifest entries) as follow-ups, and apply them centrally in the lead during integration.
+Every edit assignment must carry an environment plan: either `setup_commands` that provision the broker verification environment, or an explicit no-broker-verification declaration naming the lead's central verification command and when it will run. A bare "do not run tests" instruction is invalid. Use the standard monorepo `node_modules` symlink setup described in [worker-contract.md](references/worker-contract.md) when a shared install is appropriate.
+
+Scope discipline: never grant one shared file (a lockfile, a root manifest such as a shared `tests/package.json`) to every worker in a wave. Any shared prefix makes the edit scopes overlap, and overlapping edit jobs serialize FIFO, turning a parallel wave into a multi-hour chain. Have workers report missing shared-file changes (new dependency declarations, manifest entries) as follow-ups, and apply them centrally in the lead during integration.
 
 Use configured providers according to [routing-policy.md](references/routing-policy.md). Never request a provider that the broker does not currently expose.
 
@@ -118,9 +125,9 @@ Do not expand a running assignment. Cancel it and start a replacement with the c
 
 The run-discipline list above carries the norms; these are the mechanics that satisfy them.
 
-1. Immediately after launching, call `wait_for_workers` once with the `run` and a bounded timeout (default 300 seconds, maximum 900). It is a liveness probe, not a completion channel: read its `pending` entries — `job_id`, `status`, `stage`, `phase`, `elapsed_ms`, `last_message` — as the wave's first real snapshot, and never re-call it on an unchanged pending set.
+1. Immediately after launching, call `wait_for_workers` once with the `run` and a bounded timeout (default 300 seconds, maximum 900). It is a liveness probe, not a completion channel: read its `pending` entries (`job_id`, `status`, `stage`, `phase`, `elapsed_ms`, `last_message`) as the wave's first real snapshot, and never re-call it on an unchanged pending set.
 2. For a wave that outlives the probe, use a supported background wait/wake channel. Resolve the broker CLI and its compatible Node runtime from the host's configured installation (or a verified `worker-broker` on `PATH`); do not assume a personal checkout or Homebrew prefix. [worker-contract.md](references/worker-contract.md) gives the invocation and exit codes. If the host cannot run a background wait, use its bounded wait/status tools with backoff and report that limit. For one job mid-flight, `get_worker_artifact` with `artifact: "activity"`, `tail: true`, `max_bytes: 2000` is the cheap liveness read.
-3. On every wake — a completion exit, monitor event, or user message — lead with a one-to-two-line progress line: `N/M workers done; <what just finished>; next: <step>; ~<time> remaining`. Then continue working.
+3. On every wake (a completion exit, monitor event, or user message), lead with a one-to-two-line progress line: `N/M workers done; <what just finished>; next: <step>; ~<time> remaining`. Then continue working.
 4. At each wave boundary (all results collected, integration starting, validation running), post the same short progress line unprompted.
 5. For waves expected to run 15+ minutes while the user is likely away, use a host-supported notification channel only when available and authorized. Otherwise report completion or first failure in the task; do not invent `PushNotification` or claim a notification was sent.
 
@@ -142,7 +149,7 @@ Use `get_worker_artifact` for bounded patch, event, stderr, model-result, prompt
 
 ## Recovery after a daemon restart or a context compaction
 
-After a compaction, reconcile in this order: the run checkpoint, then `get_run_status`, then `list_workers({ run })`. The broker is authoritative for job status and evidence; the checkpoint is authoritative for intent — which job belonged to which package, what you had already accepted, and what the next action was. Relaunch nothing until the two agree.
+After a compaction, reconcile in this order: the run checkpoint, then `get_run_status`, then `list_workers({ run })`. The broker is authoritative for job status and evidence; the checkpoint is authoritative for intent: which job belonged to which package, what you had already accepted, and what the next action was. Relaunch nothing until the two agree.
 
 The daemon reconciles automatically: the replacement adopts every nonterminal record, verifies its recorded PID and supervisor token before signalling any surviving broker-owned process group, durably clears that identity, and snapshots the interrupted worktree to `change.patch`. A snapshot with Git-visible changes ends `failed` with `failure_class: broker_fault` so its base-applicable salvage patch cannot be overwritten by a retry. Only a proven-clean snapshot may requeue once; a second interruption or recovery failure ends durably as `failed`. If ownership or group exit cannot be confirmed, or the cleared identity cannot be persisted, startup fail-stops without reading the still-mutable worktree or changing its durable owner record. Inventory the run with `list_workers`, apply the salvage gate to every requeued or failed job, and never launch a replacement while the original is queued or being requeued. For a build upgrade, run the same absolute `cli.js` command with `daemon status` and then `daemon stop --when-idle`; do not kill a busy daemon or bypass its drain.
 
@@ -150,7 +157,7 @@ The daemon reconciles automatically: the replacement adopts every nonterminal re
 
 1. Inspect every patch and resolve cross-package assumptions yourself.
 2. Integrate only accepted, in-scope results in the intended dependency order.
-3. Run repository-wide validation from the integrated checkout; worker-local checks are not final proof.
+3. Run repository-wide validation and the lead-side end-to-end check from the integrated checkout; worker-local checks are not final proof.
 4. Report failed or cancelled workers, unverified assumptions, deferred work, and residual risk.
 
 Do not push, publish, or open pull requests unless the user separately authorizes that action.

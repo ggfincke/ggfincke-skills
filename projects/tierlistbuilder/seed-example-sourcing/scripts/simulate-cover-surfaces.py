@@ -1,15 +1,9 @@
 # projects/tierlistbuilder/seed-example-sourcing/scripts/simulate-cover-surfaces.py
 # tierlistbuilder cover-surface framing simulator for picking coverZoom before install
 
-# renders what each cover surface actually shows at a given coverZoom, mirroring
-# packages/contracts/lib/coverMedia.ts::zoomedFrameForSurface, so you can pick coverZoom
-# per template BEFORE install and confirm the crop is right on every viewport.
-# writes dev-docs/seed-examples/previews/surfaces/surfaces-N.jpg contact sheets and
-# prints any surface that exceeds the configured source-width or matte limits.
-#
-# run through the seed venv:
-#   uv run --project scripts/seed_pipeline python <this> examples/gaming/street-fighter-6/_cover.jpg
-#   uv run --project scripts/seed_pipeline python <this> a/_cover.jpg=1.6 b/_cover.jpg   # per-file zoom w/ path=zoom
+# render each cover surface at a coverZoom (mirrors zoomedFrameForSurface in coverMedia.ts) into
+# dev-docs/seed-examples/previews/surfaces/ sheets & print surfaces over the width or matte limits
+# run: uv run --project scripts/seed_pipeline python <this> <cover>[=zoom] ...
 
 import sys
 from pathlib import Path

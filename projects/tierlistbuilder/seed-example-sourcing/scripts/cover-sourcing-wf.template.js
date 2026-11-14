@@ -1,11 +1,9 @@
 // projects/tierlistbuilder/seed-example-sourcing/scripts/cover-sourcing-wf.template.js
 // legacy Workflow cover sourcing with read-only scoring and explicit failed results
 
-// then read-only vision-scores them. adapt COVERS + RUN_ID, copy to the scratchpad, run via {scriptPath}.
-// requires compatible Workflow globals; source is ADD-only, verification is read-only.
-// models inherit host defaults unless an approved host binding is supplied.
-// output is RANKED CANDIDATES for a human to eyeball (contact sheet + simulate-cover-surfaces.py); it does NOT install.
-// covers are OPTIONAL: only franchise rosters + music discographies where one evocative textless image fits.
+// adapt COVERS + RUN_ID, copy to the scratchpad, run via {scriptPath}; needs compatible Workflow globals
+// output is ranked candidates for a human to eyeball (contact sheet + simulate-cover-surfaces.py), never an install
+// covers are optional: only franchise rosters & music discographies where one evocative textless image fits
 
 export const meta = {
   name: 'seed-cover-sourcing',

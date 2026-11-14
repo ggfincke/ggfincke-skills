@@ -18,8 +18,10 @@ Path is relative to the repo root. The description is one untagged lowercase phr
 
 - `// MARK: -` for sections.
 - Choose `#Preview` or `PreviewProvider` according to the actual Swift/Xcode and deployment target. The comment checker does not enforce this API choice.
-- `///` documentation belongs on types (`class`, `struct`, `enum`, `actor`, `protocol`) when a short paragraph helps orient on the larger unit, including when a standalone attribute such as `@MainActor` precedes the type. Ordinary functions and methods use a plain `//` comment instead. Do not use prose `/* */` blocks; those characters inside string literals or line comments are not block comments.
-- Allowed `///` summaries are complete sentences: capitalized and period-terminated.
+- `///` documentation sits directly above the declaration it documents (types, functions, properties), including when a standalone attribute such as `@MainActor` comes between. Caps: 5 content lines on functions and members, 8 on types (`class`, `struct`, `enum`, `actor`, `protocol`). Do not use prose `/* */` blocks; those characters inside string literals or line comments are not block comments.
+- `///` summaries are complete sentences: capitalized and period-terminated.
+- Plain `//` comment blocks cap at 3 lines; a `*` / `!` / `?` tag and its continuation lines cap at 2.
+- No em dashes in `//` comments or `///` docs.
 - Tooling comments are exempt: `swiftlint:`.
 
 ## Enforcement

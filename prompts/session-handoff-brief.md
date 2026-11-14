@@ -1,6 +1,6 @@
 # Session handoff brief
 
-A canned prompt that makes the current session write a tight continuation brief before you `/compact` or `/clear`, so the next stretch resumes from something you controlled instead of a lossy auto-summary. It pairs with the `session-context-hygiene` workflow, which covers when to reach for it (compact vs. clear, what to carry forward).
+A canned prompt that makes the current session write a tight continuation brief before you `/compact` or `/clear`, so the next stretch resumes from something you controlled instead of a lossy auto-summary. Reach for it before a compact when the exact anchors and the reasons behind decisions matter, and before a clear when nothing will carry over automatically.
 
 Why a prompt and not a skill: you fire this deliberately at a stopping point. A skill keyed on "about to compact" can't see your intent and would mis-fire on something destructive.
 

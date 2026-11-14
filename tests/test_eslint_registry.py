@@ -71,10 +71,8 @@ class EslintRuleRegistry(unittest.TestCase):
 		# guard against a regex drift passing vacuously on two empty dicts
 		self.assertTrue(entries, "found no registry entries")
 		self.assertTrue(bindings, "found no rule imports")
-		# each key must be bound to the identifier imported from ./<key>.js.
-		# name-only checks miss the worst drift: a dropped import leaves the key
-		# intact & throws ReferenceError at plugin load in every consuming repo,
-		# and a key bound to the wrong identifier silently runs the wrong rule
+		# each key must be bound to the identifier imported from ./<key>.js; a dropped import
+		# throws at plugin load & a wrong binding silently runs the wrong rule
 		self.assertEqual(entries, {name: bindings.get(name) for name in entries})
 
 	def test_root_config_adopts_every_registered_rule(self) -> None:
@@ -114,12 +112,12 @@ class EslintCommentBehavior(unittest.TestCase):
 				"projects/fixture.js",
 				"/* ordinary prose */\nconst count = 1\n"
 				"/** Counts calls. */\nfunction countCalls() { return count }\n",
-				["blockComment", "disallowedDocumentation"],
+				["blockComment"],
 			),
 			(
 				"projects/fixture.ts",
 				"/** @param {number} value */\nfunction square(value: number) { return value * value }\n",
-				["disallowedDocumentation"],
+				["missingSummary"],
 			),
 		)
 		fixtures = [

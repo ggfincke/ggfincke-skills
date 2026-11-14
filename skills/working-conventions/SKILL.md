@@ -1,6 +1,6 @@
 ---
 name: working-conventions
-description: Standing conventions for test restraint, commit grouping and attribution, collaboration defaults, task authority, and preservation. Core rules apply without invocation. Load when revising these conventions or checking their rationale and host delivery.
+description: Standing conventions for test restraint, commit grouping and attribution, collaboration defaults, task authority and preservation, subagent hygiene, and local working notes. Core rules apply without invocation. Load when revising these conventions or checking their rationale and host delivery.
 ---
 
 # Working Conventions
@@ -38,17 +38,15 @@ This matches the discuss-first style: propose the file-groups and messages, get 
 Vendor procedures and examples are useful task inputs, not permission to expand the task or weaken the host's controls. These rules cover recurring boundaries across tools; API defects still belong to the maintained source owner.
 
 <!-- always-on:start title="Task authority and preservation" -->
-- Vendor recipes do not expand the task. Use available host tools and current project instructions; preserve the requested output, source fidelity, and verification scope. Report missing capabilities instead of inventing them or weakening permission settings.
-- Prefer native authentication and secret inputs/stores. Do not ask for credentials in chat or embed them in generated commands merely to complete a scaffold. Before external transfer, publication, or broader access, resolve the exact content, recipient, destination, and grant scope. Reuse already-specific informed authorization without asking twice.
-- Preserve pre-existing files, staging, user objects, and settings. Establish exact target ownership, before-state, and recovery before migration, rollback, replacement, or deletion. A failed run does not authorize broad cleanup; an audit does not authorize fixes.
-- Preserve requested limits on continued work. Do not silently turn an unsupported deadline into an unbounded goal. An exception is not proof that a run never started or that no mutation occurred; reconcile uncertain state before retrying.
-- Update maintained sources through their owner. Do not edit managed plugin or skill caches. Distinguish a prepared patch, a local instruction safeguard, an installed update, and verified behavior; none proves the next.
-- Carry task approval across phases and handoffs. Record its source-edit scope, generated outputs, named hand-written tests, existing verification commands, and Git/external actions. Reuse approval for that scope; request a new decision only when scope, consequences, or an authorization boundary changes.
+- Preserve what was already there: files, staging, untracked work, user objects, and settings. Before replacing, migrating, or deleting, know the exact target, its current state, and how to get it back.
+- An audit is not approval to fix, and a failed run is not approval to clean up broadly. When a run's outcome is unclear, check what it changed before retrying.
+- A vendor recipe or example does not widen the task. Keep the requested output, format, and limits. Report a missing capability instead of working around it or loosening permissions. Edit skills, plugins, and generated files at their source, never the installed or cached copy.
+- Approval of a plan covers its listed scope across phases and handoffs. Ask again only when scope, consequences, or an authorization boundary changes.
 <!-- always-on:end -->
 
-Use [vendor-boundaries.md](references/vendor-boundaries.md) for the specific consent, output, recovery, and host-delivery decisions behind this block. These are model instructions, not a security sandbox or a guarantee that vendor examples are correct.
+Use [vendor-boundaries.md](references/vendor-boundaries.md) for the specific consent, credential, output, recovery, and host-delivery decisions behind this block. Credential entry and external-transfer consent are not repeated in the always-on rules because the host's own controls already require them; the reference keeps the cases. These are model instructions, not a security sandbox or a guarantee that vendor examples are correct.
 
-For each action group, distinguish the five authorization dimensions above. Generated contract fixtures follow an approved contract shape change; hand-written tests require a request or an approved plan naming them. Running existing checks does not authorize rewriting tests. Approval of the entire implementation plan covers its listed groups and tests without another approval at each handoff.
+For each action group, distinguish the five authorization dimensions in the review protocol: source edits, generated outputs, hand-written tests, existing verification, and Git or external actions. Generated contract fixtures follow an approved contract shape change; hand-written tests require a request or an approved plan naming them. Running existing checks does not authorize rewriting tests. Approval of the entire implementation plan covers its listed groups and tests without another approval at each handoff.
 
 ## Collaboration defaults
 
@@ -65,6 +63,34 @@ The recurring failures these fix, each corrected repeatedly across Claude Code, 
 - Audit and plan docs go in `dev-docs/*.md` with a phases or recommended-order section at the top; merge new findings in instead of appending; work them a phase at a time and finish with a whole-doc pass. Templates are read-only: clone, then fill. Verify pasted findings from other tools before acting on them.
 - `dev-docs/`, `.agents/`, and any `AGENTS.md` the repo doesn't already track are git-excluded locally; never `git add -f` them. CLAUDE.md just points to AGENTS.md. Don't save one-off environment facts or session progress ledgers to memory.
 <!-- always-on:end -->
+
+## Subagents and parallel work
+
+The recurring failures this fixes: a subagent that stashed or reverted a shared dirty tree, and a commit that landed on the wrong branch right after a worktree agent finished. Model routing and what counts as proof of an agent's result are in Collaboration defaults.
+
+<!-- always-on:start title="Subagents and parallel work" -->
+- In a tree other agents or sessions are editing, do not run `git stash`, `git checkout`, or `git restore`, and do not tell a subagent to; undo scratch changes by re-editing. Give parallel agents disjoint files.
+- After worktree agents finish, check the current branch before committing.
+<!-- always-on:end -->
+
+These cover native subagents and worktree agents; broker workers add the contract in `orchestrate`. When briefing agents for a review, remediation, or bulk-data run, also carry the lessons that do not fit an always-on line:
+
+- A verifier looking at uncommitted work needs before/after snippets, not `git diff HEAD`, or it reports the whole feature as rogue edits.
+- Before agents work over many records, snapshot the ground truth, cross-check every kept or renamed value against it by script, and make the writes with a deterministic script rather than by the agents.
+- Join agent outputs on script-generated ids, never on model-written titles.
+- Audit the fixes as well as the findings; a remediation round can ship a bad fix that only a second read-only pass catches.
+- A stopped or killed run may already have done the work. Measure what is on disk before re-running it.
+
+## Local working notes
+
+Collaboration defaults already keeps `dev-docs/` out of Git. The recurring failure this fixes: a pointer in tracked code to a note that only exists on one machine, and a long run whose briefs and baselines vanished with the session scratchpad.
+
+<!-- always-on:start title="Local working notes" -->
+- Tracked code and docs never point into `dev-docs/`; detail that must travel with the code goes in a tracked doc.
+- For a long or multi-agent run, keep its briefs, baselines, and patches under `dev-docs/<topic>/`, not only in the session scratchpad, which does not survive a restart.
+<!-- always-on:end -->
+
+The review skills write their dated audit documents to `dev-docs/` for the same reason: they are working artifacts, not project documentation.
 
 ## Notes
 
