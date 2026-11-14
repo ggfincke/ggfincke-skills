@@ -29,7 +29,7 @@ Required inputs:
 
 Optional inputs:
 
-- `base_ref`: Git reference, default `HEAD`; the broker resolves it to an immutable commit when the job is *submitted*, not when it is dispatched — a queued job's base does not follow later integration, so never submit a job whose base does not exist yet;
+- `base_ref`: Git reference, default `HEAD`; the broker resolves it to an immutable commit when the job is *submitted*, not when it is dispatched. A queued job's base does not follow later integration, so never submit a job whose base does not exist yet;
 - `acceptance_criteria`: observable conditions the result must satisfy;
 - `setup_commands`: trusted shell commands, optionally with `timeout_seconds`, run in the worktree after creation and before the provider starts (e.g. `pnpm install` for a JS monorepo). A setup failure ends the job in seconds with no model work spent; results are recorded in `setup` with `setup-N.*` artifacts. The broker captures their exact Git tree as an attribution boundary: unchanged setup-only paths stay out of worker evidence, while any later Git-visible delta involving one is rejected because a setup-free worker patch cannot be proven;
 - `verification_commands`: trusted shell commands, optionally with `timeout_seconds`;
@@ -38,7 +38,7 @@ Optional inputs:
 - `allow_nested_agents`: default `false`; a prompt prohibition with provider-native control where supported. It does not prove shell-launched agents are impossible.
 - `required_capabilities`: optional explicit guarantees: `native_no_nesting`, `no_nested_agents`, `filesystem_read_only`, `filesystem_workspace_only`, or `network_disabled`. The broker rejects unsupported or unverified requirements before worktree creation or setup. Do not translate a broad user restriction into a weaker native-only requirement. Empty/omitted preserves existing job behavior.
 
-Every edit assignment must include an environment plan. Supply `setup_commands` that provision everything broker verification needs, or put an explicit no-broker-verification declaration in the task or acceptance criteria naming the lead's central verification command and when it will run. “Do not run tests” without either declaration is invalid. Worktrees are bare; for a monorepo whose dependencies are already installed centrally, the standard setup pattern is to create `<worktree>/node_modules` as a symlink to the valid shared `node_modules` tree, then run the broker commands. Use a repository-appropriate relative or absolute target and do not assume a worktree inherits the source checkout's dependencies.
+Every edit assignment must include an environment plan. Supply `setup_commands` that provision everything broker verification needs, or put an explicit no-broker-verification declaration in the task or acceptance criteria naming the lead's central verification command and when it will run. "Do not run tests" without either declaration is invalid. Worktrees are bare; for a monorepo whose dependencies are already installed centrally, the standard setup pattern is to create `<worktree>/node_modules` as a symlink to the valid shared `node_modules` tree, then run the broker commands. Use a repository-appropriate relative or absolute target and do not assume a worktree inherits the source checkout's dependencies.
 
 Coral and Antigravity workers accept read-only mode only, without setup/verification shell commands or nested agents. Antigravity remains unavailable until its native read-only and ambient-hook restrictions are verified. The lead runs any project verification.
 
@@ -92,15 +92,15 @@ The out-of-process wait for a wave that outlives one `wait_for_workers` probe. U
 "$broker_node" "$broker_cli" wait --run "$run_id" --json
 ```
 
-`broker_node`, `broker_cli`, and `run_id` above are task-local values resolved from the current host and approved run, not literal placeholders to execute. If no suitable CLI or background wake exists, use available bounded status/wait tools with backoff and report the capability limit. Select with `--run <run>` or one or more `--job-id <id>`; `--timeout <seconds>` sets the per-call daemon wait (default 900) and the command keeps waiting across calls until the selection is terminal. It connects to the daemon the workers were started on and never spawns one — a spawned daemon would carry a different provider config, so a missing daemon is reported rather than papered over.
+`broker_node`, `broker_cli`, and `run_id` above are task-local values resolved from the current host and approved run, not literal placeholders to execute. If no suitable CLI or background wake exists, use available bounded status/wait tools with backoff and report the capability limit. Select with `--run <run>` or one or more `--job-id <id>`; `--timeout <seconds>` sets the per-call daemon wait (default 900) and the command keeps waiting across calls until the selection is terminal. It connects to the daemon the workers were started on and never spawns one, because a spawned daemon would carry a different provider config, so a missing daemon is reported rather than papered over.
 
 The terminal JSON projection is aggregate-only: `selected`, `completed`, `failed`, `rejected`, `cancelled`, `pending`, and `timed_out`, plus `run` when that selector was used. It never repeats per-job summaries or result arrays. Use `get_worker_result` for the selected jobs whose full evidence you need.
 
 Exit codes are the contract a detached caller branches on:
 
 - `0`: every selected worker reached `completed`;
-- `1`: every selected worker is terminal but at least one did not complete — triage with `get_worker_result`;
-- `2`: terminality was never observed — a malformed invocation, no daemon listening, a selector that matched no workers, or transport loss. Never read `2` as "the wave finished".
+- `1`: every selected worker is terminal but at least one did not complete; triage with `get_worker_result`;
+- `2`: terminality was never observed: a malformed invocation, no daemon listening, a selector that matched no workers, or transport loss. Never read `2` as "the wave finished".
 
 ## Statuses
 

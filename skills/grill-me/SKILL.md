@@ -40,7 +40,7 @@ Finding _facts_ is your job, never the user's. When a frontier question needs a 
 
 ## Ungrillable questions
 
-Stop grilling a question that talking cannot settle (how something should look or feel, which of several layouts is right). Say so in one line and wait; do not rephrase it into more interview.
+Stop grilling a question that talking cannot settle (how something should look or feel, which of several layouts is right). Say so in one line, and do not rephrase it into more interview. Rendering the options is outside this skill's no-files boundary, so offer it as the next step after the interview: real mocks or renders side by side, then the pick as a multiple-choice question. Keep asking the rest of the frontier meanwhile.
 
 ## Close
 

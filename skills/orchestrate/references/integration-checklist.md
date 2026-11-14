@@ -14,7 +14,7 @@ Complete this checklist for every terminal implementation result.
 
 ## Salvage gate
 
-The blanket rule “reject failed, rejected, or unverified results” is superseded for terminal jobs by this evidence gate. Before canceling, relaunching, or discarding any non-completed job, call `get_worker_result` and inspect `status`, `error`, `failure_class`, setup and verification exit codes, `changed_files`, `patch_path`, and the `patch` artifact when needed.
+The blanket rule "reject failed, rejected, or unverified results" is superseded for terminal jobs by this evidence gate. Before canceling, relaunching, or discarding any non-completed job, call `get_worker_result` and inspect `status`, `error`, `failure_class`, setup and verification exit codes, `changed_files`, `patch_path`, and the `patch` artifact when needed.
 
 - If `failure_class` is `environment` and the captured patch is intact, salvage the patch. Fix or account for the environment, verify the patch centrally, and never re-run the model merely to recover verification.
 - A setup-attribution `scope` rejection proves that a later Git-visible delta overlapped a setup-attributed path. Its full base-to-final patch is salvage-only and may include setup effects; isolate and review the applicable changes centrally instead of treating that artifact as an ordinary worker patch.
@@ -52,6 +52,6 @@ When the user asks for commits, credit the harnesses that produced the work.
   - `Co-Authored-By: Codex <codex@openai.com>`
   - `Co-Authored-By: Claude <noreply@anthropic.com>`
   - Confirm the published identity for other harnesses before first use; never invent an address.
-- Name the models in the commit body or PR description, where approximation is honest — for example `models: gpt-5.6-luna (review), claude-opus-5 (UI)`. Read them from each job's requested model and `effective_model`.
+- Name the models in the commit body or PR description, where approximation is honest, for example `models: gpt-5.6-luna (review), claude-opus-5 (UI)`. Read them from each job's requested model and `effective_model`.
 - Credit surviving work only. A rejected, failed, or fully discarded patch earns nothing; a patch the lead reworked still counts when its substance survived.
 - Keep the trailer block last, one trailer per line, no blank lines inside it, or forges will not parse it.
