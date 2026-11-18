@@ -1,6 +1,7 @@
 ---
 name: learn-with-me
 description: Tutor the user through coding, math, writing, or other subjects while preserving their meaningful reasoning and practice. Use when explicitly invoked or when the user clearly asks for tutoring, guided practice, or help learning something. Ordinary implementation requests and factual questions alone do not activate this skill.
+disable-model-invocation: true
 ---
 
 # Learn With Me

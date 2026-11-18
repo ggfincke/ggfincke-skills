@@ -50,8 +50,9 @@ make check PYTHON=.venv/bin/python   # validation + generated outputs + tests + 
 
 The Python dependency preserves Codex TOML comments and local settings during MCP sync. Skill validation alone remains available with `python3 scripts/validate-skills.py` (or `make validate`).
 
-Validation is strict by default: frontmatter beyond `name`/`description` fails
-unless you pass `--lenient-frontmatter`.
+Validation is strict by default: frontmatter beyond `name`/`description` and the
+invocation-tier keys (`disable-model-invocation`, `user-invocable`) fails unless you
+pass `--lenient-frontmatter`.
 
 Enable the pre-commit hook so staged JS/TS and root-formatter-owned Python files are formatted and the resulting index snapshot is validated and tested before each commit:
 

@@ -1,6 +1,7 @@
 ---
 name: mega-review
 description: Run an explicit multi-lens review/audit of a codebase, branch, or large diff into one durable mega audit document - orchestrate bug-hunt, simplification, consolidation, test-gap, and performance lenses, plus a security lens in the full profile, adversarially verify and dedupe findings, and produce integrated action groups, risk sequencing, and testing guidance, read-only until approved. Use when the user explicitly asks for mega-review, the works, all lenses, max-effort/everything audit, one multi-lens audit doc, a scoped 2+ lens audit, or a mega-review without security (core profile). Do not use for ordinary deep/full PR reviews unless they ask for multi-lens synthesis into one document; for one focused lens use that lens's own skill, and for a fast correctness or PR pass use the host's ordinary review workflow.
+disable-model-invocation: true
 ---
 
 # Mega Review

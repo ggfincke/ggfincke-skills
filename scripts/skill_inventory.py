@@ -87,6 +87,11 @@ SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 MAX_LINK_LABEL_DEPTH = 128
 
 PORTABLE_FIELDS = frozenset({"name", "description"})
+# host invocation tiers allowed beyond the portable fields, each only w/ its non-default value
+INVOCATION_FIELDS = {"disable-model-invocation": "true", "user-invocable": "false"}
+CODEX_EXPLICIT_RE = re.compile(
+	r"^policy:\s*\n\s+allow_implicit_invocation:\s*false\s*$", re.MULTILINE
+)
 HTML_RAW_TEXT_TAGS = frozenset(
 	{"iframe", "noembed", "noframes", "script", "style", "textarea", "title", "xmp"}
 )
@@ -418,7 +423,8 @@ def _inspect_candidate(
 			)
 		)
 
-	extra_fields = sorted(set(frontmatter) - PORTABLE_FIELDS)
+	issues.extend(_invocation_issues(candidate, frontmatter))
+	extra_fields = sorted(set(frontmatter) - PORTABLE_FIELDS - set(INVOCATION_FIELDS))
 	if extra_fields:
 		message = (
 			"non-portable frontmatter fields: "
@@ -1928,6 +1934,29 @@ def _selection_issue_root(candidates: tuple[SkillCandidate, ...]) -> Path:
 	if candidates:
 		return candidates[0].directory.parent
 	return Path("skills")
+
+
+def _invocation_issues(candidate: SkillCandidate, frontmatter: dict[str, str]) -> list[SkillIssue]:
+	"""Check invocation-tier keys and that explicit-only skills match their Codex policy."""
+	issues = []
+	for field, allowed in INVOCATION_FIELDS.items():
+		if field in frontmatter and frontmatter[field] != allowed:
+			message = f"{field} may only be set to {allowed}; omit it for the default"
+			issues.append(_issue(candidate, candidate.entrypoint, "invocation", message))
+	if all(field in frontmatter for field in INVOCATION_FIELDS):
+		message = "a skill cannot be both explicit-only and hidden from the menu"
+		issues.append(_issue(candidate, candidate.entrypoint, "invocation", message))
+	codex_policy = candidate.directory / "agents" / "openai.yaml"
+	codex_explicit = codex_policy.is_file() and bool(
+		CODEX_EXPLICIT_RE.search(codex_policy.read_text(encoding="utf-8"))
+	)
+	if ("disable-model-invocation" in frontmatter) != codex_explicit:
+		message = (
+			"disable-model-invocation: true and agents/openai.yaml "
+			"policy.allow_implicit_invocation: false must be set together"
+		)
+		issues.append(_issue(candidate, candidate.entrypoint, "invocation", message))
+	return issues
 
 
 def _issue(

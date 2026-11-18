@@ -1,6 +1,7 @@
 ---
 name: orchestrate
 description: Opt-in worker-broker delegation for explicit requests to use orchestrate, local Ollama models, Antigravity, or named external workers on the current repository task. Do not activate for discussion, inspection, generic subagent requests, or an unreversed instruction not to orchestrate.
+disable-model-invocation: true
 ---
 
 # Orchestrate

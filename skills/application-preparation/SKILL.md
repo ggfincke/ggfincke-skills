@@ -1,6 +1,7 @@
 ---
 name: application-preparation
 description: Prepare job or internship applications using current official requisitions, authorized resume facts, existing browser sessions, and a human submission handoff. Use when filling an application draft, reconciling an application tracker with a live ATS, or preparing answers for a named role. Do not use for resume formatting alone, general career advice, or deciding another person's eligibility.
+disable-model-invocation: true
 ---
 
 # Application Preparation
