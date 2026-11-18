@@ -134,7 +134,6 @@ class NativeSkillBehaviors(unittest.TestCase):
 					"frontend-workbench",
 					"orchestrate",
 					"working-conventions",
-					"vercel-react-view-transitions",
 				):
 					path = support.REPO_ROOT / "skills" / name / "SKILL.md"
 					fields = path.read_text().split("---", 2)[1]

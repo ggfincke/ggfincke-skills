@@ -1,6 +1,6 @@
-# Test Coverage Audit - Usage
+# Test Audit - Gaps Mode Usage
 
-Ready-made prompts for the `test-coverage-audit` skill. The skill's rule is major, important tests only - not exhaustive coverage - so these prompts ask for a short, high-value list. The first-turn variants name the stack or scope; the follow-ups steer the work after the list. Fill in the `[BRACKETED]` parts.
+Ready-made prompts for `test-audit` in gaps mode. The skill's rule is major, important tests only - not exhaustive coverage - so these prompts ask for a short, high-value list. The first-turn variants name the stack or scope; the follow-ups steer the work after the list. Fill in the `[BRACKETED]` parts.
 
 ## First-turn variants by stack
 

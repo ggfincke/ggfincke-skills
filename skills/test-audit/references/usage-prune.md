@@ -1,6 +1,6 @@
-# Test Pruning Audit - Usage
+# Test Audit - Prune Mode Usage
 
-Ready-made prompts for the `test-pruning-audit` skill. This skill prunes an EXISTING suite: it finds tests that should not exist - measured against the bar (protects critical, breakable behavior), not against a coverage number - and classifies each Delete / Merge / Simplify / Keep, read-only until you approve removals. It is the inverse of test-coverage-audit; if you actually want MISSING tests, test gaps, or better coverage, use that skill instead. Fill in the `[BRACKETED]` parts.
+Ready-made prompts for `test-audit` in prune mode. This skill prunes an EXISTING suite: it finds tests that should not exist - measured against the bar (protects critical, breakable behavior), not against a coverage number - and classifies each Delete / Merge / Simplify / Keep, read-only until you approve removals. It is the inverse of gaps mode; if you actually want MISSING tests, test gaps, or better coverage, use that skill instead. Fill in the `[BRACKETED]` parts.
 
 ## First-turn variants by input
 
@@ -88,6 +88,6 @@ without it), or change the verdict to Delete/Merge/Simplify with evidence and th
 ### Wrong direction - send it to the sibling
 
 ```
-This turned into hunting for missing tests. Stop - that is test-coverage-audit. Stay in the prune
-direction here, or switch skills if gaps are what I actually want.
+This turned into hunting for missing tests. Stop - that is gaps mode. Stay in the prune
+direction here, or switch to gaps mode if gaps are what I actually want.
 ```

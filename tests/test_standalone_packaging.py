@@ -22,7 +22,6 @@ class StandalonePackaging(unittest.TestCase):
 			"react-best-practices",
 			"frontend-workbench",
 			"mega-review",
-			"mega-review-core",
 		):
 			with self.subTest(skill=name), tempfile.TemporaryDirectory() as folder:
 				root = Path(folder)
@@ -54,14 +53,16 @@ class StandalonePackaging(unittest.TestCase):
 						self.assertIn(package_root.resolve(), target.parents)
 						if target.suffix == ".md":
 							queue.append(target)
-				if name == "mega-review-core":
+				if name == "mega-review":
+					# the core profile stays security-free: only SKILL.md may route to the security lens
 					self.assertTrue(any(path.name == "review-protocol.md" for path in visited))
-					self.assertFalse(
-						any(
-							"security-remediation" in path.parts or "mega-review" in path.parts
-							for path in visited
-						)
-					)
+					linkers = {
+						path.name
+						for path in visited
+						if "security-lens.md" in path.read_text()
+						and path.name != "security-lens.md"
+					}
+					self.assertEqual(linkers, {"SKILL.md"})
 
 	def test_generated_collections_and_shared_protocol_match_authoritative_sources(self) -> None:
 		package = support.REPO_ROOT / "skills/react-best-practices"

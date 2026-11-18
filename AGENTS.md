@@ -124,6 +124,6 @@ _From the `working-conventions` skill; full detail & enforcers there._
 _From the `working-conventions` skill; full detail & enforcers there._
 
 - Do not add, expand, or modify tests as a side effect of an implementation, fix, or refactor task unless I asked for tests or approved a plan that already includes them. If you added tests unprompted this turn, remove them and say so (consolidating existing tests is fine).
-- When tests are wanted: major, important tests only - never exhaustive coverage - in their own final phase. When pruning, lean aggressive but protect auth/security, data integrity, serialization contracts, and non-trivial algorithms. Plan tests with the test-coverage-audit skill, and execute an approved test plan with phased-implementation.
+- When tests are wanted: major, important tests only - never exhaustive coverage - in their own final phase. When pruning, lean aggressive but protect auth/security, data integrity, serialization contracts, and non-trivial algorithms. Plan tests with the test-audit skill, and execute an approved test plan with phased-implementation.
 
 <!-- END ggfincke-skills:always-on -->

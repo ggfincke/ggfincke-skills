@@ -18,6 +18,7 @@ This skill combines official React correctness guidance with framework-neutral p
 - React-layer accessibility falls back to a self-contained checklist in `react-core.md`; the `frontend-workbench` skill (optional, not bundled with this skill) and the `security-remediation` skill cover the general accessibility and untrusted-input rules when installed.
 - Vercel Introducing React Best Practices: https://vercel.com/blog/introducing-react-best-practices
 - Vercel agent skills repo: https://github.com/vercel-labs/agent-skills
+- React View Transitions (Vercel Engineering playbook, folded in from the former `vercel-react-view-transitions` skill): https://react.dev/reference/react/ViewTransition, https://react.dev/reference/react/addTransitionType. Provenance in [view-transitions/metadata.json](view-transitions/metadata.json).
 
 ## Adaptation notes
 
