@@ -1,6 +1,7 @@
 ---
 name: working-conventions
 description: Standing conventions for test restraint, commit grouping and attribution, collaboration defaults, task authority and preservation, subagent hygiene, and local working notes. Core rules apply without invocation. Load when revising these conventions or checking their rationale and host delivery.
+user-invocable: false
 ---
 
 # Working Conventions

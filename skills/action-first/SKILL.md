@@ -1,6 +1,7 @@
 ---
 name: action-first
 description: "Opt-in response style: lead with a concrete action, make progress visible, keep lists bounded, and cut filler without suppressing substance or caveats. Use only when the user explicitly requests action-first or asks to revise this skill; do not activate from task context alone."
+disable-model-invocation: true
 ---
 
 # Action First

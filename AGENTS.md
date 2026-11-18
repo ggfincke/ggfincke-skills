@@ -3,11 +3,11 @@
 - Treat `skills/` as the canonical source of truth for installable skills.
 - Treat `agents/` as the canonical source of truth for personal Claude custom agents. Edit here and run `scripts/sync-agents.py`; never edit the installed files under `~/.claude/agents` directly.
 - Keep the worker broker source under `tools/worker-broker/`. Build `dist/` from source and run `npm --prefix tools/worker-broker run check`; never edit generated `dist/` files.
-- Keep skill frontmatter portable by default: use only `name` and `description` unless an agent-specific overlay is intentionally introduced.
+- Keep skill frontmatter portable by default: use only `name` and `description`. The one exception is the invocation tier: `disable-model-invocation: true` makes a skill explicit-only and must be paired with `policy.allow_implicit_invocation: false` in its `agents/openai.yaml`; `user-invocable: false` keeps a reference skill model-loadable but hidden from the `/` menu (Claude only; Codex has no equivalent). Omit both for the default auto tier. The validator enforces the values and the Codex pairing.
 - Do not edit installed copies under `~/.agents/skills`, `~/.claude/skills`, `~/.gemini/antigravity-cli/skills`, or project `.claude/skills` / `.agents/skills` directly. Edit this repo and run `scripts/sync-skills.py`.
 - Put detailed material in a skill's `references/`, deterministic helpers in `scripts/`, and reusable output resources in `assets/`.
 - Do not add `README.md` files inside individual skill folders. Keep instructions in `SKILL.md` and referenced files.
-- Run `python3 scripts/validate-skills.py` (or `make check`) before syncing or committing skill, agent, or broker changes. Validation is strict by default: frontmatter beyond `name`/`description` fails unless you pass `--lenient-frontmatter`. `make install-hooks` installs a pre-commit hook that formats staged JS/TS and root-formatter-owned Python files first, then validates and tests a temporary checkout of the updated index (not full `make check` / broker-check). CI runs the full gate on every push/PR.
+- Run `python3 scripts/validate-skills.py` (or `make check`) before syncing or committing skill, agent, or broker changes. Validation is strict by default: frontmatter beyond `name`/`description` and the invocation-tier keys fails unless you pass `--lenient-frontmatter`. `make install-hooks` installs a pre-commit hook that formats staged JS/TS and root-formatter-owned Python files first, then validates and tests a temporary checkout of the updated index (not full `make check` / broker-check). CI runs the full gate on every push/PR.
 
 ## Format + comment style
 

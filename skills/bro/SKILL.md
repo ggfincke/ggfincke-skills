@@ -1,6 +1,7 @@
 ---
 name: bro
 description: Restate your own previous message in plain human language - same substance, no jargon, shorter. Use only when explicitly asked for it - "/bro", "in plain English", "say that like a normal person", "cut the jargon", "what does that actually mean", "simpler". This restates what was already said; it never redoes the work, runs fresh analysis, or adds new claims.
+disable-model-invocation: true
 ---
 
 # Bro

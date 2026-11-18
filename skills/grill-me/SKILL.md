@@ -1,6 +1,7 @@
 ---
 name: grill-me
 description: Relentless interview that stress-tests a plan, decision, or idea until every branch of the design tree is resolved. Use only when explicitly asked - "/grill-me", "grill me", "grill this", "stress-test this plan", "interview me about this design". Writes no files and does not implement until the user confirms shared understanding.
+disable-model-invocation: true
 ---
 
 # Grill Me

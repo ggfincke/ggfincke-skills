@@ -1,6 +1,7 @@
 ---
 name: engineering-calibration
 description: Right-size software designs and implementations. Use before implementing or when reviewing architectural, cross-cutting, stateful, or abstraction-heavy changes; when asked whether code is overengineered or oversimplified; or when auditing a repository for unnecessary complexity, missing structure, weak contracts, or misplaced responsibilities.
+user-invocable: false
 ---
 
 # Engineering Calibration

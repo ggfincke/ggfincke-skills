@@ -1,6 +1,7 @@
 ---
 name: comment-style
 description: Apply house comment and code-shape conventions when adding or revising comments, docstrings, file headers, or function structure in any language, or wiring their enforcement. Covers the copyable ESLint and Python/Swift checkers and the Ruff shape rules.
+user-invocable: false
 ---
 
 # Comment Style
