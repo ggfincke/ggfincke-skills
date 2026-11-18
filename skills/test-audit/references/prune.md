@@ -1,15 +1,10 @@
----
-name: test-pruning-audit
-description: "Audit existing tests for low-value, redundant, brittle, exhaustive, or over-mocked coverage and propose evidence-backed Delete, Merge, Simplify, or Keep decisions. Use when asked what tests to remove; missing-test questions belong to test-coverage-audit. Preserve important sole coverage and stay read-only until removals are approved."
----
-
-# Test Pruning Audit
+# Test Audit - Prune Mode
 
 You audit an existing test suite for the tests that do not earn their place - the low-value, redundant, exhaustive, tautological, brittle, over-mocked, vacuous, or coverage-gate-filler tests that cost maintenance without protecting real, breakable behavior. You classify each with a verdict and cited evidence, aggregate into one findings doc, and stay read-only until I approve which to remove. This is non-destructive: you propose removals, you do not delete during the audit.
 
-Copy [the packaged template](assets/templates/test-pruning-audit-template.md) to one concrete dated document, normally `dev-docs/test-pruning-audit-YYYY-MM-DD.md`. Never edit or overwrite the packaged template; update an existing audit only when the user points to the same scope. That concrete audit is the sole permitted write during the review; tests remain untouched until approval.
+Copy [the packaged template](../assets/templates/test-audit-prune-template.md) to one concrete dated document, normally `dev-docs/test-audit-prune-YYYY-MM-DD.md`. Never edit or overwrite the packaged template; update an existing audit only when the user points to the same scope. That concrete audit is the sole permitted write during the review; tests remain untouched until approval.
 
-This is the prune direction. It is the INVERSE of test-coverage-audit: that skill finds the few MAJOR tests that are MISSING; this one finds the EXCESS tests that should not exist. Together they right-size a suite. If the ask is really about missing tests, gaps, improving coverage, what to test, or writing/running tests, that is test-coverage-audit - say so and stop. Do not drift into hunting for missing tests here.
+This is the prune direction. It is the INVERSE of gaps mode: that mode finds the few MAJOR tests that are MISSING; this one finds the EXCESS tests that should not exist. Together they right-size a suite. If the ask is really about missing tests, gaps, improving coverage, what to test, or writing/running tests, that is gaps mode - say so and switch to [gaps.md](gaps.md). Do not drift into hunting for missing tests here.
 
 It is also not simplification-review. Trimming an over-parametrized or over-mocked test in place is a behavior-preserving cleanup that simplification-review can own. The call that a test should not exist at all - that it protects nothing worth protecting - is a VALUE judgment, and that judgment is this skill's job. Do not restate simplification-review.
 
@@ -41,7 +36,7 @@ Before judging anything, learn how this repo tests and what it requires:
 - Never weaken the safety net silently. If a removal would drop the last coverage of important behavior, call it a tradeoff in the open.
 - Never edit source to make a test prunable. If a test only looks low-value because the source is untestable, that is a separate finding - do not change behavior to justify a deletion.
 - Respect coverage gates & conventions. If a gate, AGENTS.md, or CLAUDE.md mandates a test, flag the conflict; do not recommend a deletion that breaks the gate.
-- Stay in the prune direction. Missing tests -> test-coverage-audit. Behavior-preserving in-place test cleanup -> simplification-review. A real bug surfaced while reading -> stop and report it.
+- Stay in the prune direction. Missing tests -> gaps mode. Behavior-preserving in-place test cleanup -> simplification-review. A real bug surfaced while reading -> stop and report it.
 
 ## What to flag
 
@@ -102,11 +97,11 @@ The test protects real behavior but is over-parametrized or over-mocked; trim it
 ### Keep
 A questionable-looking test you verified DOES protect real, breakable behavior (or is the only coverage of an important path).
 - Evidence: the invariant, flow, or past bug it guards.
-- Recorded so it is not re-litigated next audit - the analogue of test-coverage-audit's "deliberately not testing."
+- Recorded so it is not re-litigated next audit - the analogue of gaps mode's "deliberately not testing."
 
 ## Required output before edits
 
-One concrete findings document, copied from `assets/templates/test-pruning-audit-template.md`. Do not edit the tests until I pick which to remove. It must contain:
+One concrete findings document, copied from `../assets/templates/test-audit-prune-template.md`. Do not edit the tests until I pick which to remove. It must contain:
 
 - **Summary** - N tests/cases flagged: D delete / M merge / S simplify / K keep; estimated cases the suite would shed.
 - **Setup detected** - framework, runner, conventions, fixture/mock patterns, any coverage gate or mandated test.
@@ -131,10 +126,7 @@ Claim only what you pruned. Do not call the surviving suite well-shaped beyond t
 ## Notes
 
 - This produces a findings doc first; wait for approval before removing anything. Approve with phrases like "delete the D's", "do the merges only", "remove findings 2, 5, 7", "trim the over-mocked ones", "re-justify that Keep", or "hand it to phased-implementation".
-- Siblings: test-coverage-audit is the inverse - it finds the few MAJOR tests that are MISSING and what is deliberately not worth testing; defer all missing-coverage / test-gap / "what should we test" / write-tests work there. simplification-review owns behavior-preserving in-place test trims (a Simplify borrows its mechanics), but the value call that a test should not exist is only this skill's. verify-review-findings supplies the evidence-before-verdict discipline applied here to hold Delete to the highest bar. mega-review is the multi-lens orchestrator; its test-gaps lens delegates to test-coverage-audit, and a pruning pass is not one of its default lenses. phased-implementation is the after-approval handoff for many removals.
-- references/usage.md has first-turn variants (a whole suite, one test file/module, a diff's new tests, "our tests are too brittle", a pre-refactor prune, a post-merge bloat sweep) and follow-ups (approve a subset, hand to phased-implementation, re-justify a Keep).
-- assets/templates/test-pruning-audit-template.md is the packaged template to copy; the concrete audit document is the findings record and source of truth, with the summary, setup, per-test table, keep/verified, safety check, and removal sequence.
+- Siblings: gaps mode is the inverse - it finds the few MAJOR tests that are MISSING and what is deliberately not worth testing; defer all missing-coverage / test-gap / "what should we test" / write-tests work there. simplification-review owns behavior-preserving in-place test trims (a Simplify borrows its mechanics), but the value call that a test should not exist is only this skill's. verify-review-findings supplies the evidence-before-verdict discipline applied here to hold Delete to the highest bar. mega-review is the multi-lens orchestrator; its test-gaps lens delegates to gaps mode, and a pruning pass is not one of its default lenses. phased-implementation is the after-approval handoff for many removals.
+- usage-prune.md has first-turn variants (a whole suite, one test file/module, a diff's new tests, "our tests are too brittle", a pre-refactor prune, a post-merge bloat sweep) and follow-ups (approve a subset, hand to phased-implementation, re-justify a Keep).
+- ../assets/templates/test-audit-prune-template.md is the packaged template to copy; the concrete audit document is the findings record and source of truth, with the summary, setup, per-test table, keep/verified, safety check, and removal sequence.
 
-## Shared evidence and approval
-
-Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

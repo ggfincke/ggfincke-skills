@@ -9,14 +9,15 @@ Invocation variants, lens scoping, and the two owner-less lens protocols (bug-hu
 - **Large diff / worktree:** "the works on the current diff - bugs, simplification, consolidation, security, tests, perf - one document."
 - **Scoped lenses:** "mega-review but skip security" / "just bugs + simplification + perf" / "everything except the test-gap lens."
 - **With a cap:** "mega-review, but stay tight - don't spawn more than ~10 agents, lean tiers, tell me what you skipped."
+- **Core profile:** "mega-review core on this branch" / "mega-review without security - the other five lenses, one doc."
 
-For a repeatable security-free five-lens profile, use `mega-review-core`; use the scoped form below when you need a different subset.
+The core profile is the repeatable security-free five-lens run and never opens the security reference; use the scoped form below when you need a different subset.
 
 ## Lens scoping
 
-Default is all six. Only drop a lens when the user requests or approves that scope, then state which lenses ran in the doc's header. Common user-approved scopes:
+Default is the full profile. Only drop a lens when the user requests or approves that scope, then state which lenses ran in the doc's header. Common user-approved scopes:
 
-- Drop security when it was just reviewed, or when the scope is pure UI with no trust boundary.
+- Run the core profile when security was just reviewed, is handled elsewhere, or the scope is pure UI with no trust boundary.
 - Drop test-gaps for a throwaway/spike branch.
 - Bug-hunt + performance only, for a "why is this slow / what's broken" pass that does not need refactor proposals.
 
@@ -51,9 +52,7 @@ Skip: speculative micro-optimizations off the hot path, anything the profiler/me
 Collapse these to one finding tagged with both lenses:
 
 - Duplicated helper / copy-paste = consolidation + simplification.
-- Unbounded query or unpaginated list = performance + security (DoS).
-- Dead code path = simplification + (sometimes) security (unreachable-but-exploitable-if-reached).
-- Missing validation = security + bug-hunt.
+- Unbounded query or unpaginated list = performance + bug-hunt.
 - Untested critical logic surfaced by another lens = feeds the test-gaps lens directly.
 
 ## Follow-ups after the doc

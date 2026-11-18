@@ -191,7 +191,7 @@ After I approve specific findings or patch groups:
 - Implement only the approved scope.
 - Keep the diff minimal and idiomatic for this repository.
 - Add or update tests only when the user requested them or the approved patch plan includes them. Approval to fix a finding alone does not expand test scope; an already approved test plan needs no second approval.
-- For approved tests, use the test-coverage-audit plan and existing helpers/fixtures. Cover the few malicious and legitimate cases that protect the affected invariant, not every branch.
+- For approved tests, use the test-audit gaps-mode plan and existing helpers/fixtures. Cover the few malicious and legitimate cases that protect the affected invariant, not every branch.
 - Run the relevant existing tests if possible.
 - If a test cannot be run, explain why and provide the exact command that should be run.
 - After editing, summarize:

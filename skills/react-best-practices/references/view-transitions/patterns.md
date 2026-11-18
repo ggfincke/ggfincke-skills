@@ -250,7 +250,7 @@ The `types` array (second argument) lets you vary animation based on transition 
 
 **"Two ViewTransition components with the same name":** Names must be globally unique. Use IDs: `name={`hero-${item.id}`}`.
 
-**`router.back()` and browser back/forward skip animation:** Preserve traversal. Legacy `popstate` may need a nonanimated fallback; do not replace it with `push`. See SKILL.md "router.back() and Browser Back Button."
+**`router.back()` and browser back/forward skip animation:** Preserve traversal. Legacy `popstate` may need a nonanimated fallback; do not replace it with `push`. See "router.back() and Browser Back Button" in [view-transitions.md](../view-transitions.md).
 
 **`flushSync` skips animations:** Keep required synchronous behavior. Change scheduling only when its semantics are compatible with the task; otherwise accept the nonanimated result.
 

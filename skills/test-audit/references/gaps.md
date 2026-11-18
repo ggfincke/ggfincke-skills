@@ -1,9 +1,4 @@
----
-name: test-coverage-audit
-description: "Audit test gaps and propose the few major tests that protect critical, breakable behavior. Detect the existing framework, reuse fixtures, and explain what is not worth testing. Use for coverage questions or an approved test plan; never chase a percentage, silently add tests, or change source behavior to make them pass."
----
-
-# Test Coverage Audit
+# Test Audit - Gaps Mode
 
 You find the few tests that are genuinely worth writing - the ones that protect important, breakable behavior - and you deliberately stop there. This is not an exhaustive-coverage pass. Most code does not need a dedicated test, and a short list of high-value tests beats a large suite that is expensive to maintain and mostly low signal.
 
@@ -110,10 +105,7 @@ Claim only what you added. Do not call the scope well tested beyond the importan
 
 - This produces a short list and waits for approval before adding tests. Approve with phrases like "write them", "do the first two", "show the tests first", or "skip it, coverage is fine".
 - The guiding rule is major, important tests only - not exhaustive coverage. Default to few; name what you are not testing.
-- references/usage.md has first-turn variants by stack (JS/TS, Python, Go, mixed or unknown) and by scope (a diff, a module/feature), plus follow-ups (approve the list, hand off to phased-implementation, a bug surfaced while testing, strengthen a weak test on critical logic).
+- usage-gaps.md has first-turn variants by stack (JS/TS, Python, Go, mixed or unknown) and by scope (a diff, a module/feature), plus follow-ups (approve the list, hand off to phased-implementation, a bug surfaced while testing, strengthen a weak test on critical logic).
 - This systematizes the "add a regression test" step the other skills mention. It produces the short test list; phased-implementation executes an approved plan. A newly exposed behavior bug needs scoped fix approval; security-remediation owns security work, and ordinary bug fixing owns other behavior corrections.
-- For the inverse - pruning low-value tests that already exist rather than adding missing ones - use test-pruning-audit. This skill finds the few major tests worth adding; that one finds the excess tests worth deleting.
+- For the inverse - pruning low-value tests that already exist rather than adding missing ones - use prune mode ([prune.md](prune.md)). Gaps mode finds the few major tests worth adding; prune mode finds the excess tests worth deleting.
 
-## Shared evidence and approval
-
-Use [review-protocol.md](references/review-protocol.md) for evidence-based verification, the five action-group authorization dimensions, and handoffs. Keep this skill's specialized question, permitted references, and output requirements. The packaged protocol is neutral and self-contained.

@@ -1,8 +1,3 @@
----
-name: vercel-react-view-transitions
-description: Guide for implementing smooth, native-feeling animations using React's View Transition API (`ViewTransition` component, `addTransitionType`, and CSS view transition pseudo-elements). Use this skill whenever the user wants to add page transitions, animate route changes, create shared element animations, animate enter/exit of components, animate list reorder, implement directional (forward/back) navigation animations, or integrate view transitions in Next.js. Also use when the user mentions view transitions, `startViewTransition`, `ViewTransition`, transition types, or asks about animating between UI states in React without third-party animation libraries.
----
-
 # React View Transitions
 
 Animate between UI states using the browser's native `document.startViewTransition`. Declare *what* with `<ViewTransition>`, trigger *when* with `startTransition` / `useDeferredValue` / `Suspense`, control *how* with CSS classes. Unsupported browsers skip animations gracefully.
@@ -40,14 +35,14 @@ Reserve directional slides for hierarchical navigation (list → detail) and ord
 
 - Check the installed React/React DOM versions, framework integration, type declarations, and browser capabilities before changing code. Keep the lockfile and dependency versions unchanged unless an upgrade is separately approved.
 - **React:** As checked on 2026-08-27, [`ViewTransition`](https://react.dev/reference/react/ViewTransition) and `addTransitionType` are available in Canary/Experimental channels. If the installed runtime lacks them, preserve a nonanimated interaction; discuss a dependency change instead of installing canary automatically.
-- **Next.js:** App Router builds can supply a framework-managed React runtime. Do not replace it with a separate canary install. Verify the installed build and any required experimental flag or Link prop using `references/nextjs.md`.
+- **Next.js:** App Router builds can supply a framework-managed React runtime. Do not replace it with a separate canary install. Verify the installed build and any required experimental flag or Link prop using [`nextjs.md`](view-transitions/nextjs.md).
 - **Browser:** Base API support and support for class selectors are separate capabilities; check the actual target browsers rather than relying on a minimum-version list. A supported React integration can skip animation on unsupported browsers. An unavailable React export still requires a compatible implementation; browser fallback cannot fix that build error.
 
 ---
 
 ## Implementation Workflow
 
-Use `references/implementation.md` to inspect and change the requested surfaces. Copy only the required recipes from `references/css-recipes.md`, including their keyframes, timing variables, and reduced-motion rule. Adapt them to existing design tokens and CSS ownership; custom CSS is appropriate when the requested effect needs it. Do not introduce unrelated global animation rules.
+Use [`implementation.md`](view-transitions/implementation.md) to inspect and change the requested surfaces. Copy only the required recipes from [`css-recipes.md`](view-transitions/css-recipes.md), including their keyframes, timing variables, and reduced-motion rule. Adapt them to existing design tokens and CSS ownership; custom CSS is appropriate when the requested effect needs it. Do not introduce unrelated global animation rules.
 
 ---
 
@@ -117,7 +112,7 @@ If `default` is `"none"`, all triggers are off unless explicitly listed.
 - `::view-transition-group(.class)` — container
 - `::view-transition-image-pair(.class)` — old + new pair
 
-See `references/css-recipes.md` for ready-to-use animation recipes.
+See [`css-recipes.md`](view-transitions/css-recipes.md) for ready-to-use animation recipes.
 
 ---
 
@@ -270,7 +265,7 @@ Directional reveal:
 </Suspense>
 ```
 
-For more patterns, see `references/patterns.md`.
+For more patterns, see [`patterns.md`](view-transitions/patterns.md).
 
 ---
 
@@ -297,19 +292,19 @@ When an entire parent boundary is inserted or removed, it normally owns that sub
 
 ## Next.js Integration
 
-For version-specific Next.js setup, the `transitionTypes` prop on `next/link`, App Router patterns, and Server Components, see `references/nextjs.md`.
+For version-specific Next.js setup, the `transitionTypes` prop on `next/link`, App Router patterns, and Server Components, see [`nextjs.md`](view-transitions/nextjs.md).
 
 ---
 
 ## Accessibility
 
-Preserve or add the reduced-motion rule from `references/css-recipes.md` for the selected animations. React does not disable motion automatically. Gate any JavaScript animation or smooth scrolling separately, and verify focus, keyboard operation, and nonanimated behavior.
+Preserve or add the reduced-motion rule from [`css-recipes.md`](view-transitions/css-recipes.md) for the selected animations. React does not disable motion automatically. Gate any JavaScript animation or smooth scrolling separately, and verify focus, keyboard operation, and nonanimated behavior.
 
 ---
 
 ## Reference Files
 
-- **`references/implementation.md`** — Step-by-step implementation workflow.
-- **`references/patterns.md`** — Patterns, animation timing, events API, troubleshooting.
-- **`references/css-recipes.md`** — Ready-to-use CSS animation recipes.
-- **`references/nextjs.md`** — Next.js App Router patterns and Server Component details.
+- **[`implementation.md`](view-transitions/implementation.md)** — Step-by-step implementation workflow.
+- **[`patterns.md`](view-transitions/patterns.md)** — Patterns, animation timing, events API, troubleshooting.
+- **[`css-recipes.md`](view-transitions/css-recipes.md)** — Ready-to-use CSS animation recipes.
+- **[`nextjs.md`](view-transitions/nextjs.md)** — Next.js App Router patterns and Server Component details.

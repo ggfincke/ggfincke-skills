@@ -144,7 +144,7 @@ For each requested shared visual element, use the same stable name on the outgoi
 
 The `share="morph"` class uses the morph recipe from `css-recipes.md` (controlled duration + motion blur). For a simpler cross-fade, use `share="auto"` (browser default).
 
-When list items contain shared elements, compose both patterns with two nested `<ViewTransition>` layers — see "Composing Shared Elements with List Identity" in `SKILL.md`.
+When list items contain shared elements, compose both patterns with two nested `<ViewTransition>` layers — see "Composing Shared Elements with List Identity" in [view-transitions.md](../view-transitions.md).
 
 **Rules:**
 - Names must be unique among simultaneously rendered boundaries; outgoing/incoming partners deliberately share a name. Use prefixes like `photo-${id}`.

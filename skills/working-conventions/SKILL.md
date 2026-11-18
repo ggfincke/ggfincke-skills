@@ -13,10 +13,10 @@ The recurring failure this fixes: an implementation or fix task that quietly gro
 
 <!-- always-on:start title="Test restraint during implementation" -->
 - Do not add, expand, or modify tests as a side effect of an implementation, fix, or refactor task unless I asked for tests or approved a plan that already includes them. If you added tests unprompted this turn, remove them and say so (consolidating existing tests is fine).
-- When tests are wanted: major, important tests only - never exhaustive coverage - in their own final phase. When pruning, lean aggressive but protect auth/security, data integrity, serialization contracts, and non-trivial algorithms. Plan tests with the test-coverage-audit skill, and execute an approved test plan with phased-implementation.
+- When tests are wanted: major, important tests only - never exhaustive coverage - in their own final phase. When pruning, lean aggressive but protect auth/security, data integrity, serialization contracts, and non-trivial algorithms. Plan tests with the test-audit skill, and execute an approved test plan with phased-implementation.
 <!-- always-on:end -->
 
-The carve-outs are intentional: an explicit "write a test for X", or an approved plan whose scope includes tests (e.g. via test-coverage-audit or phased-implementation), is approval - not an unprompted addition.
+The carve-outs are intentional: an explicit "write a test for X", or an approved plan whose scope includes tests (e.g. via test-audit or phased-implementation), is approval - not an unprompted addition.
 
 ## Commit discipline
 

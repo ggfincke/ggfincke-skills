@@ -1,4 +1,4 @@
-# Mega Review Core ([Project Name])
+# Mega Review - Core Profile ([Project Name])
 
 **Last Updated:** [Date]
 **Audit File:** `[path/to/this-doc.md]`
