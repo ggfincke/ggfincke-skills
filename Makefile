@@ -35,8 +35,8 @@ test: ## Run the sync/parser/checker regression tests
 broker-check: ## Typecheck, build, & test the worker broker
 	npm --prefix $(BROKER) run check
 
-audit-root: ## Audit root dependencies at the shared CI severity threshold
-	npm audit --audit-level=high
+audit-root: ## Audit root dependencies at the shared CI severity threshold, minus dated exceptions
+	$(PYTHON) scripts/checks/npm-audit-gate.py
 
 audit-broker: ## Audit broker dependencies at the shared CI severity threshold
 	npm --prefix $(BROKER) audit --audit-level=high
