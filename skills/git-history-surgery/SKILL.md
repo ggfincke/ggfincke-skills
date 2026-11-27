@@ -62,5 +62,5 @@ If a rewrite goes wrong, stop making new changes. Use the backup ref first. If n
 ## Relationship To Other Skills
 
 - Use `branch-sweep` to delete merged branches or stale worktrees. This skill rewrites history and force-pushes; it does not clean up merged branches.
-- Use `phased-implementation` when the user has approved a multi-step code patch plan. This skill is only for Git history shape.
+- Use `fan-out` when the user wants an approved multi-unit code plan run in parallel. This skill is only for Git history shape.
 - Use repo-specific validation guidance after the rewrite if the affected commits changed source behavior.

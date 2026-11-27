@@ -69,12 +69,12 @@ suite's existing style, then re-run the affected suite and confirm it is still g
 any source to make a test go away. Summarize what you removed, the cases shed, and the run result.
 ```
 
-### Hand the removals to phased-implementation
+### Hand the removals to fan-out
 
 ```
-That is a lot of removals - carry it out with phased-implementation: one group at a time, re-run
-the suite after each, and gate for go-ahead between groups. Start with the lowest-risk,
-self-contained removals. Findings doc is the source of truth.
+That is a lot of removals - /fan-out the approved groups: one unit per independent group, each
+re-running the suite before it reports. Keep removals that share a test file in one unit.
+Findings doc is the source of truth. Show me the unit plan first.
 ```
 
 ### Re-justify a Keep

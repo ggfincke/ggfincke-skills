@@ -13,7 +13,7 @@ Ready-made prompts for the `docs-freshness-audit` skill. The first-turn variants
   - [F. Pre-release docs sweep](#f-pre-release-docs-sweep)
 - [Follow-up prompts after the first findings doc](#follow-up-prompts-after-the-first-findings-doc)
   - [Approve a subset to fix](#approve-a-subset-to-fix)
-  - [Hand the fixes to phased-implementation](#hand-the-fixes-to-phased-implementation)
+  - [Hand the fixes to fan-out](#hand-the-fixes-to-fan-out)
   - [Re-verify a verdict](#re-verify-a-verdict)
   - [Apply the changelog proposal](#apply-the-changelog-proposal)
 
@@ -78,12 +78,12 @@ lines, preserve each doc's structure and formatting, do not regenerate the file.
 Summarize what changed and what you left.
 ```
 
-### Hand the fixes to phased-implementation
+### Hand the fixes to fan-out
 
 ```
-The approved corrections are bigger than spot edits. Hand them to phased-implementation: one
-group at a time, gate between, with the findings doc as the source of truth. Start with the
-lowest-risk group.
+/fan-out the approved corrections. They are bigger than spot edits: one unit per independent
+group, coupled groups together, with the findings doc as the source of truth. Show me the unit
+plan first.
 ```
 
 ### Re-verify a verdict

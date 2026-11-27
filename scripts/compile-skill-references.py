@@ -25,7 +25,7 @@ SHARED_REVIEW_CONSUMERS = (
 	"test-audit",
 	"mega-review",
 	"security-remediation",
-	"phased-implementation",
+	"fan-out",
 	"working-conventions",
 )
 SECTION_RE = re.compile(r"^## (\d+)\. (.+) \(([-a-z0-9]+)\)$", re.MULTILINE)

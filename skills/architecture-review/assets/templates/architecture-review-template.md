@@ -342,6 +342,6 @@ Update this table only after the user approves implementation. Keep review findi
 ## Approval Checklist
 
 - [ ] Approve/reject prerequisite architecture decisions.
-- [ ] Approve specific action groups for phased implementation.
+- [ ] Approve specific action groups for implementation.
 - [ ] Confirm compatibility and migration posture for public/data/runtime changes.
 - [ ] Confirm any major tests needed before implementation.

@@ -140,7 +140,7 @@ Read my intensity directive as the dial ("quick look" vs "be exhaustive"); honor
 
 ## Notes
 
-- For a larger approved set, work through it with the phased-implementation skill: one group at a time, re-checking between, rather than applying everything in one pass.
+- For a larger approved set, work through it one group at a time, re-checking between, rather than applying everything in one pass. When the groups are independent, point the user to the fan-out skill to run them as parallel worktree units.
 
 ## Shared evidence and approval
 

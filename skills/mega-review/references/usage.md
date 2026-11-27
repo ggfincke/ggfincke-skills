@@ -58,6 +58,6 @@ Collapse these to one finding tagged with both lenses:
 ## Follow-ups after the doc
 
 - Approve groups: "do Group A and B", "apply all low-risk", "show diffs for Group C first", "skip security findings for now".
-- Hand execution to phased-implementation: one action group at a time, gate between, keep the mega doc updated as the source of truth.
+- Hand execution to fan-out: "/fan-out groups A, B, and D" - independent groups run as parallel worktree units, coupled groups stay in one unit, and the mega doc stays updated as the source of truth.
 - Re-verify: "re-check F3, I think it's stale" / "the refute on F7 was weak - prove it's not real."
 - Narrow: "just the bug-hunt findings - ignore the rest for now."

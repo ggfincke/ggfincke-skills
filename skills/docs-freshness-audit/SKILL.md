@@ -86,7 +86,7 @@ End with an approval request. Do not edit until the user picks which findings to
 Once the user says which findings to address:
 
 - For a small, self-contained correction, edit the doc in place: change the drifted lines only, preserve the doc's structure and formatting, never regenerate-and-drop.
-- For several corrections approved together, hand to phased-implementation: one group at a time, gate between, with the findings doc as the living source of truth.
+- For several corrections approved together, work them one group at a time with the findings doc as the living source of truth. For a large independent set, point the user to the fan-out skill, which runs the groups as parallel worktree units.
 - For the changelog limb, write the proposed Unreleased entries & next version into the CHANGELOG only; leave tagging & publishing to the user.
 - After editing, summarize: which claims were corrected, which docs changed, and which findings were intentionally left (Current, or declined) so the audit can be closed out.
 
@@ -94,7 +94,7 @@ Only claim what you verified. Do not assert the rest of the docs are accurate - 
 
 ## Notes
 
-- Siblings: consolidation-audit is the code-vs-code cousin and shares this doc shape and the Current/verified (Considered & Rejected) discipline; verify-review-findings supplies the evidence-before-verdict rule, though there you triage external claims and here you generate findings about the docs; mega-review is the multi-lens orchestrator, not this; phased-implementation is the after-approval handoff. The changelog limb follows the public Keep a Changelog standard (keepachangelog.com), not a skill in this repo.
+- Siblings: consolidation-audit is the code-vs-code cousin and shares this doc shape and the Current/verified (Considered & Rejected) discipline; verify-review-findings supplies the evidence-before-verdict rule, though there you triage external claims and here you generate findings about the docs; mega-review is the multi-lens orchestrator, not this; fan-out is the after-approval handoff for a large set. The changelog limb follows the public Keep a Changelog standard (keepachangelog.com), not a skill in this repo.
 - For brand-new docs, discover available documentation tools or use the ordinary writing workflow. Do not assume a documentation plugin is installed or request an unrelated installation. This skill owns auditing existing claims.
 - references/usage.md has first-turn invocation variants by input (a single README, the whole docs/ tree, changelog/version-from-git, a manifest/marketplace listing, stale screenshots, a pre-release sweep).
 - assets/templates/docs-freshness-audit-template.md is the packaged template to copy; the concrete audit document is the findings record and source of truth, with scope, doc inventory, per-claim findings table, missing-from-docs, current/verified, and the recommended update sequence.
