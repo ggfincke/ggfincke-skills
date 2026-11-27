@@ -1,5 +1,4 @@
 interface:
-  display_name: "Fan Out"
   short_description: "Run a large change as parallel worktree units"
   default_prompt: "Use $fan-out to research this change, split it into independent units, and show me the unit plan before spawning any workers."
 policy:

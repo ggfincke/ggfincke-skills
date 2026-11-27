@@ -1,5 +1,4 @@
 interface:
-  display_name: "Grill Me"
   short_description: "Sharpen a plan through interview"
   default_prompt: "Use $grill-me to interview me relentlessly about this plan or idea until every decision branch is resolved. Do not implement until I confirm shared understanding."
 policy:
