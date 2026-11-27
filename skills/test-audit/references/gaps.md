@@ -95,7 +95,7 @@ Once I approve specific tests:
 
 - Write only the approved tests, in the repo's existing style, with real assertions and the suite's fixtures.
 - Run the new tests, and the affected suite, if possible; report what passed and failed. If you cannot run them, give the exact command.
-- For more than a couple of tests, carry it out with the phased-implementation skill: a batch at a time, run it, gate between.
+- For more than a couple of tests, work a batch at a time and run each batch before the next, or point the user to the fan-out skill to run independent batches as parallel worktree units.
 - If a new test fails because of a real bug rather than a test mistake, stop and report it - do not change source to make it pass without approval.
 - After writing, summarize: tests added, what they protect, tests run and results, and anything deliberately left.
 
@@ -105,7 +105,7 @@ Claim only what you added. Do not call the scope well tested beyond the importan
 
 - This produces a short list and waits for approval before adding tests. Approve with phrases like "write them", "do the first two", "show the tests first", or "skip it, coverage is fine".
 - The guiding rule is major, important tests only - not exhaustive coverage. Default to few; name what you are not testing.
-- usage-gaps.md has first-turn variants by stack (JS/TS, Python, Go, mixed or unknown) and by scope (a diff, a module/feature), plus follow-ups (approve the list, hand off to phased-implementation, a bug surfaced while testing, strengthen a weak test on critical logic).
-- This systematizes the "add a regression test" step the other skills mention. It produces the short test list; phased-implementation executes an approved plan. A newly exposed behavior bug needs scoped fix approval; security-remediation owns security work, and ordinary bug fixing owns other behavior corrections.
+- usage-gaps.md has first-turn variants by stack (JS/TS, Python, Go, mixed or unknown) and by scope (a diff, a module/feature), plus follow-ups (approve the list, hand off to fan-out, a bug surfaced while testing, strengthen a weak test on critical logic).
+- This systematizes the "add a regression test" step the other skills mention. It produces the short test list; fan-out can run a large approved plan in parallel. A newly exposed behavior bug needs scoped fix approval; security-remediation owns security work, and ordinary bug fixing owns other behavior corrections.
 - For the inverse - pruning low-value tests that already exist rather than adding missing ones - use prune mode ([prune.md](prune.md)). Gaps mode finds the few major tests worth adding; prune mode finds the excess tests worth deleting.
 

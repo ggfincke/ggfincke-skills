@@ -38,7 +38,7 @@ Match model to task, not to ambition: reserve the strongest tier for judgment & 
 ## Notes
 
 - This produces a plan, not edits. Get approval on the action groups before implementing.
-- To implement approved action groups, use the phased-implementation skill: one group at a time, gate between phases, and keep the audit doc updated as the source of truth.
+- To implement approved action groups, work them one group at a time and keep the audit doc updated as the source of truth. For a large approved set, point the user to the fan-out skill: independent groups run as parallel worktree units and coupled groups stay in one unit.
 - For finer-grained, behavior-preserving cleanups within a change, use the simplification-review skill; for comment cleanup, the comment-style skill.
 
 ## Shared evidence and approval

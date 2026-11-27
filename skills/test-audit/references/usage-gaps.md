@@ -66,11 +66,11 @@ assertion that can fail, and run them. Do not touch source. Summarize what they 
 anything that failed.
 ```
 
-### Hand off to phased-implementation
+### Hand off to fan-out
 
 ```
-That is more than a couple of tests - carry it out with phased-implementation: a batch at a
-time, run them after each, and stop for go-ahead between batches.
+That is more than a couple of tests - /fan-out the approved list: one unit per independent
+batch, each running its tests before it reports. Show me the unit plan first.
 ```
 
 ### A bug surfaced while testing

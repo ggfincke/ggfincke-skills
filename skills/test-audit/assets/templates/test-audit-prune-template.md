@@ -104,7 +104,7 @@ _Lowest-risk, self-contained removals first. Each group is approve-able on its o
 
 ## Approval Request
 
-Pick which to remove. Nothing is deleted, merged, or trimmed until you approve. For many removals, hand the approved groups to phased-implementation.
+Pick which to remove. Nothing is deleted, merged, or trimmed until you approve. For many removals, hand the approved groups to fan-out.
 
 ## Verification Performed
 

@@ -2,7 +2,7 @@
 
 How the review family composes across sessions into one loop: Audit -> Approve -> Implement -> Re-verify -> Reconcile. Each skill owns one stage; this doc is the hand-off contract between them - which skill produces what, what the next one consumes, and how one audit doc stays the single source of truth across sessions (and sometimes across models). It lives as a workflow, not an auto-firing skill, because no single trigger fires the whole loop and the loop runs across many sittings - you consult it to know what stage you're in and what the next one expects.
 
-The spine: every stage reads from and writes to the SAME audit document - not a fresh report per session. Don't spawn parallel `action-groups.md` / `commit-plan.md` files; the skills keep it in the one doc. Findings land grouped w/ risk sequencing; preserve the group IDs across stages so a phase maps back to a finding.
+The spine: every stage reads from and writes to the SAME audit document - not a fresh report per session. Don't spawn parallel `action-groups.md` / `commit-plan.md` files; the skills keep it in the one doc. Findings land grouped w/ risk sequencing; preserve the group IDs across stages so a unit maps back to a finding.
 
 ## The loop
 
@@ -29,13 +29,13 @@ The audit stays read-only until Garrett approves the relevant action groups. App
 
 ### 3. Implement - carry out approved groups
 
-Hand the approved group IDs to `phased-implementation`; it works one phase at a time and writes status back into the audit doc as each phase closes - marking groups done, recording deviations. The doc is now mutating, and its statuses are the truth of how far the work got - which matters most when the work pauses here and resumes a session later.
+For a small approved set, work the groups one at a time in the session. For a larger one, hand the approved group IDs to `fan-out`; it turns independent groups into parallel worktree units, keeps coupled groups in one unit, shows the unit plan for approval, and writes status back into the audit doc as each unit closes - marking groups done, recording PR links and deviations. The doc is now mutating, and its statuses are the truth of how far the work got - which matters most when the work pauses here and resumes a session later.
 
 ```
-/phased-implementation   # hand it the approved group IDs
+/fan-out   # hand it the approved group IDs
 ```
 
-If a phase contradicts the plan, it stops to re-plan rather than improvising - that kicks back to Audit/Approve for the affected group, not a freehand edit.
+If a unit contradicts the plan, it stops to re-plan rather than improvising - that kicks back to Audit/Approve for the affected group, not a freehand edit.
 
 ### 4. Re-verify - before acting on a doc you didn't just write
 
@@ -53,4 +53,4 @@ At the end, a mechanical sweep over the audit doc: fix internal counts ("12 find
 
 ## Notes
 
-- Scope creep guard: discoveries made mid-Implement don't get fixed inline. They go back to the audit doc as new findings -> Approve -> a later phase. The loop is what keeps the diff scoped.
+- Scope creep guard: discoveries made mid-Implement don't get fixed inline. They go back to the audit doc as new findings -> Approve -> a later unit. The loop is what keeps the diff scoped.

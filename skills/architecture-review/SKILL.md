@@ -90,7 +90,7 @@ Risk is about migration and regression exposure, not the value of the recommenda
 - Use `simplification-review` when the primary goal is local, behavior-preserving implementation cleanup within the current architecture.
 - Use `consolidation-audit` when the primary goal is finding duplicated or drifting implementations to merge or deduplicate.
 - Keep architecture findings here when the primary issue is misplaced ownership, the wrong boundary, dependency direction, or system decomposition, even if consolidation or simplification is part of the eventual fix.
-- Use `phased-implementation` after approval to execute one architecture action group at a time and update the review's implementation ledger.
+- After approval, execute one architecture action group at a time and update the review's implementation ledger. Migration steps usually depend on each other; point the user to `fan-out` only for groups that are truly independent.
 
 ## Thoroughness
 

@@ -73,7 +73,7 @@ Walk these top to bottom when adding or changing. Each is the canonical home for
 1. State the field, the object/table, and the change: add / rename / retype / remove.
 2. Answer the three conditionals - is it template-inheritable (layer 6/7), seed-relevant (layers 11-13), and does it participate in sync change-detection (layer 5)? - to decide which layers apply.
 3. Produce the ordered plan covering only the applicable layers. Reuse an already approved scope; obtain missing approval before expanding it or taking an external/destructive action.
-4. Execute with the phased-implementation skill: one tier at a time, typecheck and run the relevant tests between tiers, and stop to re-plan if a layer contradicts the plan.
+4. Execute one tier at a time: typecheck and run the relevant tests between tiers, and stop to re-plan if a layer contradicts the plan.
 5. Verify the round-trips the field participates in: edit -> sync -> reload, export -> import, and publish -> useTemplate, plus the seed build if seeded.
 
 ## Removing a field
@@ -90,4 +90,4 @@ Plan the removal across the actual deployment boundary so no live consumer reads
 
 - This is the "adding a persisted field" guide TLB did not have; no centralized one existed.
 - The canonical worked example is `autoPlate` (the board-wide plate setting), which touches every layer above - grep it to see the full path end to end, including the `setBoardAutoPlate` action and the `buildTemplateInsertFields` publish copy.
-- Execution is handed to phased-implementation by design: a field change is a multi-file, multi-tier change that wants gating between tiers, not one big diff.
+- Execution is tiered by design: a field change is a multi-file, multi-tier change that wants gating between tiers, not one big diff. The tiers depend on each other, so this is not fan-out work.

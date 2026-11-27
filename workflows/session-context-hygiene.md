@@ -31,4 +31,4 @@ Skip it for a short task you're finishing in this session, or a clean stopping p
 
 To produce it: don't hand-write the brief - paste the `session-handoff-brief` prompt (prompts/session-handoff-brief.md) and let the live session generate it (task & goal, decisions made, open threads, file/line anchors, exact next step). Capture the output, THEN `/compact` or `/clear` - never the other way around, since the clear destroys the context you'd write it from. To resume: open a fresh session & paste the brief back in as the first message.
 
-The brief is also the clean hand-off into `phased-implementation`: an approved plan + a tight brief is exactly what a fresh implementation session needs to start cold.
+The brief is also the clean hand-off into `fan-out`: an approved plan + a tight brief is exactly what a fresh implementation session needs to start cold.

@@ -24,7 +24,7 @@ Choose from the request and say which mode you are running. If it is unclear, as
 
 ## After approval
 
-Do only the approved additions or removals, in the suite's existing style, then run the affected suite and report results; after removals, a green re-run is mandatory before reporting done. For more than a couple of changes, hand off to phased-implementation one batch at a time.
+Do only the approved additions or removals, in the suite's existing style, then run the affected suite and report results; after removals, a green re-run is mandatory before reporting done. For more than a couple of changes, work one batch at a time, or point the user to the fan-out skill to run independent batches as parallel worktree units.
 
 ## References
 
